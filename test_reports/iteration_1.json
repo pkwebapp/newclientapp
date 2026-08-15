@@ -1,0 +1,59 @@
+{
+  "summary": "Comprehensive backend + frontend testing of Lumiere Gallery. Backend: 37/37 pytest tests pass covering admin auth, event CRUD (incl. threshold 50-100 validation), photo upload+indexing, indexing status, access grants (create/list/patch full_gallery_access/revoke), client OTP request+verify (dev_code), client events listing (grant-scoped), consent gate, selfie search (dedupe + My Photos upsert), full-gallery access enforcement, image serving with Bearer + ?token= (401 unauth), face-data deletion. Frontend: end-to-end mobile web flow verified — landing -> admin sign-in -> dashboard -> create event -> Photos/Access/Settings tabs (grant added, threshold saved) -> client sign-out; then landing -> client OTP request -> verify with dev_code -> client events (empty state). Minor RN-web warnings observed (invalid Ionicons name 'graduation-cap', deprecated shadow*/pointerEvents props) — non-blocking.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "Category icon (school)",
+        "issue": "Invalid Ionicons name 'graduation-cap' produces repeated console warnings on category dropdowns/badges. Ionicons has no 'graduation-cap' glyph. Reference: /app/frontend/src/theme.ts:43",
+        "testID": "n/a",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "AdminEvent (tab bar)",
+        "issues": [
+          "In screenshots of the Access/Settings tabs, the tab labels (Photos/Access/Settings) appear partially covered by the 'Access granted' / 'Event created' toast banner. The banner overlaps the tab strip momentarily — consider positioning the toast below the tab bar or animating it above the header so it doesn't obscure navigation controls."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "RN Web deprecations",
+        "issue": "Console warnings: '\"shadow*\" style props are deprecated. Use \"boxShadow\"' and 'props.pointerEvents is deprecated. Use style.pointerEvents'. These are React Native Web deprecation warnings triggered by third-party or app styles. Non-blocking but should be addressed for future RN versions."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_lumiere_gallery.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Replace 'graduation-cap' in /app/frontend/src/theme.ts:43 with a valid Ionicons name (e.g. 'school' or 'school-outline') to remove console warnings.",
+    "(Optional polish) Position success/error toasts so they do not overlap the Photos/Access/Settings segmented control on the admin event screen.",
+    "(Optional) Migrate legacy shadow* style props to boxShadow and props.pointerEvents to style.pointerEvents to silence RN Web deprecation warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~850 lines and mixes auth, events, photos, access, client, and file-serving concerns. Consider splitting into routers (auth_router, events_router, client_router, files_router) for maintainability once above 700 LOC.",
+    "In /api/events PATCH, similarity_threshold=0 would be silently dropped by 'v is not None' filter combined with truthiness elsewhere — currently benign because 0 fails the 50-100 range check, but ensure future fields relying on falsy values (e.g. False booleans) use explicit set semantics.",
+    "public_event() intentionally strips 'created_by' and 'collection_id' from responses (good, no ObjectId leakage). No _id leakage detected in any endpoint sampled."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_lumiere_gallery.py (new pytest suite)",
+    "/app/test_reports/pytest/pytest_results.xml (junit output)"
+  ],
+  "success_rate": {
+    "backend": "100% (37/37)",
+    "frontend": "100% of tested flows (landing, admin login, dashboard, create event, Access grant, Settings threshold save, client OTP request/verify, client events)"
+  },
+  "seed_data_creation": "Tests create TEST_-prefixed events, throwaway admin accounts, and ui_test_guest@example.com grants inside the test event. No production data touched. Face data deletion tested against event-scoped albums only.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend base URL: EXPO_PUBLIC_BACKEND_URL from /app/frontend/.env. Seeded admin admin@lumiere.studio / Admin@12345. Client OTP dev_code returned in POST /api/auth/client/request-otp response (OTP_DEV_MODE=true). Pytest suite lives at /app/backend/tests/test_lumiere_gallery.py — safe to re-run. Selfie camera capture is not exercisable via headless browser (getUserMedia); the /search endpoint is exercised via multipart JPEG in pytest. MockFaceEngine is deterministic per (user_id, event_id) so retries produce consistent match counts.",
+  "rca_of_issue": "No unresolved issue. Two intermittent pytest failures during initial run were due to pytest-xdist parallelization racing between workers (TestFileServing and TestFullGalleryAccess ran before their prerequisite uploads/grant-patches on the sibling worker). Fixed by making those test classes self-provision (own upload + explicit re-patch) so tests are independent of ordering."
+}

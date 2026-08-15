@@ -1,0 +1,174 @@
+{
+  "app_name": "Lumiere Gallery",
+  "personality": "6 Glass / Luxe",
+  "personality_one_liner": "A cinematic, expensive, and photo-first experience where the user's memories are treated like high-end art.",
+  "color": {
+    "surface": "#0D0D0D",
+    "onSurface": "#F5F5F5",
+    "surfaceSecondary": "#1A1A1A",
+    "onSurfaceSecondary": "#E0E0E0",
+    "surfaceTertiary": "#262626",
+    "onSurfaceTertiary": "#CCCCCC",
+    "surfaceInverse": "#F5F5F5",
+    "onSurfaceInverse": "#0D0D0D",
+    "brand": "#D4AF37",
+    "brandPrimary": "#D4AF37",
+    "onBrandPrimary": "#0D0D0D",
+    "brandSecondary": "#E5C76B",
+    "onBrandSecondary": "#0D0D0D",
+    "brandTertiary": "#332D1C",
+    "onBrandTertiary": "#D4AF37",
+    "success": "#2E4D36",
+    "onSuccess": "#84C298",
+    "warning": "#5C431A",
+    "onWarning": "#E8BA71",
+    "error": "#591C1C",
+    "onError": "#E88282",
+    "info": "#333333",
+    "onInfo": "#CCCCCC",
+    "border": "#262626",
+    "borderStrong": "#404040",
+    "divider": "#1A1A1A"
+  },
+  "typography": {
+    "displayFontFamily": "CormorantGaramond_500Medium",
+    "textFontFamily": "Geist_400Regular",
+    "scale": {
+      "sm": 12,
+      "base": 14,
+      "lg": 16,
+      "xl": 20,
+      "2xl": 24
+    }
+  },
+  "spacing": {
+    "rule": "Generous magazine-like breathing room. Cards and images are the hero. Never cram content. Use padding effectively to make elements feel premium.",
+    "xs": 4,
+    "sm": 8,
+    "md": 12,
+    "lg": 16,
+    "xl": 24,
+    "2xl": 32,
+    "3xl": 48
+  },
+  "radius_tokens": {
+    "sm": 6,
+    "md": 12,
+    "lg": 20,
+    "pill": 999
+  },
+  "shadow_tier": "0",
+  "navigation": "stack_only",
+  "icon_set": "Phosphor",
+  "glassmorphism": {
+    "enabled": true,
+    "do's": [
+      "Sticky headers over scrolling content.",
+      "Sticky CTA bar at the bottom for 'Take Selfie' or main actions.",
+      "Modals, tooltips, and bottom sheet handles.",
+      "Ensure ≥75% tint opacity underneath glass in dark mode to preserve readability."
+    ],
+    "dont's": [
+      "Applying glass to every list item.",
+      "Form fields or body text regions.",
+      "Failing to layer a solid/tint base under the blur for contrast."
+    ]
+  },
+  "platform_libraries": {
+    "glass": {
+      "ios": "expo-glass-effect",
+      "android": "expo-blur",
+      "low_end_android_fallback": "solid surfaceSecondary"
+    },
+    "image": "expo-image",
+    "blur": "expo-blur",
+    "bottom_sheet": "@gorhom/bottom-sheet",
+    "animation": "react-native-reanimated",
+    "gesture": "react-native-gesture-handler"
+  },
+  "screens": [
+    {
+      "name": "Auth (Login / OTP)",
+      "purpose": "Secure gateway for both clients and studio admins.",
+      "states": {
+        "loading": "Centered minimalist spinner.",
+        "empty": "N/A",
+        "error": "Inline text highlighting failed OTP/credentials."
+      },
+      "layout": "Cinematic split or full-bleed background image with a vertical gradient scrim (transparent to 80% surfaceInverse). Large serif greeting. Clean, single-column input fields with no floating labels."
+    },
+    {
+      "name": "Client Events List",
+      "purpose": "Shows galleries shared with the client.",
+      "states": {
+        "loading": "Skeleton UI of large quilted image cards.",
+        "empty": "Icon + 'No events found. Waiting for studio invite.' + Refresh CTA.",
+        "error": "Readable message + Retry button."
+      },
+      "layout": "Large, edge-to-edge or quilted cards. Each event acts as a hero image with a 3-stop vertical dark scrim (0% to 70% surface) and elegant serif titles placed in the bottom 30%."
+    },
+    {
+      "name": "Client Event Gallery & My Photos",
+      "purpose": "Displays ~1000 event photos with a sticky toggle between 'All Photos' and 'My Photos'.",
+      "states": {
+        "loading": "Masonry layout skeleton.",
+        "empty": "Empty state illustration + 'Scan your face to find your photos'.",
+        "error": "Readable message + Retry button."
+      },
+      "layout": "Masonry grid for photos to accommodate varied aspect ratios. Sticky segmented control at the top (frosted glass). A sticky primary CTA ('Find My Photos' / 'Scan Face') hovering at the bottom center, wrapped in glass. Clicking a photo opens a full-screen pinch-to-zoom modal."
+    },
+    {
+      "name": "Selfie Capture & Biometric Consent",
+      "purpose": "The core onboarding flow to locate the client in the gallery using AWS Rekognition.",
+      "states": {
+        "loading": "Analysis in progress with a subtle scanning animation.",
+        "empty": "N/A",
+        "error": "Quality check failure (e.g., 'Too dark', 'Please retake'). High contrast actionable text."
+      },
+      "layout": "Step 1: Minimalist consent screen with clear typography. Step 2: Full-screen camera view. Overlay must have >50% opacity mask around the face silhouette. Real-time feedback text must be high contrast. Use auto-capture when conditions (lighting, alignment) are met. Do not rely solely on colors for status."
+    },
+    {
+      "name": "Admin Dashboard",
+      "purpose": "Event management, photo uploading, indexing status, and access control.",
+      "states": {
+        "loading": "Skeleton UI for metric cards and event list.",
+        "empty": "Create your first event CTA.",
+        "error": "Readable message + Retry button."
+      },
+      "layout": "Utility-first but still premium. Stacked modules. A clean status pill (brandTertiary bg) for indexing status. List of events with options to manage client access, set similarity threshold (slider/input), and revoke biometric data."
+    }
+  ],
+  "images": {
+    "hero_background": {
+      "url": "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjAzMjh8MHwxfHNlYXJjaHwxfHxjaW5lbWF0aWMlMjBkYXJrJTIwcGhvdG9ncmFwaHklMjBzdHVkaW8lMjBjYW1lcmF8ZW58MHx8fHwxNzg2ODIzMDE5fDA&ixlib=rb-4.1.0&q=85",
+      "alt": "Flat lay of a Sony DSLR camera on a dark surface"
+    },
+    "event_cover": {
+      "url": "https://images.unsplash.com/photo-1623672655496-1537b4d84eb4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwxfHxlbGVnYW50JTIwd2VkZGluZyUyMGV2ZW50JTIwcGhvdG9ncmFwaHklMjBkYXJrfGVufDB8fHx8MTc4NjgyMzAxOXww&ixlib=rb-4.1.0&q=85",
+      "alt": "Elegant dark green leaves with white flowers"
+    },
+    "empty_gallery": {
+      "url": "https://images.unsplash.com/photo-1711288153255-0a65ab00f2df?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA2ODl8MHwxfHNlYXJjaHwxfHxlbXB0eSUyMGdhbGxlcnklMjBtaW5pbWFsaXN0JTIwZGFya3xlbnwwfHx8fDE3ODY4MjMwMTl8MA&ixlib=rb-4.1.0&q=85",
+      "alt": "Minimalist light shining in a dark empty room"
+    }
+  },
+  "haptics": {
+    "events": {
+      "primary_button_press": "impactLight",
+      "tab_change": "selection",
+      "selfie_capture_success": "notificationSuccess",
+      "selfie_capture_error": "notificationError",
+      "photo_zoom": "impactLight",
+      "segmented_control_switch": "selection"
+    }
+  },
+  "instructions_to_main_agent": [
+    "Strictly adhere to the Glass / Luxe (DARK) personality. Do not use any blues, indigos, purples, or generic Material defaults.",
+    "Use a masonry layout for the photo gallery screens to support varying photo dimensions without awkward cropping.",
+    "For the Selfie Capture screen, implement a strict sequence: Consent -> Camera View -> Actionable UI feedback (not just colors) -> Auto Capture. The camera overlay mask must be at least 50% opacity outside the silhouette.",
+    "Any text overlaid on an image (e.g., Event covers) MUST use a 3-stop vertical gradient scrim (transparent to >= 70% surfaceInverse or surface) to guarantee WCAG AA readability.",
+    "Keep typography weights at 400 (Geist) and 500 (Cormorant Garamond) maximum. Rely on size for hierarchy, never heavy weights.",
+    "Ensure 'My Photos' vs 'All Photos' toggle is sticky at the top using expo-blur frosted glass.",
+    "Include the defined haptics for premium, tactile feedback."
+  ]
+}
