@@ -429,6 +429,26 @@ backend:
             
             Backend is production-ready. 0 failures.
 
+  - task: "Photo listing pagination (admin + client all-photos) with limit/offset"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            GET /api/events/{id}/photos (admin) and GET /api/client/events/{id}/photos (client) now
+            accept ?limit=&offset= (limit clamped 1..200, default 60) and return a paginated envelope:
+            {items:[...], total, offset, limit, has_more}. Stable sort [uploaded_at desc, photo_id desc]
+            so pages don't overlap/skip even when many photos share a timestamp (bulk upload).
+            Client endpoint still requires full_gallery_access and annotates liked. Test with admin
+            admin@lumiere.studio / Admin@12345. Verify: envelope shape; page 1 (limit=5 offset=0) vs
+            page 2 (offset=5) return DIFFERENT photo_ids (no overlap); has_more true until the last page;
+            client endpoint returns same envelope + liked flags; client without full_gallery_access → 403.
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
@@ -436,7 +456,8 @@ metadata:
   run_ui: true
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Photo listing pagination (admin + client all-photos) with limit/offset"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -444,18 +465,15 @@ test_plan:
 agent_communication:
     - agent: "main"
       message: |
-        NEW backend feature for testing: Bulk upload + background face-indexing queue + RTBF cleanup.
-        Admin creds admin@lumiere.studio / Admin@12345. FACE_ENGINE=rekognition is LIVE — using small
-        test images WITHOUT faces is fine (they index with 0 faces). Focus on:
-        1) POST /api/events/{id}/photos/bulk with several image files returns immediately with
-           uploaded=count (does NOT block on indexing).
-        2) GET /api/events/{id}/indexing-status returns new fields (percent, complete, pending_photos,
-           failed_photos) and, when polled over ~5-10s, transitions to percent=100 / complete=true /
-           status="ready" as the background worker finishes.
-        3) Single POST /api/events/{id}/photos still works (store-fast).
-        4) RTBF DELETE /api/events/{id}/clients/{client_user_id}/face-data returns 200 with
-           faces_removed and does not error (non-existent client id → faces_removed=0).
-        5) Auth: bulk endpoint without token → 401; with client token → 403.
+        NEW backend change for testing: Photo listing PAGINATION. Admin creds
+        admin@lumiere.studio / Admin@12345. Test event evt_d5e957803d52 has ~15 photos.
+        1) GET /api/events/{id}/photos?limit=5&offset=0 returns {items(5), total, offset, limit,
+           has_more:true}. offset=5 returns 5 DIFFERENT photo_ids (no overlap). offset=10 returns
+           has_more:false. limit is clamped to max 200.
+        2) GET /api/client/events/{id}/photos?limit=&offset= returns the SAME envelope with liked
+           flags; requires full_gallery_access (else 403). Create a visitor via
+           POST /api/public/events/{id}/access to get a client token with full access.
+        3) Regression: verify pages don't overlap or skip (stable sort).
     - agent: "testing"
       message: |
         ✅ TESTING COMPLETE - Both tasks PASSED successfully.

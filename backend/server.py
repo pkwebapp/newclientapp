@@ -682,10 +682,17 @@ async def import_from_s3(event_id: str, body: S3ImportBody, admin: dict = Depend
 
 
 @api_router.get("/events/{event_id}/photos")
-async def admin_list_photos(event_id: str, admin: dict = Depends(require_admin)):
+async def admin_list_photos(event_id: str, admin: dict = Depends(require_admin),
+                            limit: int = 60, offset: int = 0):
     await admin_event_or_404(event_id, admin)
-    photos = await db.photos.find({"event_id": event_id}, {"_id": 0}).sort("uploaded_at", -1).to_list(5000)
-    return [public_photo(p) for p in photos]
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    total = await db.photos.count_documents({"event_id": event_id})
+    photos = await db.photos.find({"event_id": event_id}, {"_id": 0}) \
+        .sort([("uploaded_at", -1), ("photo_id", -1)]).skip(offset).limit(limit).to_list(limit)
+    items = [public_photo(p) for p in photos]
+    return {"items": items, "total": total, "offset": offset, "limit": limit,
+            "has_more": offset + len(items) < total}
 
 
 @api_router.get("/events/{event_id}/indexing-status")
@@ -1010,14 +1017,20 @@ async def client_event_detail(event_id: str, user: dict = Depends(require_client
 
 
 @api_router.get("/client/events/{event_id}/photos")
-async def client_all_photos(event_id: str, user: dict = Depends(require_client)):
+async def client_all_photos(event_id: str, user: dict = Depends(require_client),
+                            limit: int = 60, offset: int = 0):
     grant = await client_grant_or_403(event_id, user)
     if not grant.get("full_gallery_access", False):
         raise HTTPException(status_code=403, detail="Full gallery access not granted")
-    photos = await db.photos.find({"event_id": event_id}, {"_id": 0}).sort("uploaded_at", -1).to_list(5000)
-    result = [public_photo(p) for p in photos]
-    await _annotate_liked(event_id, user["user_id"], result)
-    return result
+    limit = max(1, min(limit, 200))
+    offset = max(0, offset)
+    total = await db.photos.count_documents({"event_id": event_id})
+    photos = await db.photos.find({"event_id": event_id}, {"_id": 0}) \
+        .sort([("uploaded_at", -1), ("photo_id", -1)]).skip(offset).limit(limit).to_list(limit)
+    items = [public_photo(p) for p in photos]
+    await _annotate_liked(event_id, user["user_id"], items)
+    return {"items": items, "total": total, "offset": offset, "limit": limit,
+            "has_more": offset + len(items) < total}
 
 
 @api_router.post("/client/events/{event_id}/consent")

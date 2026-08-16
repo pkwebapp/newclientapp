@@ -46,6 +46,10 @@ export default function PublicGallery() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [allOffset, setAllOffset] = useState(0);
+  const [allHasMore, setAllHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const PAGE = 60;
 
   // --- Data loading helpers ---
   const loadTab = useCallback(
@@ -53,8 +57,10 @@ export default function PublicGallery() {
       setLoadingPhotos(true);
       try {
         if (which === "all") {
-          const ps = await api.get(`/client/events/${id}/photos`);
-          setPhotos(ps);
+          const r = await api.get(`/client/events/${id}/photos?limit=${PAGE}&offset=0`);
+          setPhotos(r.items || []);
+          setAllOffset((r.items || []).length);
+          setAllHasMore(!!r.has_more);
         } else if (which === "liked") {
           const r = await api.get(`/client/events/${id}/liked`);
           setPhotos(r.photos || []);
@@ -79,6 +85,20 @@ export default function PublicGallery() {
     },
     [id, toast]
   );
+
+  const loadMoreAll = useCallback(async () => {
+    if (tab !== "all" || !allHasMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const r = await api.get(`/client/events/${id}/photos?limit=${PAGE}&offset=${allOffset}`);
+      setPhotos((prev) => [...prev, ...(r.items || [])]);
+      setAllOffset((o) => o + (r.items || []).length);
+      setAllHasMore(!!r.has_more);
+    } catch {
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [tab, allHasMore, loadingMore, allOffset, id]);
 
   const enterGallery = useCallback(
     async (token: string, eventData?: any, nm?: string) => {
@@ -337,6 +357,8 @@ export default function PublicGallery() {
           photos={photos}
           showScore={tab === "mine"}
           onToggleLike={toggleLike}
+          onEndReached={loadMoreAll}
+          loadingMore={loadingMore && tab === "all"}
           ListHeaderComponent={header}
         />
       )}

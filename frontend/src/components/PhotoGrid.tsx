@@ -1,5 +1,6 @@
-import React, { useMemo, useState } from "react";
+import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Dimensions,
   FlatList,
   Modal,
@@ -8,6 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
+import { FlashList } from "@shopify/flash-list";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
@@ -27,9 +29,9 @@ export type Photo = {
 };
 
 const GAP = spacing.sm;
-const CAPTION_H = 22;
 
-/** Responsive masonry grid (2 → 3 → 4 columns) with captions + like/download. */
+/** Virtualized masonry grid (2 → 3 → 4 columns) with captions + like/download
+ *  and built-in infinite scroll. Powered by @shopify/flash-list. */
 export function PhotoGrid({
   photos,
   showScore,
@@ -38,6 +40,8 @@ export function PhotoGrid({
   ListHeaderComponent,
   onToggleLike,
   onDownload,
+  onEndReached,
+  loadingMore,
 }: {
   photos: Photo[];
   showScore?: boolean;
@@ -46,105 +50,97 @@ export function PhotoGrid({
   ListHeaderComponent?: React.ReactElement;
   onToggleLike?: (photo: Photo) => void;
   onDownload?: (photo: Photo) => void;
+  onEndReached?: () => void;
+  loadingMore?: boolean;
 }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [containerW, setContainerW] = useState(Dimensions.get("window").width);
 
   const numCols = containerW >= 1000 ? 4 : containerW >= 640 ? 3 : 2;
-  const colW = (containerW - contentPadding * 2 - GAP * (numCols - 1)) / numCols;
-  const capH = showCaption ? CAPTION_H : 0;
-
-  const columns = useMemo(() => {
-    const cols: { photo: Photo; h: number; index: number }[][] = Array.from({ length: numCols }, () => []);
-    const heights = new Array(numCols).fill(0);
-    photos.forEach((p, index) => {
-      const ratio = p.width && p.height ? p.height / p.width : 1.25;
-      const h = Math.max(120, Math.min(colW * ratio, colW * 1.8));
-      let target = 0;
-      for (let i = 1; i < numCols; i++) if (heights[i] < heights[target]) target = i;
-      cols[target].push({ photo: p, h, index });
-      heights[target] += h + capH + GAP;
-    });
-    return cols;
-  }, [photos, colW, numCols, capH]);
+  const colW = Math.max(80, (containerW - contentPadding * 2) / numCols - GAP);
 
   const caption = (p: Photo, index: number) =>
     (p.filename && p.filename.trim()) || `#${index + 1}`;
 
-  const renderCol = (items: { photo: Photo; h: number; index: number }[], key: number) => (
-    <View key={key} style={{ width: colW }}>
-      {items.map(({ photo, h, index }) => (
-        <View key={photo.photo_id} style={{ marginBottom: GAP }}>
-          <Pressable
-            testID={`photo-${photo.photo_id}`}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-              setViewerIndex(index);
-            }}
-            style={[styles.card, { height: h }]}
-          >
-            <Image
-              source={{ uri: fileUrl(photo.thumb_path || photo.storage_path) }}
-              style={StyleSheet.absoluteFill}
-              contentFit="cover"
-              transition={200}
-              cachePolicy="memory-disk"
-            />
-            {showScore && photo.similarity != null && (
-              <View style={styles.scoreTag}>
-                <Pill label={`${Math.round(photo.similarity)}% match`} tone="gold" icon="sparkles" />
-              </View>
-            )}
-            {onToggleLike && (
-              <Pressable
-                testID={`like-${photo.photo_id}`}
-                onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-                  onToggleLike(photo);
-                }}
-                hitSlop={8}
-                style={styles.heartBtn}
-              >
-                <Ionicons
-                  name={photo.liked ? "heart" : "heart-outline"}
-                  size={18}
-                  color={photo.liked ? colors.brand : colors.onSurface}
-                />
-              </Pressable>
-            )}
-          </Pressable>
-          {showCaption && (
-            <Text style={styles.caption} numberOfLines={1}>
-              {caption(photo, index)}
-            </Text>
+  const renderItem = ({ item, index }: { item: Photo; index: number }) => {
+    const ratio = item.width && item.height ? item.height / item.width : 1.25;
+    const h = Math.max(120, Math.min(colW * ratio, colW * 1.8));
+    return (
+      <View style={{ paddingHorizontal: GAP / 2, marginBottom: GAP }}>
+        <Pressable
+          testID={`photo-${item.photo_id}`}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+            setViewerIndex(index);
+          }}
+          style={[styles.card, { height: h }]}
+        >
+          <Image
+            source={{ uri: fileUrl(item.thumb_path || item.storage_path) }}
+            style={StyleSheet.absoluteFill}
+            contentFit="cover"
+            transition={200}
+            cachePolicy="memory-disk"
+          />
+          {showScore && item.similarity != null && (
+            <View style={styles.scoreTag}>
+              <Pill label={`${Math.round(item.similarity)}% match`} tone="gold" icon="sparkles" />
+            </View>
           )}
-        </View>
-      ))}
-    </View>
-  );
+          {onToggleLike && (
+            <Pressable
+              testID={`like-${item.photo_id}`}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+                onToggleLike(item);
+              }}
+              hitSlop={8}
+              style={styles.heartBtn}
+            >
+              <Ionicons
+                name={item.liked ? "heart" : "heart-outline"}
+                size={18}
+                color={item.liked ? colors.brand : colors.onSurface}
+              />
+            </Pressable>
+          )}
+        </Pressable>
+        {showCaption && (
+          <Text style={styles.caption} numberOfLines={1}>
+            {caption(item, index)}
+          </Text>
+        )}
+      </View>
+    );
+  };
 
   return (
-    <>
-      <FlatList
-        data={[0]}
-        keyExtractor={() => "grid"}
-        style={{ flex: 1 }}
-        onLayout={(e) => {
-          const w = e.nativeEvent.layout.width;
-          if (w && Math.abs(w - containerW) > 1) setContainerW(w);
-        }}
+    <View
+      style={{ flex: 1 }}
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width;
+        if (w && Math.abs(w - containerW) > 1) setContainerW(w);
+      }}
+    >
+      <FlashList
+        data={photos}
+        masonry
+        optimizeItemArrangement
+        numColumns={numCols}
+        keyExtractor={(item) => item.photo_id}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={ListHeaderComponent}
-        renderItem={() => (
-          <View style={[styles.masonry, { paddingHorizontal: contentPadding }]}>
-            {columns.map((col, i) => (
-              <React.Fragment key={i}>
-                {i > 0 && <View style={{ width: GAP }} />}
-                {renderCol(col, i)}
-              </React.Fragment>
-            ))}
-          </View>
-        )}
+        contentContainerStyle={{ paddingHorizontal: contentPadding - GAP / 2, paddingBottom: spacing["3xl"] }}
+        renderItem={renderItem}
+        onEndReached={onEndReached}
+        onEndReachedThreshold={0.6}
+        ListFooterComponent={
+          loadingMore ? (
+            <View style={styles.footer}>
+              <ActivityIndicator color={colors.brand} />
+            </View>
+          ) : null
+        }
       />
       <FullscreenViewer
         photos={photos}
@@ -153,7 +149,7 @@ export function PhotoGrid({
         onToggleLike={onToggleLike}
         onDownload={onDownload}
       />
-    </>
+    </View>
   );
 }
 
@@ -241,6 +237,7 @@ function FullscreenViewer({
 
 const styles = StyleSheet.create({
   masonry: { flexDirection: "row", paddingTop: spacing.md, paddingBottom: spacing["3xl"] },
+  footer: { paddingVertical: spacing.xl, alignItems: "center" },
   card: {
     width: "100%",
     borderRadius: radius.md,

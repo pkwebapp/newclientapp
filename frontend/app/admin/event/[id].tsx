@@ -35,6 +35,10 @@ export default function AdminEvent() {
   const [tab, setTab] = useState<Tab>("photos");
   const [event, setEvent] = useState<any>(null);
   const [photos, setPhotos] = useState<any[]>([]);
+  const [photosTotal, setPhotosTotal] = useState(0);
+  const [photosHasMore, setPhotosHasMore] = useState(false);
+  const [loadingMorePhotos, setLoadingMorePhotos] = useState(false);
+  const PHOTO_PAGE = 60;
   const [status, setStatus] = useState<any>(null);
   const [grants, setGrants] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
@@ -64,14 +68,16 @@ export default function AdminEvent() {
       setEvent(e);
       setThreshold(String(Math.round(e.similarity_threshold)));
       const [ps, st, gr, cl, sh, vs] = await Promise.all([
-        api.get(`/events/${id}/photos`),
+        api.get(`/events/${id}/photos?limit=${PHOTO_PAGE}&offset=0`),
         api.get(`/events/${id}/indexing-status`),
         api.get(`/events/${id}/access`),
         api.get(`/events/${id}/clients`),
         api.get(`/events/${id}/share`),
         api.get(`/events/${id}/visitors`),
       ]);
-      setPhotos(ps);
+      setPhotos(ps.items || []);
+      setPhotosTotal(ps.total || 0);
+      setPhotosHasMore(!!ps.has_more);
       setStatus(st);
       setGrants(gr);
       setClients(cl);
@@ -99,8 +105,10 @@ export default function AdminEvent() {
         setStatus(st);
         if (st.complete) {
           setEvent((e: any) => (e ? { ...e, indexing_status: st.status } : e));
-          const ps = await api.get(`/events/${id}/photos`);
-          setPhotos(ps);
+          const ps = await api.get(`/events/${id}/photos?limit=${PHOTO_PAGE}&offset=0`);
+          setPhotos(ps.items || []);
+          setPhotosTotal(ps.total || 0);
+          setPhotosHasMore(!!ps.has_more);
         }
       } catch {}
     }, 2500);
@@ -133,9 +141,25 @@ export default function AdminEvent() {
       const st = await api.get(`/events/${id}/indexing-status`);
       setStatus(st);
       setEvent((e: any) => (e ? { ...e, indexing_status: st.status } : e));
-      const ps = await api.get(`/events/${id}/photos`);
-      setPhotos(ps);
+      const ps = await api.get(`/events/${id}/photos?limit=${PHOTO_PAGE}&offset=0`);
+      setPhotos(ps.items || []);
+      setPhotosTotal(ps.total || 0);
+      setPhotosHasMore(!!ps.has_more);
     } catch {}
+  };
+
+  const loadMorePhotos = async () => {
+    if (!photosHasMore || loadingMorePhotos) return;
+    setLoadingMorePhotos(true);
+    try {
+      const ps = await api.get(`/events/${id}/photos?limit=${PHOTO_PAGE}&offset=${photos.length}`);
+      setPhotos((prev) => [...prev, ...(ps.items || [])]);
+      setPhotosTotal(ps.total || 0);
+      setPhotosHasMore(!!ps.has_more);
+    } catch {
+    } finally {
+      setLoadingMorePhotos(false);
+    }
   };
 
   // Web: pick many files or an entire folder via a native file input.
@@ -183,7 +207,7 @@ export default function AdminEvent() {
     try {
       const r = await api.post(`/events/${id}/import-s3`, {});
       if (r.imported > 0) {
-        toast.show(`Imported ${r.imported} photos · ${r.faces_indexed} faces`, "success");
+        toast.show(`Imported ${r.imported} photos · indexing in background`, "success");
       } else {
         toast.show("No images found in the S3 bucket yet", "info");
       }
@@ -454,6 +478,17 @@ export default function AdminEvent() {
                   </View>
                 ))}
               </View>
+            )}
+            {photosHasMore && (
+              <Button
+                testID="load-more-photos-btn"
+                title={loadingMorePhotos ? "Loading…" : `Load more (${photos.length}/${photosTotal})`}
+                variant="secondary"
+                icon="chevron-down"
+                loading={loadingMorePhotos}
+                onPress={loadMorePhotos}
+                style={{ marginTop: spacing.lg }}
+              />
             )}
           </>
         )}

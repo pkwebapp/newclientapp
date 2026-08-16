@@ -23,6 +23,10 @@ export default function ClientEventDetail() {
   const [allPhotos, setAllPhotos] = useState<any[]>([]);
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [allOffset, setAllOffset] = useState(0);
+  const [allHasMore, setAllHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const PAGE = 60;
 
   const loadDetail = useCallback(async () => {
     try {
@@ -34,8 +38,10 @@ export default function ClientEventDetail() {
       const lk = await api.get(`/client/events/${id}/liked`);
       setLikedPhotos(lk.photos);
       if (d.full_gallery_access) {
-        const ap = await api.get(`/client/events/${id}/photos`);
-        setAllPhotos(ap);
+        const ap = await api.get(`/client/events/${id}/photos?limit=${PAGE}&offset=0`);
+        setAllPhotos(ap.items || []);
+        setAllOffset((ap.items || []).length);
+        setAllHasMore(!!ap.has_more);
       }
     } catch (e: any) {
       toast.show(e?.message || "Could not load gallery", "error");
@@ -43,6 +49,20 @@ export default function ClientEventDetail() {
       setLoading(false);
     }
   }, [id, toast]);
+
+  const loadMoreAll = useCallback(async () => {
+    if (tab !== "all" || !allHasMore || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const ap = await api.get(`/client/events/${id}/photos?limit=${PAGE}&offset=${allOffset}`);
+      setAllPhotos((prev) => [...prev, ...(ap.items || [])]);
+      setAllOffset((o) => o + (ap.items || []).length);
+      setAllHasMore(!!ap.has_more);
+    } catch {
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [tab, allHasMore, loadingMore, allOffset, id]);
 
   useFocusEffect(
     useCallback(() => {
@@ -154,6 +174,8 @@ export default function ClientEventDetail() {
           showScore={tab !== "all"}
           onToggleLike={toggleLike}
           onDownload={download}
+          onEndReached={loadMoreAll}
+          loadingMore={loadingMore && tab === "all"}
           ListHeaderComponent={header}
         />
       )}
