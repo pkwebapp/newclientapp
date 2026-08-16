@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { useResponsive } from "@/src/hooks/use-responsive";
 
 // ---------------- Button ----------------
 export function Button({
@@ -228,6 +229,35 @@ export function GlassHeader({
   subtitle?: string;
   topInset?: number;
 }) {
+  const { isDesktop } = useResponsive();
+
+  // Desktop: slim, left-aligned title bar (no blur / no full-bleed). The
+  // persistent sidebar provides primary navigation, so we only surface a back
+  // affordance when one is given plus any screen-specific right actions.
+  if (isDesktop) {
+    return (
+      <View style={styles.headerDesktop}>
+        {onBack ? (
+          <Pressable testID="header-back" onPress={onBack} style={styles.backDesktop} hitSlop={10}>
+            <Ionicons name="chevron-back" size={20} color={colors.onSurfaceTertiary} />
+            <Text style={styles.backDesktopText}>Back</Text>
+          </Pressable>
+        ) : null}
+        <View style={{ flex: 1 }}>
+          <Text numberOfLines={1} style={styles.headerTitleDesktop}>
+            {title}
+          </Text>
+          {subtitle ? (
+            <Text numberOfLines={1} style={styles.headerSub}>
+              {subtitle}
+            </Text>
+          ) : null}
+        </View>
+        {right ? <View style={{ marginLeft: spacing.md }}>{right}</View> : null}
+      </View>
+    );
+  }
+
   return (
     <BlurView intensity={40} tint="dark" style={[styles.header, { paddingTop: topInset + spacing.sm }]}>
       <View style={styles.headerRow}>
@@ -341,4 +371,15 @@ const styles = StyleSheet.create({
   iconBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
   headerTitle: { color: colors.onSurface, fontSize: fontSize.lg, fontFamily: fonts.display },
   headerSub: { color: colors.muted, fontSize: fontSize.sm, fontFamily: fonts.text, marginTop: 2 },
+  headerDesktop: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: spacing.xl,
+    paddingTop: spacing.xl,
+    paddingBottom: spacing.lg,
+    gap: spacing.lg,
+  },
+  headerTitleDesktop: { color: colors.onSurface, fontSize: fontSize["3xl"], fontFamily: fonts.display },
+  backDesktop: { flexDirection: "row", alignItems: "center", gap: 2 },
+  backDesktopText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
 });

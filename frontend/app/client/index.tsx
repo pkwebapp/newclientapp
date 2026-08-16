@@ -2,7 +2,6 @@ import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
-  Dimensions,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -50,8 +49,6 @@ export default function ClientEvents() {
     }, [load])
   );
 
-  const width = Dimensions.get("window").width - spacing.lg * 2;
-
   return (
     <View style={styles.container} testID="client-events-screen">
       <GlassHeader
@@ -94,7 +91,7 @@ export default function ClientEvents() {
                 key={e.event_id}
                 testID={`event-card-${e.event_id}`}
                 onPress={() => router.push(`/client/event/${e.event_id}`)}
-                style={[styles.card, { width }]}
+                style={styles.card}
               >
                 <Image
                   source={{ uri: fileUrl(e.cover_path) || FALLBACK }}
@@ -142,6 +139,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   card: {
+    width: "100%",
     height: 220,
     borderRadius: radius.lg,
     overflow: "hidden",

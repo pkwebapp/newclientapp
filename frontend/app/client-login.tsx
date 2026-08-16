@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ApiError } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
+import { useResponsive } from "@/src/hooks/use-responsive";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
 export default function ClientLogin() {
@@ -15,6 +16,7 @@ export default function ClientLogin() {
   const insets = useSafeAreaInsets();
   const { signInWithToken } = useAuth();
   const toast = useToast();
+  const { isDesktop } = useResponsive();
 
   const [channel, setChannel] = useState<"email" | "phone">("email");
   const [step, setStep] = useState<"identify" | "verify">("identify");
@@ -76,7 +78,7 @@ export default function ClientLogin() {
         topInset={insets.top}
       />
       <KeyboardAwareScrollView
-        contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + spacing["2xl"] }]}
+        contentContainerStyle={[styles.body, isDesktop && styles.bodyDesktop, { paddingBottom: insets.bottom + spacing["2xl"] }]}
         bottomOffset={24}
         keyboardShouldPersistTaps="handled"
       >
@@ -161,6 +163,7 @@ export default function ClientLogin() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   body: { paddingHorizontal: spacing.xl, paddingTop: spacing["2xl"] },
+  bodyDesktop: { maxWidth: 460, width: "100%", alignSelf: "center", paddingTop: spacing["3xl"] },
   iconWrap: {
     width: 60,
     height: 60,

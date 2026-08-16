@@ -39,30 +39,28 @@ export function PhotoGrid({
   ListHeaderComponent?: React.ReactElement;
 }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
-  const screenW = Dimensions.get("window").width;
-  const colW = (screenW - contentPadding * 2 - GAP) / 2;
+  const [containerW, setContainerW] = useState(Dimensions.get("window").width);
+
+  const numCols = containerW >= 1000 ? 4 : containerW >= 640 ? 3 : 2;
+  const colW = (containerW - contentPadding * 2 - GAP * (numCols - 1)) / numCols;
 
   const columns = useMemo(() => {
-    const left: { photo: Photo; h: number; index: number }[] = [];
-    const right: typeof left = [];
-    let lh = 0;
-    let rh = 0;
+    const cols: { photo: Photo; h: number; index: number }[][] = Array.from({ length: numCols }, () => []);
+    const heights = new Array(numCols).fill(0);
     photos.forEach((p, index) => {
       const ratio = p.width && p.height ? p.height / p.width : 1.25;
       const h = Math.max(120, Math.min(colW * ratio, colW * 1.8));
-      if (lh <= rh) {
-        left.push({ photo: p, h, index });
-        lh += h + GAP;
-      } else {
-        right.push({ photo: p, h, index });
-        rh += h + GAP;
-      }
+      // place in the currently shortest column
+      let target = 0;
+      for (let i = 1; i < numCols; i++) if (heights[i] < heights[target]) target = i;
+      cols[target].push({ photo: p, h, index });
+      heights[target] += h + GAP;
     });
-    return { left, right };
-  }, [photos, colW]);
+    return cols;
+  }, [photos, colW, numCols]);
 
-  const renderCol = (items: { photo: Photo; h: number; index: number }[]) => (
-    <View style={{ width: colW }}>
+  const renderCol = (items: { photo: Photo; h: number; index: number }[], key: number) => (
+    <View key={key} style={{ width: colW }}>
       {items.map(({ photo, h, index }) => (
         <Pressable
           key={photo.photo_id}
@@ -95,13 +93,21 @@ export function PhotoGrid({
       <FlatList
         data={[0]}
         keyExtractor={() => "grid"}
+        style={{ flex: 1 }}
+        onLayout={(e) => {
+          const w = e.nativeEvent.layout.width;
+          if (w && Math.abs(w - containerW) > 1) setContainerW(w);
+        }}
         showsVerticalScrollIndicator={false}
         ListHeaderComponent={ListHeaderComponent}
         renderItem={() => (
           <View style={[styles.masonry, { paddingHorizontal: contentPadding }]}>
-            {renderCol(columns.left)}
-            <View style={{ width: GAP }} />
-            {renderCol(columns.right)}
+            {columns.map((col, i) => (
+              <React.Fragment key={i}>
+                {i > 0 && <View style={{ width: GAP }} />}
+                {renderCol(col, i)}
+              </React.Fragment>
+            ))}
           </View>
         )}
       />

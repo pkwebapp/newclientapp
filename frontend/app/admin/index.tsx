@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { EmptyState, Pill, GlassHeader, useToast } from "@/src/components/ui";
+import { useResponsive } from "@/src/hooks/use-responsive";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
 export default function AdminDashboard() {
@@ -22,6 +23,7 @@ export default function AdminDashboard() {
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
   const toast = useToast();
+  const { isDesktop } = useResponsive();
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -81,28 +83,30 @@ export default function AdminDashboard() {
           {events.length === 0 ? (
             <EmptyState icon="add-circle-outline" title="Create your first event" subtitle="Set up a gallery, upload photos, and invite your clients." />
           ) : (
-            events.map((e) => (
-              <Pressable
-                key={e.event_id}
-                testID={`admin-event-${e.event_id}`}
-                onPress={() => router.push(`/admin/event/${e.event_id}`)}
-                style={styles.row}
-              >
-                <View style={styles.rowIcon}>
-                  <Ionicons name={(categoryMeta[e.category]?.icon as any) || "star"} size={20} color={colors.brand} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.rowTitle} numberOfLines={1}>{e.name}</Text>
-                  <Text style={styles.rowSub}>
-                    {categoryMeta[e.category]?.label} · {e.photo_count} photos · {e.similarity_threshold}% threshold
-                  </Text>
-                </View>
-                <View style={{ alignItems: "flex-end", gap: 6 }}>
-                  <Pill label={e.indexing_status} tone={statusTone(e.indexing_status) as any} />
-                  <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-                </View>
-              </Pressable>
-            ))
+            <View style={isDesktop ? styles.gridWrap : undefined}>
+              {events.map((e) => (
+                <Pressable
+                  key={e.event_id}
+                  testID={`admin-event-${e.event_id}`}
+                  onPress={() => router.push(`/admin/event/${e.event_id}`)}
+                  style={[styles.row, isDesktop && styles.rowDesktop]}
+                >
+                  <View style={styles.rowIcon}>
+                    <Ionicons name={(categoryMeta[e.category]?.icon as any) || "star"} size={20} color={colors.brand} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>{e.name}</Text>
+                    <Text style={styles.rowSub}>
+                      {categoryMeta[e.category]?.label} · {e.photo_count} photos · {e.similarity_threshold}% threshold
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end", gap: 6 }}>
+                    <Pill label={e.indexing_status} tone={statusTone(e.indexing_status) as any} />
+                    <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+                  </View>
+                </Pressable>
+              ))}
+            </View>
           )}
         </ScrollView>
       )}
@@ -129,6 +133,8 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   statsRow: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.lg },
+  gridWrap: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  rowDesktop: { width: "48.5%" },
   stat: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, alignItems: "flex-start" },
   statValue: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"], marginTop: spacing.sm },
   statLabel: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm },

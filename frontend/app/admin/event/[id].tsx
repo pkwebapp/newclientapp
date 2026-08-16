@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api, ApiError, fileUrl, getAuthToken } from "@/src/api/client";
 import { Button, TextField, Pill, GlassHeader, EmptyState, useToast } from "@/src/components/ui";
+import { useResponsive } from "@/src/hooks/use-responsive";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
 type Tab = "photos" | "access" | "settings";
@@ -26,6 +27,7 @@ export default function AdminEvent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  const { isDesktop } = useResponsive();
 
   const [tab, setTab] = useState<Tab>("photos");
   const [event, setEvent] = useState<any>(null);
@@ -246,7 +248,7 @@ export default function AdminEvent() {
             ) : (
               <View style={styles.thumbGrid}>
                 {photos.map((p) => (
-                  <View key={p.photo_id} style={styles.thumb} testID={`admin-photo-${p.photo_id}`}>
+                  <View key={p.photo_id} style={[styles.thumb, isDesktop && styles.thumbDesktop]} testID={`admin-photo-${p.photo_id}`}>
                     <Image source={{ uri: fileUrl(p.thumb_path) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} cachePolicy="memory-disk" />
                     {p.face_count > 0 && (
                       <View style={styles.faceBadge}>
@@ -412,6 +414,7 @@ const styles = StyleSheet.create({
   statusSub: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
   thumbGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.lg },
   thumb: { width: "31.8%", aspectRatio: 1, borderRadius: radius.sm, overflow: "hidden", backgroundColor: colors.surfaceSecondary },
+  thumbDesktop: { width: "23%" },
   faceBadge: { position: "absolute", bottom: 4, right: 4, flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: colors.brand, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.pill },
   faceBadgeText: { color: colors.onBrand, fontSize: 10, fontWeight: "700" },
   sectionTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, marginBottom: spacing.sm },

@@ -175,6 +175,37 @@ frontend:
             The home button provides a clear way for admins to return to the main landing page
             from the Studio Console.
 
+  - task: "Full desktop/web redesign — sidebar shell + responsive layouts (all screens)"
+    implemented: true
+    working: "NA"
+    file: "src/hooks/use-responsive.ts, src/components/DesktopShell.tsx, app/admin/_layout.tsx, app/client/_layout.tsx, src/components/ui.tsx, src/components/PhotoGrid.tsx, app/login.tsx, app/admin/index.tsx, app/admin/event/[id].tsx, app/client/index.tsx, app/admin-login.tsx, app/client-login.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Added a responsive desktop experience that activates only at width >= 900 (DESKTOP
+            breakpoint via useResponsive). On desktop the /admin and /client route groups render
+            inside <DesktopShell>: a persistent left sidebar (PIK CONNECT brand, role tag, nav
+            links with gold active state, Home, Sign out, user email) + a centered content column
+            capped at 768px. On mobile/native the plain Stack renders exactly as before (unchanged).
+            - GlassHeader is desktop-aware: slim left-aligned title (with a "Back" affordance when
+              onBack given) instead of the blur bar; on mobile it stays the original blur header.
+            - Landing (/login): two-column desktop hero (headline + CTAs left, capped width) — mobile
+              full-bleed hero unchanged.
+            - Admin dashboard: event list becomes a 2-column grid on desktop.
+            - Admin event detail: photo thumbnails 4 columns on desktop (3 on mobile).
+            - PhotoGrid (client gallery/my-photos): responsive masonry — 2 cols phone / 3 / 4 cols on
+              wide, measured from actual container width (was hard-coded 2 off window width).
+            - Client gallery cards now width:100% (were sized off full window width -> huge on web).
+            - admin-login / client-login: forms centered at maxWidth 460 on desktop.
+            VERIFY BOTH WIDTHS: desktop (>=1200px) sidebar + centered content + grids + nav links
+            (Dashboard/New Event/Home/Sign out) work and highlight active route; AND narrow width
+            (~390px) shows NO sidebar and the original mobile blur-header layout, everything still
+            works. Also confirm the refresh-auth fix and image loading still work on desktop.
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
@@ -182,7 +213,8 @@ metadata:
   run_ui: true
 
 test_plan:
-  current_focus: []
+  current_focus:
+    - "Full desktop/web redesign — sidebar shell + responsive layouts (all screens)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"

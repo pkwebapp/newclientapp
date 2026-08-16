@@ -2,6 +2,8 @@ import { Redirect, Stack } from "expo-router";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { useAuth } from "@/src/context/AuthContext";
+import { useResponsive } from "@/src/hooks/use-responsive";
+import { DesktopShell } from "@/src/components/DesktopShell";
 import { colors, fonts, fontSize } from "@/src/theme";
 
 /**
@@ -16,6 +18,7 @@ import { colors, fonts, fontSize } from "@/src/theme";
  */
 export default function AdminLayout() {
   const { user, loading } = useAuth();
+  const { isDesktop } = useResponsive();
 
   if (loading) {
     return (
@@ -29,7 +32,10 @@ export default function AdminLayout() {
   if (!user) return <Redirect href="/admin-login" />;
   if (user.role !== "admin") return <Redirect href="/" />;
 
-  return <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />;
+  const stack = <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />;
+
+  if (isDesktop) return <DesktopShell role="admin">{stack}</DesktopShell>;
+  return stack;
 }
 
 const styles = StyleSheet.create({

@@ -1,10 +1,11 @@
 import { useRouter } from "expo-router";
-import { StyleSheet, Text, View, Dimensions } from "react-native";
+import { StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { Button } from "@/src/components/ui";
+import { useResponsive } from "@/src/hooks/use-responsive";
 import { colors, fonts, fontSize, spacing } from "@/src/theme";
 
 const HERO =
@@ -13,7 +14,7 @@ const HERO =
 export default function Landing() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const h = Dimensions.get("window").height;
+  const { isDesktop } = useResponsive();
 
   return (
     <View style={styles.container} testID="landing-screen">
@@ -23,7 +24,7 @@ export default function Landing() {
         locations={[0, 0.5, 1]}
         style={StyleSheet.absoluteFill}
       />
-      <View style={[styles.content, { paddingTop: insets.top + spacing["3xl"], paddingBottom: insets.bottom + spacing.xl }]}>
+      <View style={[styles.content, isDesktop && styles.contentDesktop, { paddingTop: insets.top + spacing["3xl"], paddingBottom: insets.bottom + spacing.xl }]}>
         <View style={styles.top}>
           <View style={styles.logoRow}>
             <Ionicons name="aperture-outline" size={26} color={colors.brand} />
@@ -31,13 +32,13 @@ export default function Landing() {
           </View>
         </View>
 
-        <View style={{ flex: 1, justifyContent: "flex-end" }}>
-          <Text style={styles.title}>Your moments,{"\n"}found in an instant.</Text>
+        <View style={[{ flex: 1, justifyContent: "flex-end" }, isDesktop && styles.heroBlockDesktop]}>
+          <Text style={[styles.title, isDesktop && styles.titleDesktop]}>Your moments,{"\n"}found in an instant.</Text>
           <Text style={styles.subtitle}>
             Take a selfie and we'll surface every photo of you from the event gallery.
           </Text>
 
-          <View style={{ marginTop: spacing["2xl"], gap: spacing.md }}>
+          <View style={[{ marginTop: spacing["2xl"], gap: spacing.md }, isDesktop && { maxWidth: 380 }]}>
             <Button
               testID="continue-client-btn"
               title="Find my photos"
@@ -61,9 +62,12 @@ export default function Landing() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   content: { flex: 1, paddingHorizontal: spacing.xl },
+  contentDesktop: { maxWidth: 1200, width: "100%", alignSelf: "center", paddingHorizontal: spacing["3xl"] },
+  heroBlockDesktop: { justifyContent: "center", maxWidth: 560 },
   top: { alignItems: "flex-start" },
   logoRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   logo: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, letterSpacing: 4, fontWeight: "600" },
   title: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.hero, lineHeight: 46 },
+  titleDesktop: { fontSize: 60, lineHeight: 66 },
   subtitle: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.lg, marginTop: spacing.md, lineHeight: 24, maxWidth: 320 },
 });
