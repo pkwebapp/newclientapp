@@ -7,7 +7,7 @@ import json
 import sys
 
 # Configuration
-BASE_URL = "https://03f7ff85-5e1b-4783-9b1b-fc1b665a822c.preview.emergentagent.com/api"
+BASE_URL = "https://app-preview-live-10.preview.emergentagent.com/api"
 ADMIN_EMAIL = "admin@lumiere.studio"
 ADMIN_PASSWORD = "Admin@12345"
 CLIENT_EMAIL = "tester_like@example.com"
