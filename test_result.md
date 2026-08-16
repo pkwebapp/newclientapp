@@ -280,16 +280,87 @@ backend:
             applied across all photo listing endpoints. Authorization and permission checks are working
             as expected.
 
+  - task: "Public shareable galleries — link/QR access, visitor self-registration, admin visitor mgmt"
+    implemented: true
+    working: true
+    file: "backend/server.py, backend/config.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            New public-share feature. Events now have share_enabled (default True) + PATCH support.
+            New endpoints:
+            • GET /api/events/{id}/share (admin) — returns {share_url, share_enabled, qr_base64 (HD PNG data URI)}.
+            • GET /api/public/events/{id} (NO AUTH) — public event card info; 403 if share disabled, 404 if missing.
+            • POST /api/public/events/{id}/access (NO AUTH) — body {name, phone}. Instant access (no OTP):
+              creates/reuses a client user keyed by phone, upserts an active full_gallery_access grant,
+              upserts a gallery_visitors record, returns {session_token, user, event}. 403 if visitor
+              blocked or sharing disabled; 400 on missing name / invalid phone (<6 chars).
+            • GET /api/events/{id}/visitors (admin) — list visitors w/ matched_count + liked_count.
+            • PATCH /api/events/{id}/visitors/{vid} (admin) — {status: active|blocked}. Blocking revokes
+              the access grant + deletes the visitor's sessions (kick out). Unblock reactivates grant.
+            • GET /api/events/{id}/visitors/export (admin) — CSV download.
+            Visitor reuses the existing client stack (photos/likes/selfie search) via the returned token.
+            Verify with admin admin@lumiere.studio / Admin@12345. Test: create event, get /share (qr_base64
+            starts with data:image/png), public info, public access (name+mobile) returns token, token can
+            GET /api/client/events/{id}/photos, visitor appears in /visitors + CSV, block→403 on re-access
+            and photos 401/403, unblock→200, share_enabled=false→public endpoints 403.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL 26 TESTS PASSED - Public shareable galleries feature fully functional.
+            
+            Tested comprehensive lifecycle with fresh event (evt_15eb3323757e):
+            
+            PASSED TESTS:
+            1. ✅ POST /api/events (admin) - Event created with share_enabled=true by default
+            2. ✅ GET /api/events/{event_id}/share (admin) - Returns share_url ending with /g/{event_id}, 
+               share_enabled=true, qr_base64 starting with "data:image/png;base64," (12954 chars)
+            3. ✅ GET /api/public/events/{event_id} (NO AUTH) - Returns event name, category, photo_count (200)
+            4. ✅ POST /api/public/events/{event_id}/access (NO AUTH) - With name="Test Guest", phone="+91 90000 00001"
+               Returns session_token, user (role=client, name, phone), event (200)
+            5. ✅ Validation checks:
+               • Empty name → 400 "Please enter your name"
+               • Phone "123" (<6 chars) → 400 "Please enter a valid mobile number"
+            6. ✅ GET /api/client/events/{event_id}/photos (visitor token) - Authorized, returns 200 (0 photos OK)
+            7. ✅ GET /api/events/{event_id}/visitors (admin) - Visitor "Test Guest" appears with:
+               visitor_id=vis_f2bfc7121424, status=active, phone, matched_count=0, liked_count=0
+            8. ✅ GET /api/events/{event_id}/visitors/export (admin) - Returns CSV (Content-Type: text/csv)
+               with header row and visitor data row
+            9. ✅ PATCH /api/events/{event_id}/visitors/{visitor_id} (admin) {"status":"blocked"} → 200
+            10. ✅ POST /api/public/events/{event_id}/access (blocked phone) → 403 "Your access to this gallery has been blocked"
+            11. ✅ GET /api/client/events/{event_id}/photos (blocked visitor token) → 401 (grant revoked + sessions deleted)
+            12. ✅ PATCH visitors/{visitor_id} {"status":"active"} → 200 (unblocked)
+            13. ✅ POST /api/public/events/{event_id}/access (unblocked phone) → 200 with session_token
+            14. ✅ PATCH /api/events/{event_id} {"share_enabled": false} → 200 with share_enabled=false
+            15. ✅ GET /api/public/events/{event_id} (sharing disabled) → 403
+            16. ✅ POST /api/public/events/{event_id}/access (sharing disabled) → 403
+            17. ✅ PATCH /api/events/{event_id} {"share_enabled": true} → 200 (re-enabled)
+            18. ✅ Auth checks (all passed):
+                • GET /api/events/{event_id}/share (no token) → 401
+                • GET /api/events/{event_id}/visitors (no token) → 401
+                • GET /api/events/{event_id}/visitors/export (no token) → 401
+                • GET /api/events/{event_id}/share (client token) → 403
+                • GET /api/events/{event_id}/visitors (client token) → 403
+                • GET /api/events/{event_id}/visitors/export (client token) → 403
+            
+            All endpoints return correct status codes, proper response structures, and accurate data.
+            The visitor blocking/unblocking flow works perfectly with immediate session revocation.
+            The share_enabled toggle correctly gates public access. Authorization checks are working as expected.
+            
+            Backend is production-ready. 0 failures.
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 2
+  test_sequence: 3
   run_ui: true
 
 test_plan:
-  current_focus:
-    - "Photo likes + admin client photos endpoints"
-    - "Like + Download photos, Liked gallery tab, filename captions, admin client gallery"
+  current_focus: []
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -297,9 +368,13 @@ test_plan:
 agent_communication:
     - agent: "main"
       message: |
-        Please test the two frontend items above. Admin creds: admin@lumiere.studio / Admin@12345.
-        Existing event "Test" id evt_9a54b15846be has 6 indexed photos. Focus especially on the
-        REFRESH-on-event-detail scenario (the reported bug) — refresh several times to catch the race.
+        NEW FEATURE for backend testing: Public shareable galleries. Please test the endpoints
+        described in the "Public shareable galleries" task above. Admin creds:
+        admin@lumiere.studio / Admin@12345. Create a fresh event to test against (it will have
+        share_enabled=true by default). Focus on the full lifecycle: share info + HD QR base64,
+        public event info (no auth), public access with name+mobile returning a working client
+        token, visitor listing + CSV export, block (must 403 on re-access & revoke gallery
+        access) / unblock, and share_enabled toggle gating the public endpoints (403 when off).
     - agent: "testing"
       message: |
         ✅ TESTING COMPLETE - Both tasks PASSED successfully.
@@ -338,3 +413,28 @@ agent_communication:
         Test client: tester_like@example.com (user_f150d45d44b1)
         
         Backend is production-ready. All endpoints return correct status codes and data structures.
+    - agent: "testing"
+      message: |
+        ✅ BACKEND TESTING COMPLETE - Public shareable galleries feature fully functional.
+        
+        Tested comprehensive lifecycle with fresh event (evt_15eb3323757e):
+        • All 26 tests PASSED (0 failures)
+        • Event creation with share_enabled=true by default ✓
+        • Share info endpoint returns share_url, qr_base64 (HD PNG data URI), share_enabled ✓
+        • Public event info (no auth) returns event details ✓
+        • Public access (no auth) with name+phone returns session_token and creates visitor ✓
+        • Validation: empty name → 400, short phone → 400 ✓
+        • Visitor can access photos with session_token ✓
+        • Admin can list visitors with matched_count and liked_count ✓
+        • Admin can export visitors as CSV ✓
+        • Block visitor → 403 on re-access + 401 on photos (sessions deleted) ✓
+        • Unblock visitor → 200 on re-access ✓
+        • Disable sharing → 403 on public endpoints ✓
+        • Re-enable sharing → public endpoints work again ✓
+        • Auth checks: 401 without token, 403 with client token on admin endpoints ✓
+        
+        All endpoints return correct status codes, proper response structures, and accurate data.
+        The visitor blocking/unblocking flow works perfectly with immediate session revocation.
+        The share_enabled toggle correctly gates public access.
+        
+        Backend is production-ready. 0 failures.

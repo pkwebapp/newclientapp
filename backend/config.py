@@ -25,3 +25,10 @@ OTP_DEV_MODE = os.environ.get("OTP_DEV_MODE", "true").lower() == "true"
 
 ADMIN_SEED_EMAIL = os.environ.get("ADMIN_SEED_EMAIL", "admin@lumiere.studio")
 ADMIN_SEED_PASSWORD = os.environ.get("ADMIN_SEED_PASSWORD", "Admin@12345")
+
+# Public base URL used to build shareable gallery links / QR codes.
+PUBLIC_BASE_URL = (
+    os.environ.get("PUBLIC_BASE_URL")
+    or os.environ.get("APP_URL")
+    or ""
+).rstrip("/")

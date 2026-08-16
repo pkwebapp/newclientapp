@@ -1,12 +1,15 @@
 """Lumiere Gallery — client photo gallery with face-recognition search."""
 import io
 import os
+import csv
 import uuid
+import base64
 import random
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 
+import qrcode
 import httpx
 from fastapi import FastAPI, APIRouter, UploadFile, File, Form, Depends, HTTPException, Response
 from starlette.middleware.cors import CORSMiddleware
@@ -16,7 +19,7 @@ from PIL import Image, ImageOps
 
 from config import (
     db, client, APP_NAME, DEFAULT_SIMILARITY_THRESHOLD, OTP_DEV_MODE, SMS_PROVIDER,
-    ADMIN_SEED_EMAIL, ADMIN_SEED_PASSWORD,
+    ADMIN_SEED_EMAIL, ADMIN_SEED_PASSWORD, PUBLIC_BASE_URL,
 )
 from storage_service import get_storage
 from face_engine import get_face_engine, NotIndexedError
@@ -98,8 +101,18 @@ def public_event(event: dict) -> dict:
         "indexing_status": event.get("indexing_status", "empty"),
         "photo_count": event.get("photo_count", 0),
         "cover_path": event.get("cover_path"),
+        "share_enabled": event.get("share_enabled", True),
         "created_at": event.get("created_at"),
     }
+
+
+def share_url_for(event_id: str) -> str:
+    base = PUBLIC_BASE_URL or ""
+    return f"{base}/g/{event_id}"
+
+
+def normalize_phone(phone: str) -> str:
+    return (phone or "").strip()
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +339,7 @@ class EventUpdate(BaseModel):
     category: Optional[str] = None
     photographer: Optional[str] = None
     similarity_threshold: Optional[float] = None
+    share_enabled: Optional[bool] = None
 
 
 class AccessGrantCreate(BaseModel):
@@ -354,6 +368,7 @@ async def create_event(body: EventCreate, admin: dict = Depends(require_admin)):
         "indexing_status": "empty",
         "photo_count": 0,
         "cover_path": None,
+        "share_enabled": True,
         "created_by": admin["user_id"],
         "created_at": now_iso(),
     }
@@ -661,6 +676,117 @@ async def delete_client_face_data(event_id: str, client_user_id: str, admin: dic
     return {"status": "deleted"}
 
 
+# ---------------------------------------------------------------------------
+# Admin — shareable link, HD QR & self-service visitor management
+# ---------------------------------------------------------------------------
+def _gen_qr_png_b64(data: str, box_size: int = 20) -> str:
+    """Generate a high-resolution QR PNG (data URI) for the given link."""
+    qr = qrcode.QRCode(
+        version=None,
+        error_correction=qrcode.constants.ERROR_CORRECT_H,
+        box_size=box_size,
+        border=4,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+    img = qr.make_image(fill_color="#0D0D0D", back_color="white").convert("RGB")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+
+
+@api_router.get("/events/{event_id}/share")
+async def get_share_info(event_id: str, admin: dict = Depends(require_admin)):
+    event = await admin_event_or_404(event_id, admin)
+    url = share_url_for(event_id)
+    return {
+        "share_url": url,
+        "share_enabled": event.get("share_enabled", True),
+        "qr_base64": _gen_qr_png_b64(url),
+    }
+
+
+async def _visitor_out(v: dict) -> dict:
+    matched = await db.client_albums.find_one(
+        {"event_id": v["event_id"], "client_user_id": v.get("client_user_id")}, {"_id": 0}
+    )
+    liked = await db.photo_likes.count_documents(
+        {"event_id": v["event_id"], "client_user_id": v.get("client_user_id")}
+    )
+    return {
+        "visitor_id": v["visitor_id"],
+        "event_id": v["event_id"],
+        "name": v.get("name"),
+        "phone": v.get("phone"),
+        "status": v.get("status", "active"),
+        "matched_count": len(matched.get("photo_ids", [])) if matched else 0,
+        "liked_count": liked,
+        "created_at": v.get("created_at"),
+        "last_seen_at": v.get("last_seen_at"),
+    }
+
+
+@api_router.get("/events/{event_id}/visitors")
+async def list_visitors(event_id: str, admin: dict = Depends(require_admin)):
+    await admin_event_or_404(event_id, admin)
+    visitors = await db.gallery_visitors.find(
+        {"event_id": event_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(5000)
+    return [await _visitor_out(v) for v in visitors]
+
+
+class VisitorUpdate(BaseModel):
+    status: str  # "active" | "blocked"
+
+
+@api_router.patch("/events/{event_id}/visitors/{visitor_id}")
+async def update_visitor(event_id: str, visitor_id: str, body: VisitorUpdate,
+                         admin: dict = Depends(require_admin)):
+    await admin_event_or_404(event_id, admin)
+    if body.status not in ("active", "blocked"):
+        raise HTTPException(status_code=400, detail="status must be active or blocked")
+    visitor = await db.gallery_visitors.find_one({"event_id": event_id, "visitor_id": visitor_id})
+    if not visitor:
+        raise HTTPException(status_code=404, detail="Visitor not found")
+    await db.gallery_visitors.update_one(
+        {"event_id": event_id, "visitor_id": visitor_id}, {"$set": {"status": body.status}}
+    )
+    # Reflect on the underlying access grant so they lose/regain gallery access.
+    grant_status = "active" if body.status == "active" else "revoked"
+    if visitor.get("phone"):
+        await db.access_grants.update_one(
+            {"event_id": event_id, "client_phone": visitor["phone"]},
+            {"$set": {"status": grant_status}},
+        )
+    if body.status == "blocked" and visitor.get("client_user_id"):
+        # Kick out active sessions immediately.
+        await db.user_sessions.delete_many({"user_id": visitor["client_user_id"]})
+    return {"status": body.status}
+
+
+@api_router.get("/events/{event_id}/visitors/export")
+async def export_visitors(event_id: str, admin: dict = Depends(require_admin)):
+    await admin_event_or_404(event_id, admin)
+    visitors = await db.gallery_visitors.find(
+        {"event_id": event_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(10000)
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Name", "Mobile", "Status", "Matched photos", "Liked photos", "First access", "Last seen"])
+    for v in visitors:
+        row = await _visitor_out(v)
+        writer.writerow([
+            row["name"] or "", row["phone"] or "", row["status"],
+            row["matched_count"], row["liked_count"],
+            row["created_at"] or "", row["last_seen_at"] or "",
+        ])
+    return Response(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": f'attachment; filename="visitors_{event_id}.csv"'},
+    )
+
+
 def public_photo(p: dict) -> dict:
     return {
         "photo_id": p["photo_id"],
@@ -942,6 +1068,107 @@ async def admin_client_photos(event_id: str, client_user_id: str, admin: dict = 
         },
         "matched": matched,
         "liked": liked,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Public (no-auth) — self-service shareable gallery access by name + mobile
+# ---------------------------------------------------------------------------
+class PublicAccessBody(BaseModel):
+    name: str
+    phone: str
+
+
+@api_router.get("/public/events/{event_id}")
+async def public_event_info(event_id: str):
+    event = await db.events.find_one({"event_id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+    if not event.get("share_enabled", True):
+        raise HTTPException(status_code=403, detail="This gallery is not currently shared")
+    return {
+        "event_id": event["event_id"],
+        "name": event["name"],
+        "date": event.get("date"),
+        "category": event.get("category"),
+        "photographer": event.get("photographer"),
+        "photo_count": event.get("photo_count", 0),
+    }
+
+
+@api_router.post("/public/events/{event_id}/access")
+async def public_access(event_id: str, body: PublicAccessBody):
+    event = await db.events.find_one({"event_id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+    if not event.get("share_enabled", True):
+        raise HTTPException(status_code=403, detail="This gallery is not currently shared")
+
+    name = (body.name or "").strip()
+    phone = normalize_phone(body.phone)
+    if not name:
+        raise HTTPException(status_code=400, detail="Please enter your name")
+    if not phone or len(phone) < 6:
+        raise HTTPException(status_code=400, detail="Please enter a valid mobile number")
+
+    existing = await db.gallery_visitors.find_one({"event_id": event_id, "phone": phone})
+    if existing and existing.get("status") == "blocked":
+        raise HTTPException(status_code=403, detail="Your access to this gallery has been blocked")
+
+    # Find or create a lightweight client user keyed by phone.
+    user = await db.users.find_one({"phone": phone, "role": "client"})
+    if not user:
+        user = {
+            "user_id": new_user_id(),
+            "role": "client",
+            "name": name,
+            "email": None,
+            "phone": phone,
+            "password_hash": None,
+            "auth_provider": "public_share",
+            "created_at": now_iso(),
+        }
+        await db.users.insert_one(user)
+    elif name and user.get("name") != name:
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"name": name}})
+
+    # Ensure an active full-gallery access grant so the whole client stack works.
+    key = {"event_id": event_id, "client_phone": phone}
+    await db.access_grants.update_one(
+        key,
+        {"$set": {
+            **key,
+            "channel": "public",
+            "full_gallery_access": True,
+            "status": "active",
+            "granted_by": "public_share",
+        }, "$setOnInsert": {"grant_id": f"grant_{uuid.uuid4().hex[:12]}", "created_at": now_iso()}},
+        upsert=True,
+    )
+
+    # Upsert the visitor record for admin tracking.
+    if existing:
+        await db.gallery_visitors.update_one(
+            {"visitor_id": existing["visitor_id"]},
+            {"$set": {"name": name, "client_user_id": user["user_id"], "last_seen_at": now_iso()}},
+        )
+    else:
+        await db.gallery_visitors.insert_one({
+            "visitor_id": f"vis_{uuid.uuid4().hex[:12]}",
+            "event_id": event_id,
+            "name": name,
+            "phone": phone,
+            "client_user_id": user["user_id"],
+            "status": "active",
+            "created_at": now_iso(),
+            "last_seen_at": now_iso(),
+        })
+
+    token = await create_session(user["user_id"])
+    return {
+        "session_token": token,
+        "user": _public_user(user),
+        "event": public_event(event),
     }
 
 

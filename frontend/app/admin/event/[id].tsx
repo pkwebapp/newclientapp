@@ -3,8 +3,10 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   Text,
@@ -12,6 +14,7 @@ import {
 } from "react-native";
 import { Image } from "expo-image";
 import * as ImagePicker from "expo-image-picker";
+import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -20,7 +23,7 @@ import { Button, TextField, Pill, GlassHeader, EmptyState, useToast } from "@/sr
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
-type Tab = "photos" | "access" | "settings";
+type Tab = "photos" | "access" | "share" | "settings";
 
 export default function AdminEvent() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -48,21 +51,30 @@ export default function AdminEvent() {
   const [reindexing, setReindexing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<any>(null);
 
+  // share
+  const [share, setShare] = useState<any>(null);
+  const [visitors, setVisitors] = useState<any[]>([]);
+  const [savingShare, setSavingShare] = useState(false);
+
   const load = useCallback(async () => {
     try {
       const e = await api.get(`/events/${id}`);
       setEvent(e);
       setThreshold(String(Math.round(e.similarity_threshold)));
-      const [ps, st, gr, cl] = await Promise.all([
+      const [ps, st, gr, cl, sh, vs] = await Promise.all([
         api.get(`/events/${id}/photos`),
         api.get(`/events/${id}/indexing-status`),
         api.get(`/events/${id}/access`),
         api.get(`/events/${id}/clients`),
+        api.get(`/events/${id}/share`),
+        api.get(`/events/${id}/visitors`),
       ]);
       setPhotos(ps);
       setStatus(st);
       setGrants(gr);
       setClients(cl);
+      setShare(sh);
+      setVisitors(vs);
     } catch (e: any) {
       toast.show(e?.message || "Could not load event", "error");
     } finally {
@@ -204,6 +216,91 @@ export default function AdminEvent() {
     }
   };
 
+  // ---------- Share handlers ----------
+  const toggleShare = async (value: boolean) => {
+    setSavingShare(true);
+    setShare((s: any) => ({ ...s, share_enabled: value }));
+    try {
+      await api.patch(`/events/${id}`, { share_enabled: value });
+      const sh = await api.get(`/events/${id}/share`);
+      setShare(sh);
+      setEvent((e: any) => ({ ...e, share_enabled: value }));
+      toast.show(value ? "Sharing enabled" : "Sharing turned off", value ? "success" : "info");
+    } catch {
+      setShare((s: any) => ({ ...s, share_enabled: !value }));
+      toast.show("Could not update sharing", "error");
+    } finally {
+      setSavingShare(false);
+    }
+  };
+
+  const copyLink = async () => {
+    if (!share?.share_url) return;
+    await Clipboard.setStringAsync(share.share_url);
+    toast.show("Share link copied", "success");
+  };
+
+  const shareLink = async () => {
+    if (!share?.share_url) return;
+    if (Platform.OS === "web") return copyLink();
+    try {
+      await Share.share({ message: `View the "${event?.name}" gallery: ${share.share_url}` });
+    } catch {}
+  };
+
+  const downloadQR = async () => {
+    if (!share?.qr_base64) return;
+    const filename = `${(event?.name || "gallery").replace(/[^a-z0-9]+/gi, "-")}-QR.png`;
+    if (Platform.OS === "web") {
+      const a = window.document.createElement("a");
+      a.href = share.qr_base64;
+      a.download = filename;
+      window.document.body.appendChild(a);
+      a.click();
+      a.remove();
+      toast.show("HD QR downloaded", "success");
+    } else {
+      await copyLink();
+      toast.show("Link copied — screenshot the QR to save it", "info");
+    }
+  };
+
+  const toggleBlockVisitor = async (v: any) => {
+    const next = v.status === "active" ? "blocked" : "active";
+    try {
+      await api.patch(`/events/${id}/visitors/${v.visitor_id}`, { status: next });
+      setVisitors((prev) => prev.map((x) => (x.visitor_id === v.visitor_id ? { ...x, status: next } : x)));
+      toast.show(next === "blocked" ? "Visitor blocked" : "Visitor unblocked", next === "blocked" ? "info" : "success");
+    } catch {
+      toast.show("Could not update visitor", "error");
+    }
+  };
+
+  const exportCSV = async () => {
+    try {
+      const res = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/events/${id}/visitors/export`, {
+        headers: { Authorization: `Bearer ${getAuthToken()}` },
+      });
+      const text = await res.text();
+      if (Platform.OS === "web") {
+        const blob = new Blob([text], { type: "text/csv" });
+        const href = window.URL.createObjectURL(blob);
+        const a = window.document.createElement("a");
+        a.href = href;
+        a.download = `visitors_${id}.csv`;
+        window.document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => window.URL.revokeObjectURL(href), 1000);
+        toast.show("CSV exported", "success");
+      } else {
+        await Share.share({ message: text });
+      }
+    } catch {
+      toast.show("Could not export CSV", "error");
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.center} testID="admin-event-loading">
@@ -217,10 +314,10 @@ export default function AdminEvent() {
       <GlassHeader title={event?.name} subtitle={categoryMeta[event?.category]?.label} onBack={() => router.back()} topInset={insets.top} />
 
       <View style={styles.tabs}>
-        {(["photos", "access", "settings"] as Tab[]).map((t) => (
+        {(["photos", "access", "share", "settings"] as Tab[]).map((t) => (
           <Pressable key={t} testID={`admin-tab-${t}`} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]}>
             <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-              {t === "photos" ? "Photos" : t === "access" ? "Access" : "Settings"}
+              {t === "photos" ? "Photos" : t === "access" ? "Access" : t === "share" ? "Share" : "Settings"}
             </Text>
           </Pressable>
         ))}
@@ -355,6 +452,98 @@ export default function AdminEvent() {
           </>
         )}
 
+        {/* ---------------- SHARE ---------------- */}
+        {tab === "share" && (
+          <>
+            <View style={styles.switchRow}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.switchLabel}>Public sharing</Text>
+                <Text style={styles.switchHint}>Anyone with the link or QR can view this gallery</Text>
+              </View>
+              <Switch
+                testID="share-toggle"
+                value={!!share?.share_enabled}
+                onValueChange={toggleShare}
+                disabled={savingShare}
+                trackColor={{ true: colors.brand, false: colors.surfaceTertiary }}
+                thumbColor={colors.onSurface}
+              />
+            </View>
+
+            {share?.share_enabled ? (
+              <>
+                <Text style={styles.sectionTitle}>Shareable link</Text>
+                <View style={styles.linkBox} testID="share-link-box">
+                  <Ionicons name="link-outline" size={16} color={colors.brand} />
+                  <Text style={styles.linkText} numberOfLines={1}>{share?.share_url}</Text>
+                </View>
+                <View style={styles.linkActions}>
+                  <Button testID="copy-link-btn" title="Copy link" variant="secondary" icon="copy-outline" onPress={copyLink} style={{ flex: 1 }} />
+                  {Platform.OS !== "web" && (
+                    <Button testID="share-link-btn" title="Share" variant="secondary" icon="share-social-outline" onPress={shareLink} style={{ flex: 1 }} />
+                  )}
+                </View>
+
+                <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>QR code</Text>
+                <Text style={styles.muted}>Print it on cards or posters — guests scan to open the gallery.</Text>
+                <View style={styles.qrCard}>
+                  {share?.qr_base64 ? (
+                    <Image source={{ uri: share.qr_base64 }} style={styles.qrImg} contentFit="contain" testID="share-qr-image" />
+                  ) : (
+                    <ActivityIndicator color={colors.brand} />
+                  )}
+                </View>
+                <Button testID="download-qr-btn" title="Download HD QR" icon="download-outline" onPress={downloadQR} />
+              </>
+            ) : (
+              <EmptyState
+                icon="lock-closed-outline"
+                title="Sharing is off"
+                subtitle="Turn on public sharing to generate a link and QR code for this gallery."
+              />
+            )}
+
+            <View style={styles.visitorsHeader}>
+              <Text style={styles.sectionTitle}>Visitors ({visitors.length})</Text>
+              {visitors.length > 0 && (
+                <Pressable testID="export-csv-btn" onPress={exportCSV} style={styles.exportBtn} hitSlop={8}>
+                  <Ionicons name="download-outline" size={15} color={colors.brand} />
+                  <Text style={styles.exportText}>Export CSV</Text>
+                </Pressable>
+              )}
+            </View>
+            <Text style={styles.muted}>People who opened this gallery via the link or QR.</Text>
+            {visitors.length === 0 ? (
+              <Text style={styles.muted}>No visitors yet.</Text>
+            ) : (
+              visitors.map((v) => (
+                <View key={v.visitor_id} style={styles.grantRow} testID={`visitor-${v.visitor_id}`}>
+                  <Ionicons name="person-circle-outline" size={22} color={v.status === "active" ? colors.brand : colors.muted} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.grantValue} numberOfLines={1}>{v.name || "Guest"}</Text>
+                    <Text style={styles.muted}>{v.phone}</Text>
+                    <View style={{ flexDirection: "row", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                      <Pill label={v.status === "active" ? "Active" : "Blocked"} tone={v.status === "active" ? "success" : "neutral"} />
+                      {v.matched_count > 0 && <Pill label={`${v.matched_count} matched`} tone="gold" />}
+                      {v.liked_count > 0 && <Pill label={`${v.liked_count} liked`} tone="neutral" />}
+                    </View>
+                  </View>
+                  <Pressable
+                    testID={`block-visitor-${v.visitor_id}`}
+                    onPress={() => toggleBlockVisitor(v)}
+                    style={[styles.blockBtn, v.status === "blocked" && styles.unblockBtn]}
+                    hitSlop={6}
+                  >
+                    <Text style={[styles.blockText, v.status === "blocked" && styles.unblockText]}>
+                      {v.status === "active" ? "Block" : "Unblock"}
+                    </Text>
+                  </Pressable>
+                </View>
+              ))
+            )}
+          </>
+        )}
+
         {/* ---------------- SETTINGS ---------------- */}
         {tab === "settings" && (
           <>
@@ -455,6 +644,19 @@ const styles = StyleSheet.create({
   infoCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginTop: spacing.xl },
   infoRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: spacing.sm },
   infoValue: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base },
+  // share
+  linkBox: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingHorizontal: spacing.lg, height: 50, marginBottom: spacing.md },
+  linkText: { flex: 1, color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.base },
+  linkActions: { flexDirection: "row", gap: spacing.md },
+  qrCard: { backgroundColor: "#FFFFFF", borderRadius: radius.lg, padding: spacing.lg, alignItems: "center", justifyContent: "center", alignSelf: "center", marginTop: spacing.md, marginBottom: spacing.lg },
+  qrImg: { width: 240, height: 240 },
+  visitorsHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xl },
+  exportBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
+  exportText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
+  blockBtn: { paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.sm, backgroundColor: colors.error },
+  blockText: { color: colors.onError, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
+  unblockBtn: { backgroundColor: colors.surfaceTertiary },
+  unblockText: { color: colors.onSurfaceTertiary },
   modalBg: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center", padding: spacing.xl },
   modalCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.xl, width: "100%", alignItems: "center" },
   modalTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, marginTop: spacing.md, marginBottom: spacing.sm },

@@ -106,3 +106,29 @@ export const api = {
   del: (p: string) => request(p, { method: "DELETE" }),
   upload,
 };
+
+/** No-auth request for public shareable-gallery endpoints. */
+async function publicRequest(path: string, opts: any = {}) {
+  const headers: Record<string, string> = { ...(opts.headers || {}) };
+  let body = opts.body;
+  if (opts.json !== undefined) {
+    headers["Content-Type"] = "application/json";
+    body = JSON.stringify(opts.json);
+  }
+  const res = await fetch(BASE + path, { method: opts.method || "GET", headers, body });
+  const text = await res.text();
+  let data: any = text;
+  try {
+    data = JSON.parse(text);
+  } catch {}
+  if (!res.ok) {
+    const msg = (data && data.detail) || (typeof data === "string" ? data : "Something went wrong");
+    throw new ApiError(res.status, msg);
+  }
+  return data;
+}
+
+export const publicApi = {
+  get: (p: string) => publicRequest(p),
+  post: (p: string, json?: any) => publicRequest(p, { method: "POST", json }),
+};
