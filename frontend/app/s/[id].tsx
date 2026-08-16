@@ -7,37 +7,42 @@ import {
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   View,
 } from "react-native";
-import * as Clipboard from "expo-clipboard";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-import { api, publicApi, setAuthToken, ApiError } from "@/src/api/client";
+import { api, publicApi, setAuthToken, downloadPhoto, ApiError } from "@/src/api/client";
 import { storage } from "@/src/utils/storage";
 import { Button, TextField, EmptyState, useToast } from "@/src/components/ui";
 import { PhotoGrid, Photo } from "@/src/components/PhotoGrid";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
 type Phase = "loading" | "gate" | "gallery" | "notfound" | "disabled";
-type Tab = "all" | "liked" | "mine";
 
-const tokenKey = (id: string) => `pik_visitor_token_${id}`;
+const tokenKey = (id: string) => `pik_share_token_${id}`;
 
-export default function PublicGallery() {
-  const { id, tab: tabParam } = useLocalSearchParams<{ id: string; tab?: string }>();
+function scopeLabel(scope?: string, sharer?: string | null): string {
+  if (scope === "matched") return sharer ? `Photos of ${sharer}` : "Tagged photos";
+  if (scope === "liked") return sharer ? `${sharer}'s favourites` : "Liked photos";
+  return "All photos";
+}
+
+export default function SharedGallery() {
+  const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const toast = useToast();
 
   const [phase, setPhase] = useState<Phase>("loading");
   const [disabledMsg, setDisabledMsg] = useState<string>("");
-  const [event, setEvent] = useState<any>(null);
-  const [visitorName, setVisitorName] = useState<string>("");
+  const [meta, setMeta] = useState<any>(null);
+  const [scope, setScope] = useState<string>("all");
+  const [sharerName, setSharerName] = useState<string>("");
+  const [viewerName, setViewerName] = useState<string>("");
 
   // gate form
   const [name, setName] = useState("");
@@ -45,87 +50,42 @@ export default function PublicGallery() {
   const [submitting, setSubmitting] = useState(false);
 
   // gallery
-  const [tab, setTab] = useState<Tab>((tabParam as Tab) || "all");
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
-  const [searched, setSearched] = useState(false);
-  const [allOffset, setAllOffset] = useState(0);
-  const [allHasMore, setAllHasMore] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [sharing, setSharing] = useState(false);
-  const PAGE = 60;
 
-  // --- Data loading helpers ---
-  const loadTab = useCallback(
-    async (which: Tab) => {
-      setLoadingPhotos(true);
-      try {
-        if (which === "all") {
-          const r = await api.get(`/client/events/${id}/photos?limit=${PAGE}&offset=0`);
-          setPhotos(r.items || []);
-          setAllOffset((r.items || []).length);
-          setAllHasMore(!!r.has_more);
-        } else if (which === "liked") {
-          const r = await api.get(`/client/events/${id}/liked`);
-          setPhotos(r.photos || []);
-        } else {
-          const r = await api.get(`/client/events/${id}/my-photos`);
-          setPhotos(r.photos || []);
-          setSearched(!!r.searched);
-        }
-      } catch (e: any) {
-        if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-          // token invalid / blocked → back to gate
-          await storage.secureRemove(tokenKey(String(id)));
-          setAuthToken(null);
-          setPhase("gate");
-          if (e.status === 403) toast.show(e.message, "error");
-        } else {
-          toast.show("Could not load photos", "error");
-        }
-      } finally {
-        setLoadingPhotos(false);
-      }
-    },
-    [id, toast]
-  );
-
-  const loadMoreAll = useCallback(async () => {
-    if (tab !== "all" || !allHasMore || loadingMore) return;
-    setLoadingMore(true);
+  const loadPhotos = useCallback(async () => {
+    setLoadingPhotos(true);
     try {
-      const r = await api.get(`/client/events/${id}/photos?limit=${PAGE}&offset=${allOffset}`);
-      setPhotos((prev) => [...prev, ...(r.items || [])]);
-      setAllOffset((o) => o + (r.items || []).length);
-      setAllHasMore(!!r.has_more);
-    } catch {
+      const r = await api.get(`/public/shares/${id}/photos`);
+      setPhotos(r.photos || []);
+      setScope(r.scope);
+      setSharerName(r.sharer_name || "");
+    } catch (e: any) {
+      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
+        await storage.secureRemove(tokenKey(String(id)));
+        setAuthToken(null);
+        if (e.status === 403) setDisabledMsg(e.message);
+        setPhase(e.status === 403 ? "disabled" : "gate");
+      } else {
+        toast.show("Could not load photos", "error");
+      }
     } finally {
-      setLoadingMore(false);
+      setLoadingPhotos(false);
     }
-  }, [tab, allHasMore, loadingMore, allOffset, id]);
+  }, [id, toast]);
 
-  const enterGallery = useCallback(
-    async (token: string, eventData?: any, nm?: string) => {
-      setAuthToken(token);
-      await storage.secureSet(tokenKey(String(id)), token);
-      if (eventData) setEvent(eventData);
-      if (nm) setVisitorName(nm);
-      setPhase("gallery");
-    },
-    [id]
-  );
-
-  // --- Bootstrap ---
   const bootstrap = useCallback(async () => {
     try {
-      const info = await publicApi.get(`/public/events/${id}`);
-      setEvent(info);
+      const info = await publicApi.get(`/public/shares/${id}`);
+      setMeta(info.event);
+      setScope(info.scope);
+      setSharerName(info.sharer_name || "");
       const stored = await storage.secureGet<string>(tokenKey(String(id)), "");
       if (stored) {
         setAuthToken(stored);
         try {
-          const me = await api.get(`/auth/me`);
-          setVisitorName(me?.user?.name || "");
+          const r = await api.get(`/public/shares/${id}/photos`);
+          setPhotos(r.photos || []);
           setPhase("gallery");
           return;
         } catch {
@@ -146,18 +106,15 @@ export default function PublicGallery() {
     bootstrap();
   }, [bootstrap]);
 
-  // Reload the active tab whenever gallery is shown / refocused (e.g. after selfie).
   useFocusEffect(
     useCallback(() => {
       (async () => {
         if (phase === "gallery") {
-          // Re-apply token in case it was cleared by another screen.
           const stored = await storage.secureGet<string>(tokenKey(String(id)), "");
           if (stored) setAuthToken(stored);
-          loadTab(tab);
         }
       })();
-    }, [phase, tab, id, loadTab])
+    }, [phase, id])
   );
 
   const submitAccess = async () => {
@@ -166,11 +123,17 @@ export default function PublicGallery() {
     Keyboard.dismiss();
     setSubmitting(true);
     try {
-      const res = await publicApi.post(`/public/events/${id}/access`, {
+      const res = await publicApi.post(`/public/shares/${id}/access`, {
         name: name.trim(),
         phone: phone.trim(),
       });
-      await enterGallery(res.session_token, res.event, res.user?.name);
+      setAuthToken(res.session_token);
+      await storage.secureSet(tokenKey(String(id)), res.session_token);
+      setPhotos(res.photos || []);
+      setScope(res.scope);
+      setSharerName(res.sharer_name || "");
+      setViewerName(res.viewer?.name || "");
+      setPhase("gallery");
     } catch (e: any) {
       toast.show(e instanceof ApiError ? e.message : "Could not open gallery", "error");
     } finally {
@@ -178,20 +141,7 @@ export default function PublicGallery() {
     }
   };
 
-  const toggleLike = async (photo: Photo) => {
-    try {
-      const r = await api.post(`/client/events/${id}/photos/${photo.photo_id}/like`);
-      setPhotos((prev) =>
-        tab === "liked" && !r.liked
-          ? prev.filter((p) => p.photo_id !== photo.photo_id)
-          : prev.map((p) => (p.photo_id === photo.photo_id ? { ...p, liked: r.liked } : p))
-      );
-    } catch {
-      toast.show("Could not update like", "error");
-    }
-  };
-
-  const switchVisitor = async () => {
+  const exit = async () => {
     await storage.secureRemove(tokenKey(String(id)));
     setAuthToken(null);
     setName("");
@@ -200,30 +150,10 @@ export default function PublicGallery() {
     setPhase("gate");
   };
 
-  const shareCurrentTab = async () => {
-    const scopeMap: Record<Tab, string> = { all: "all", liked: "liked", mine: "matched" };
-    const labelMap: Record<Tab, string> = { all: "all photos", liked: "liked photos", mine: "my photos" };
-    setSharing(true);
-    try {
-      const r = await api.post(`/client/events/${id}/share`, { scope: scopeMap[tab] });
-      const url = r.share_url as string;
-      if (Platform.OS === "web") {
-        await Clipboard.setStringAsync(url);
-        toast.show("Share link copied to clipboard", "success");
-      } else {
-        await Share.share({ message: `View ${labelMap[tab]} from ${event?.name || "our gallery"}: ${url}`, url });
-      }
-    } catch (e: any) {
-      toast.show(e instanceof ApiError ? e.message : "Could not create share link", "error");
-    } finally {
-      setSharing(false);
-    }
-  };
-
   // ---------------- RENDER ----------------
   if (phase === "loading") {
     return (
-      <View style={styles.center} testID="public-loading">
+      <View style={styles.center} testID="share-loading">
         <Text style={styles.brand}>PIK CONNECT</Text>
         <ActivityIndicator color={colors.brand} style={{ marginTop: spacing.lg }} />
       </View>
@@ -232,12 +162,12 @@ export default function PublicGallery() {
 
   if (phase === "notfound" || phase === "disabled") {
     return (
-      <View style={styles.center} testID="public-unavailable">
+      <View style={styles.center} testID="share-unavailable">
         <View style={styles.unavailIcon}>
           <Ionicons name={phase === "disabled" ? "lock-closed-outline" : "image-outline"} size={30} color={colors.brand} />
         </View>
         <Text style={styles.unavailTitle}>
-          {phase === "disabled" ? "Gallery not available" : "Gallery not found"}
+          {phase === "disabled" ? "Gallery not available" : "Share link not found"}
         </Text>
         <Text style={styles.unavailSub}>
           {phase === "disabled"
@@ -253,7 +183,7 @@ export default function PublicGallery() {
       <KeyboardAvoidingView
         style={styles.container}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
-        testID="public-gate-screen"
+        testID="share-gate-screen"
       >
         <LinearGradient colors={["#141207", colors.surface]} style={StyleSheet.absoluteFill} />
         <ScrollView
@@ -267,20 +197,20 @@ export default function PublicGallery() {
 
           <View style={styles.gateCard}>
             <View style={styles.gateIcon}>
-              <Ionicons name={(categoryMeta[event?.category]?.icon as any) || "images"} size={26} color={colors.brand} />
+              <Ionicons name={(categoryMeta[meta?.category]?.icon as any) || "images"} size={26} color={colors.brand} />
             </View>
-            <Text style={styles.gateEyebrow}>You're invited to</Text>
-            <Text style={styles.gateTitle}>{event?.name}</Text>
+            <Text style={styles.gateEyebrow}>
+              {sharerName ? `${sharerName} shared` : "Shared with you"}
+            </Text>
+            <Text style={styles.gateTitle}>{scopeLabel(scope, sharerName)}</Text>
             <Text style={styles.gateMeta}>
-              {[categoryMeta[event?.category]?.label, event?.photographer, event?.photo_count ? `${event.photo_count} photos` : null]
-                .filter(Boolean)
-                .join("  ·  ")}
+              {[meta?.name, categoryMeta[meta?.category]?.label].filter(Boolean).join("  ·  ")}
             </Text>
 
             <View style={{ height: spacing.xl }} />
-            <Text style={styles.formHint}>Enter your details to view the gallery</Text>
+            <Text style={styles.formHint}>Enter your details to view these photos</Text>
             <TextField
-              testID="visitor-name-input"
+              testID="share-name-input"
               label="Your name"
               value={name}
               onChangeText={setName}
@@ -289,7 +219,7 @@ export default function PublicGallery() {
               returnKeyType="next"
             />
             <TextField
-              testID="visitor-phone-input"
+              testID="share-phone-input"
               label="Mobile number"
               value={phone}
               onChangeText={setPhone}
@@ -298,7 +228,7 @@ export default function PublicGallery() {
               returnKeyType="done"
               onSubmitEditing={submitAccess}
             />
-            <Button testID="visitor-enter-btn" title="View gallery" icon="arrow-forward" loading={submitting} onPress={submitAccess} />
+            <Button testID="share-enter-btn" title="View photos" icon="arrow-forward" loading={submitting} onPress={submitAccess} />
             <Text style={styles.privacy}>
               By continuing you agree the studio may contact you about these photos.
             </Text>
@@ -309,71 +239,32 @@ export default function PublicGallery() {
   }
 
   // ---------------- GALLERY ----------------
-  const emptyForTab =
-    tab === "liked"
-      ? { icon: "heart-outline", title: "No liked photos yet", subtitle: "Tap the heart on any photo to save it here." }
-      : tab === "mine"
-      ? {
-          icon: "person-outline",
-          title: searched ? "No matches found" : "Find your photos",
-          subtitle: searched
-            ? "We couldn't find you this time. Try a clearer selfie in good light."
-            : "Take a quick selfie and we'll surface every photo you're in.",
-        }
-      : { icon: "images-outline", title: "No photos yet", subtitle: "The photographer hasn't added photos to this gallery." };
-
   const header = (
     <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
-      <Text style={styles.galleryTitle} numberOfLines={1}>{event?.name}</Text>
-      <Text style={styles.gallerySub}>
-        {visitorName ? `Viewing as ${visitorName}` : "Public gallery"}
+      <Text style={styles.galleryTitle} numberOfLines={1}>{scopeLabel(scope, sharerName)}</Text>
+      <Text style={styles.gallerySub} numberOfLines={1}>
+        {[meta?.name, viewerName ? `Viewing as ${viewerName}` : null].filter(Boolean).join("  ·  ")}
       </Text>
-
-      <View style={styles.tabs}>
-        {(["all", "liked", "mine"] as Tab[]).map((t) => (
-          <Pressable key={t} testID={`public-tab-${t}`} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]}>
-            <Ionicons
-              name={t === "all" ? "grid-outline" : t === "liked" ? "heart-outline" : "person-outline"}
-              size={15}
-              color={tab === t ? colors.onBrand : colors.onSurfaceTertiary}
-            />
-            <Text style={[styles.tabText, tab === t && styles.tabTextActive]}>
-              {t === "all" ? "All photos" : t === "liked" ? "Liked" : "My photos"}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {tab === "mine" && (
-        <Button
-          testID="find-my-photos-btn"
-          title={searched ? "Re-scan my selfie" : "Find my photos"}
-          icon="sparkles"
-          onPress={() => router.push(`/g/selfie/${id}`)}
-          style={{ marginBottom: spacing.md }}
-        />
-      )}
-
-      <Button
-        testID="share-gallery-btn"
-        title={`Share ${tab === "all" ? "all photos" : tab === "liked" ? "liked photos" : "my photos"}`}
-        variant="secondary"
-        icon="share-social-outline"
-        loading={sharing}
-        onPress={shareCurrentTab}
-        style={{ marginBottom: spacing.md }}
-      />
+      <Pressable
+        testID="share-find-own-btn"
+        onPress={() => meta?.event_id && router.push(`/g/${meta.event_id}`)}
+        style={styles.findOwn}
+      >
+        <Ionicons name="sparkles" size={15} color={colors.brand} />
+        <Text style={styles.findOwnText}>Find your own photos in this gallery</Text>
+        <Ionicons name="chevron-forward" size={15} color={colors.brand} />
+      </Pressable>
     </View>
   );
 
   return (
-    <View style={styles.container} testID="public-gallery-screen">
+    <View style={styles.container} testID="share-gallery-screen">
       <View style={[styles.galleryTop, { paddingTop: insets.top + spacing.sm }]}>
         <View style={styles.logoRow}>
           <Ionicons name="aperture-outline" size={20} color={colors.brand} />
           <Text style={styles.logoSm}>PIK CONNECT</Text>
         </View>
-        <Pressable testID="switch-visitor-btn" onPress={switchVisitor} style={styles.exitBtn} hitSlop={8}>
+        <Pressable testID="share-exit-btn" onPress={exit} style={styles.exitBtn} hitSlop={8}>
           <Ionicons name="log-out-outline" size={16} color={colors.onSurfaceTertiary} />
           <Text style={styles.exitText}>Exit</Text>
         </Pressable>
@@ -386,15 +277,13 @@ export default function PublicGallery() {
       ) : photos.length === 0 ? (
         <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
           {header}
-          <EmptyState icon={emptyForTab.icon as any} title={emptyForTab.title} subtitle={emptyForTab.subtitle} />
+          <EmptyState icon="images-outline" title="No photos here" subtitle="This shared gallery doesn't have any photos yet." />
         </ScrollView>
       ) : (
         <PhotoGrid
           photos={photos}
-          showScore={tab === "mine"}
-          onToggleLike={toggleLike}
-          onEndReached={loadMoreAll}
-          loadingMore={loadingMore && tab === "all"}
+          showScore={false}
+          onDownload={(p) => downloadPhoto(p as any)}
           ListHeaderComponent={header}
         />
       )}
@@ -448,9 +337,10 @@ const styles = StyleSheet.create({
   exitText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.sm },
   galleryTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"] },
   gallerySub: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2, marginBottom: spacing.md },
-  tabs: { flexDirection: "row", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.xs, marginBottom: spacing.md },
-  tab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, paddingVertical: spacing.md, borderRadius: radius.sm },
-  tabActive: { backgroundColor: colors.brand },
-  tabText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.sm },
-  tabTextActive: { color: colors.onBrand, fontWeight: "600" },
+  findOwn: {
+    flexDirection: "row", alignItems: "center", gap: spacing.sm,
+    backgroundColor: colors.brandTertiary, borderRadius: radius.md,
+    paddingVertical: spacing.md, paddingHorizontal: spacing.lg, marginBottom: spacing.md,
+  },
+  findOwnText: { flex: 1, color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
 });

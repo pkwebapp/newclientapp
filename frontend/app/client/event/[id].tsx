@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, Pressable, Share, StyleSheet, Text, View } from "react-native";
 import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import * as Clipboard from "expo-clipboard";
 
-import { api, downloadPhoto } from "@/src/api/client";
+import { api, downloadPhoto, ApiError } from "@/src/api/client";
 import { PhotoGrid } from "@/src/components/PhotoGrid";
 import { EmptyState, GlassHeader, Button, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
@@ -114,6 +115,27 @@ export default function ClientEventDetail() {
     }
   };
 
+  const [sharing, setSharing] = useState(false);
+  const shareCurrentTab = async () => {
+    const scopeMap = { all: "all", liked: "liked", mine: "matched" } as const;
+    const labelMap = { all: "all photos", liked: "liked photos", mine: "my photos" } as const;
+    setSharing(true);
+    try {
+      const r = await api.post(`/client/events/${id}/share`, { scope: scopeMap[tab] });
+      const url = r.share_url as string;
+      if (Platform.OS === "web") {
+        await Clipboard.setStringAsync(url);
+        toast.show("Share link copied to clipboard", "success");
+      } else {
+        await Share.share({ message: `View ${labelMap[tab]} from ${detail?.name || "our gallery"}: ${url}`, url });
+      }
+    } catch (e: any) {
+      toast.show(e instanceof ApiError ? e.message : "Could not create share link", "error");
+    } finally {
+      setSharing(false);
+    }
+  };
+
   const TABS: { key: "mine" | "liked" | "all"; label: string }[] = [
     { key: "mine", label: `My Photos${myPhotos.length ? ` (${myPhotos.length})` : ""}` },
     { key: "liked", label: `Liked${likedPhotos.length ? ` (${likedPhotos.length})` : ""}` },
@@ -127,6 +149,15 @@ export default function ClientEventDetail() {
           <Segment key={t.key} label={t.label} active={tab === t.key} onPress={() => setTab(t.key)} testID={`tab-${t.key}`} />
         ))}
       </BlurView>
+      <Button
+        testID="share-gallery-btn"
+        title={`Share ${tab === "all" ? "All Photos" : tab === "liked" ? "Liked" : "My Photos"}`}
+        variant="secondary"
+        icon="share-social-outline"
+        loading={sharing}
+        onPress={shareCurrentTab}
+        style={{ marginTop: spacing.md }}
+      />
     </View>
   );
 

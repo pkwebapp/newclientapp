@@ -223,6 +223,99 @@ frontend:
             galleries via /admin/client-gallery (Matched/Liked tabs) from the event Access tab.
 
 backend:
+  - task: "Client-generated share links (share My Photos / Liked / All Photos) with name+mobile gate + visitor analytics"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            NEW share feature so a client/visitor can share a gallery subset via a public link.
+            • POST /api/client/events/{id}/share {scope: all|matched|liked} (client/visitor auth) ->
+              creates/reuses a gallery_shares doc, returns {share_id, scope, share_url = PUBLIC_BASE_URL/s/{share_id}}.
+              scope=all requires full_gallery_access; archived event -> 403 (via client_grant_or_403).
+            • GET /api/public/shares/{share_id} (NO AUTH) -> meta {scope, sharer_name, event{name,cover_url,...}}.
+              403 if event archived (archived msg) or share_enabled=false; 404 if missing.
+            • POST /api/public/shares/{share_id}/access {name, phone} (NO AUTH) -> name+mobile GATE. Registers
+              the viewer as a gallery_visitors record (ADMIN ANALYTICS) via shared _register_visitor(source="link_share"),
+              returns {session_token, viewer, scope, event, photos:[...], count}. Photos resolved by scope:
+              all=all event photos, matched=sharer's matched album, liked=sharer's liked photos. Blocked phone -> 403.
+            • GET /api/public/shares/{share_id}/photos (visitor token) -> re-fetch photos on refresh; 401 no token.
+            Refactored existing POST /api/public/events/{id}/access to reuse _register_visitor (regression check needed).
+            gallery_shares added to delete_event cleanup. Photos include direct Cloudinary url/thumb_url.
+            Admin creds admin@lumiere.studio / Admin@12345. Main smoke-tested via curl: create(all/liked), meta,
+            gate returns scoped photos + recipient appears in /events/{id}/visitors analytics, refresh, and
+            edge cases 400 (empty name) / 404 (bad share) / 401 (no token). Please run full regression + edges:
+            scope=matched/liked/all correctness, archived event -> 403 on all 3 public share endpoints,
+            blocked visitor -> 403 on access, and confirm existing public /events/{id}/access still works.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL 30 TESTS PASSED - Client-generated share links feature fully functional.
+            
+            Tested comprehensive end-to-end scenario with throwaway event (evt_f1e2476afb24):
+            
+            SETUP (Steps 1-5):
+            1. ✅ Admin login → 200 with session_token
+            2. ✅ Create event "QA Share" → 200 with event_id
+            3. ✅ Upload 3 photos → 200 each with photo_id, CDN URLs verified
+            4. ✅ Sharer registers as visitor → 200 with session_token, user, event (refactored endpoint working)
+            5. ✅ Sharer likes one photo → 200
+            
+            SHARE CREATION (Steps 6-9):
+            6. ✅ Create share scope="all" → 200 {share_id, scope:"all", share_url ends with /s/{share_id}}
+            7. ✅ Create share scope="liked" (twice) → 200, SAME share_id (reuse confirmed)
+            8. ✅ Create share scope="matched" → 200 with share_id
+            9. ✅ Create share scope="bogus" → 400 (invalid scope rejected)
+            
+            PUBLIC META (Steps 10-11):
+            10. ✅ GET /api/public/shares/{share_id} (no auth) → 200 with {scope:"liked", sharer_name:"Sharer Sam", 
+                event:{name, cover_url starting https://res.cloudinary.com/}}
+            11. ✅ GET /api/public/shares/shr_nonexistent → 404
+            
+            RECIPIENT GATE + ANALYTICS (Steps 12-15):
+            12. ✅ POST /api/public/shares/{share_liked}/access → 200 with session_token, scope:"liked", count:1, 
+                photos[0] has url + thumb_url (https://res.cloudinary.com/)
+            13. ✅ POST /api/public/shares/{share_all}/access → 200, scope:"all", count:3
+            14. ✅ GET /api/events/{id}/visitors (admin) → Both "Sharer Sam" and "Recipient Rita" appear (analytics working)
+            15. ✅ Empty name validation → 400
+            
+            REFRESH (Steps 16-17):
+            16. ✅ GET /api/public/shares/{share_id}/photos (with token) → 200 scope:"liked" count:1
+            17. ✅ GET /api/public/shares/{share_id}/photos (no token) → 401
+            
+            PERMISSION EDGE (Step 18):
+            18. ✅ Recipient with full access can create share → 200 (recipients get full access via public gate)
+            
+            ARCHIVED GATING (Steps 19-23):
+            19. ✅ POST /api/events/{id}/archive → 200 status="archived"
+            20. ✅ GET /api/public/shares/{share_all} (archived) → 403 with EXACT message: 
+                "This gallery has been archived. Please contact your photographer for access."
+            21. ✅ POST /api/public/shares/{share_all}/access (archived) → 403 with SAME archived message
+            22. ✅ POST /api/events/{id}/unarchive → 200 status="active"
+            23. ✅ GET /api/public/shares/{share_all} (active) → 200
+            
+            BLOCKED VISITOR (Steps 24-25):
+            24. ✅ PATCH /api/events/{id}/visitors/{vid} {"status":"blocked"} → 200
+            25. ✅ POST /api/public/shares/{share_all}/access (blocked phone) → 403 with blocked message 
+                "Your access to this gallery has been blocked"
+            
+            CLEANUP (Steps 26-27):
+            26. ✅ DELETE /api/events/{id} → 200 {status:"deleted", photos_removed:3, cloudinary_objects_deleted:6, 
+                faces_collection_deleted:true}
+            27. ✅ GET /api/public/shares/{share_all} (deleted event) → 404 (share gone with event)
+            
+            All endpoints return correct status codes, proper response structures, and accurate data.
+            The archived message string matches exactly. Share reuse works correctly. Visitor analytics 
+            includes both sharers and recipients. Blocked visitor gating works. Cloudinary CDN URLs are 
+            present and correct. Event deletion cleans up shares.
+            
+            Backend is production-ready. 0 failures.
+
   - task: "Archive / unarchive / delete gallery (hard-delete wipes Cloudinary + Rekognition + DB); archived galleries go offline for clients/public"
     implemented: true
     working: true
@@ -554,12 +647,14 @@ backend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 4
+  test_sequence: 5
   run_ui: true
 
 test_plan:
   current_focus:
     - "Photo listing pagination (admin + client all-photos) with limit/offset"
+    - "Full desktop/web redesign — sidebar shell + responsive layouts (all screens)"
+    - "Like + Download photos, Liked gallery tab, filename captions, admin client gallery"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -711,6 +806,57 @@ agent_communication:
         your photographer for access." Cloudinary objects (originals + thumbnails) are permanently 
         deleted. Rekognition collection is deleted. All DB records are cleaned up. Authorization and 
         permission checks are working as expected.
+        
+        Backend is production-ready. 0 failures.
+    - agent: "testing"
+      message: |
+        ✅ BACKEND TESTING COMPLETE - Client-generated share links feature fully functional.
+        
+        Tested comprehensive end-to-end scenario with throwaway event (evt_f1e2476afb24):
+        • All 30 tests PASSED (0 failures)
+        
+        SETUP: Admin login, create event, upload 3 photos, sharer registers, sharer likes photo ✓
+        
+        SHARE CREATION:
+        • Create share scope="all" → 200 with correct share_url format ✓
+        • Create share scope="liked" (twice) → 200, SAME share_id (reuse confirmed) ✓
+        • Create share scope="matched" → 200 ✓
+        • Invalid scope="bogus" → 400 ✓
+        
+        PUBLIC META:
+        • GET /api/public/shares/{share_id} (no auth) → 200 with scope, sharer_name, event (cover_url 
+          starts with https://res.cloudinary.com/) ✓
+        • GET nonexistent share → 404 ✓
+        
+        RECIPIENT GATE + ANALYTICS:
+        • POST /api/public/shares/{share_id}/access → 200 with session_token, scoped photos (liked:1, all:3), 
+          CDN URLs verified ✓
+        • Both sharer and recipient appear in admin visitor analytics ✓
+        • Empty name validation → 400 ✓
+        
+        REFRESH:
+        • GET /api/public/shares/{share_id}/photos (with token) → 200 ✓
+        • GET without token → 401 ✓
+        
+        PERMISSION EDGE:
+        • Recipients with full access can create shares → 200 ✓
+        
+        ARCHIVED GATING:
+        • Archive event → 200 ✓
+        • GET share meta (archived) → 403 with EXACT message ✓
+        • POST share access (archived) → 403 with SAME message ✓
+        • Unarchive → 200, share meta works again ✓
+        
+        BLOCKED VISITOR:
+        • Block visitor → 200 ✓
+        • Blocked visitor access → 403 with blocked message ✓
+        
+        CLEANUP:
+        • DELETE event → 200 (photos_removed:3, cloudinary_objects_deleted:6) ✓
+        • Share gone with event → 404 ✓
+        
+        All endpoints return correct status codes and data. Archived message matches exactly. 
+        Share reuse works. Visitor analytics includes sharers and recipients. Cloudinary CDN URLs correct.
         
         Backend is production-ready. 0 failures.
 

@@ -512,6 +512,7 @@ async def delete_event(event_id: str, admin: dict = Depends(require_admin)):
     await db.client_albums.delete_many({"event_id": event_id})
     await db.photo_likes.delete_many({"event_id": event_id})
     await db.gallery_visitors.delete_many({"event_id": event_id})
+    await db.gallery_shares.delete_many({"event_id": event_id})
     await db.access_grants.delete_many({"event_id": event_id})
     await db.consent_logs.delete_many({"event_id": event_id})
     await db.events.delete_one({"event_id": event_id})
@@ -1332,35 +1333,11 @@ class PublicAccessBody(BaseModel):
     phone: str
 
 
-@api_router.get("/public/events/{event_id}")
-async def public_event_info(event_id: str):
-    event = await db.events.find_one({"event_id": event_id}, {"_id": 0})
-    if not event:
-        raise HTTPException(status_code=404, detail="Gallery not found")
-    ensure_event_available(event)
-    if not event.get("share_enabled", True):
-        raise HTTPException(status_code=403, detail="This gallery is not currently shared")
-    return {
-        "event_id": event["event_id"],
-        "name": event["name"],
-        "date": event.get("date"),
-        "category": event.get("category"),
-        "photographer": event.get("photographer"),
-        "photo_count": event.get("photo_count", 0),
-    }
-
-
-@api_router.post("/public/events/{event_id}/access")
-async def public_access(event_id: str, body: PublicAccessBody):
-    event = await db.events.find_one({"event_id": event_id}, {"_id": 0})
-    if not event:
-        raise HTTPException(status_code=404, detail="Gallery not found")
-    ensure_event_available(event)
-    if not event.get("share_enabled", True):
-        raise HTTPException(status_code=403, detail="This gallery is not currently shared")
-
-    name = (body.name or "").strip()
-    phone = normalize_phone(body.phone)
+async def _register_visitor(event_id: str, name: str, phone: str, source: str = "public_share") -> tuple[dict, str]:
+    """Validate a name+mobile gate, upsert the client user + access grant +
+    gallery_visitors record (for admin analytics), and return (user, token)."""
+    name = (name or "").strip()
+    phone = normalize_phone(phone)
     if not name:
         raise HTTPException(status_code=400, detail="Please enter your name")
     if not phone or len(phone) < 6:
@@ -1396,12 +1373,12 @@ async def public_access(event_id: str, body: PublicAccessBody):
             "channel": "public",
             "full_gallery_access": True,
             "status": "active",
-            "granted_by": "public_share",
+            "granted_by": source,
         }, "$setOnInsert": {"grant_id": f"grant_{uuid.uuid4().hex[:12]}", "created_at": now_iso()}},
         upsert=True,
     )
 
-    # Upsert the visitor record for admin tracking.
+    # Upsert the visitor record for admin tracking (analytics).
     if existing:
         await db.gallery_visitors.update_one(
             {"visitor_id": existing["visitor_id"]},
@@ -1415,15 +1392,178 @@ async def public_access(event_id: str, body: PublicAccessBody):
             "phone": phone,
             "client_user_id": user["user_id"],
             "status": "active",
+            "source": source,
             "created_at": now_iso(),
             "last_seen_at": now_iso(),
         })
 
     token = await create_session(user["user_id"])
+    return user, token
+
+
+@api_router.get("/public/events/{event_id}")
+async def public_event_info(event_id: str):
+    event = await db.events.find_one({"event_id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+    ensure_event_available(event)
+    if not event.get("share_enabled", True):
+        raise HTTPException(status_code=403, detail="This gallery is not currently shared")
+    return {
+        "event_id": event["event_id"],
+        "name": event["name"],
+        "date": event.get("date"),
+        "category": event.get("category"),
+        "photographer": event.get("photographer"),
+        "photo_count": event.get("photo_count", 0),
+    }
+
+
+@api_router.post("/public/events/{event_id}/access")
+async def public_access(event_id: str, body: PublicAccessBody):
+    event = await db.events.find_one({"event_id": event_id}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+    ensure_event_available(event)
+    if not event.get("share_enabled", True):
+        raise HTTPException(status_code=403, detail="This gallery is not currently shared")
+
+    user, token = await _register_visitor(event_id, body.name, body.phone)
     return {
         "session_token": token,
         "user": _public_user(user),
         "event": public_event(event),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Client-generated share links (share My Photos / Liked / All Photos)
+# ---------------------------------------------------------------------------
+SHARE_SCOPES = {"all", "matched", "liked"}
+
+
+class ShareCreate(BaseModel):
+    scope: str  # all | matched | liked
+
+
+def _share_event_info(event: dict) -> dict:
+    return {
+        "event_id": event["event_id"],
+        "name": event["name"],
+        "category": event.get("category"),
+        "photographer": event.get("photographer"),
+        "date": event.get("date"),
+        "cover_url": _public_url(event.get("cover_path")),
+        "photo_count": event.get("photo_count", 0),
+    }
+
+
+async def _share_photos(share: dict) -> list[dict]:
+    """Resolve the photos a share exposes, based on its scope and the sharer."""
+    event_id = share["event_id"]
+    scope = share.get("scope")
+    if scope == "all":
+        docs = await db.photos.find({"event_id": event_id}, {"_id": 0}) \
+            .sort([("uploaded_at", -1), ("photo_id", -1)]).to_list(5000)
+        return [public_photo(p) for p in docs]
+    if scope == "matched":
+        album = await db.client_albums.find_one(
+            {"event_id": event_id, "client_user_id": share["client_user_id"]}, {"_id": 0}
+        )
+        ids = album.get("photo_ids", []) if album else []
+        scores = album.get("scores", {}) if album else {}
+        return await _photos_with_scores(ids, scores)
+    if scope == "liked":
+        likes = await db.photo_likes.find(
+            {"event_id": event_id, "client_user_id": share["client_user_id"]}, {"_id": 0}
+        ).sort("created_at", -1).to_list(20000)
+        return await _photos_with_scores([l["photo_id"] for l in likes], {})
+    return []
+
+
+async def _load_share_or_404(share_id: str) -> tuple[dict, dict]:
+    share = await db.gallery_shares.find_one({"share_id": share_id}, {"_id": 0})
+    if not share:
+        raise HTTPException(status_code=404, detail="Share link not found")
+    event = await db.events.find_one({"event_id": share["event_id"]}, {"_id": 0})
+    if not event:
+        raise HTTPException(status_code=404, detail="Gallery not found")
+    ensure_event_available(event)
+    if not event.get("share_enabled", True):
+        raise HTTPException(status_code=403, detail="This gallery is not currently shared")
+    return share, event
+
+
+@api_router.post("/client/events/{event_id}/share")
+async def create_client_share(event_id: str, body: ShareCreate, user: dict = Depends(require_client)):
+    """Create (or reuse) a public share link for one of the viewer's galleries."""
+    grant = await client_grant_or_403(event_id, user)  # verifies access + not archived
+    scope = (body.scope or "").strip().lower()
+    if scope not in SHARE_SCOPES:
+        raise HTTPException(status_code=400, detail="Invalid scope")
+    if scope == "all" and not grant.get("full_gallery_access", False):
+        raise HTTPException(status_code=403, detail="You don't have full gallery access to share")
+
+    existing = await db.gallery_shares.find_one(
+        {"event_id": event_id, "client_user_id": user["user_id"], "scope": scope}, {"_id": 0}
+    )
+    if existing:
+        share_id = existing["share_id"]
+    else:
+        share_id = f"shr_{uuid.uuid4().hex[:12]}"
+        await db.gallery_shares.insert_one({
+            "share_id": share_id,
+            "event_id": event_id,
+            "client_user_id": user["user_id"],
+            "scope": scope,
+            "sharer_name": user.get("name"),
+            "created_at": now_iso(),
+        })
+    return {"share_id": share_id, "scope": scope, "share_url": f"{PUBLIC_BASE_URL}/s/{share_id}"}
+
+
+@api_router.get("/public/shares/{share_id}")
+async def public_share_info(share_id: str):
+    """Meta for a share link — shown on the name+mobile gate (no auth)."""
+    share, event = await _load_share_or_404(share_id)
+    return {
+        "share_id": share_id,
+        "scope": share["scope"],
+        "sharer_name": share.get("sharer_name"),
+        "event": _share_event_info(event),
+    }
+
+
+@api_router.post("/public/shares/{share_id}/access")
+async def public_share_access(share_id: str, body: PublicAccessBody):
+    """Name+mobile gate for a share link. Registers the viewer as a gallery
+    visitor (admin analytics) and returns the shared photos + a session token."""
+    share, event = await _load_share_or_404(share_id)
+    user, token = await _register_visitor(share["event_id"], body.name, body.phone, source="link_share")
+    photos = await _share_photos(share)
+    return {
+        "session_token": token,
+        "viewer": _public_user(user),
+        "scope": share["scope"],
+        "sharer_name": share.get("sharer_name"),
+        "event": _share_event_info(event),
+        "photos": photos,
+        "count": len(photos),
+    }
+
+
+@api_router.get("/public/shares/{share_id}/photos")
+async def public_share_photos(share_id: str, user: dict = Depends(require_client)):
+    """Re-fetch a share's photos for an already-gated viewer (used on refresh)."""
+    share, event = await _load_share_or_404(share_id)
+    await client_grant_or_403(share["event_id"], user)  # must be a registered visitor
+    photos = await _share_photos(share)
+    return {
+        "scope": share["scope"],
+        "sharer_name": share.get("sharer_name"),
+        "event": _share_event_info(event),
+        "photos": photos,
+        "count": len(photos),
     }
 
 
