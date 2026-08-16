@@ -5,7 +5,10 @@ bucket/endpoint can be swapped (Emergent-managed today, an S3-compatible bucket
 later) by changing STORAGE_BACKEND in the environment and adding an impl below.
 """
 import os
+import io
 import logging
+import mimetypes
+
 import requests
 
 logger = logging.getLogger(__name__)
@@ -77,6 +80,49 @@ class EmergentObjectStorage(StorageBackend):
 _storage: StorageBackend | None = None
 
 
+class CloudinaryStorage(StorageBackend):
+    """Cloudinary-backed blob storage.
+
+    Treats Cloudinary as an opaque key/value blob store keyed by ``path`` so it
+    is a drop-in replacement for the Emergent object storage. Objects are stored
+    as ``resource_type="raw"`` (exact bytes preserved, no re-encoding) with the
+    storage ``path`` used verbatim as the ``public_id``. Delivery uses the
+    version-less public URL which always resolves to the latest upload.
+    """
+
+    def __init__(self, cloud_name: str, api_key: str, api_secret: str):
+        import cloudinary  # local import so the dep is only needed when used
+
+        self._cloud_name = cloud_name
+        cloudinary.config(
+            cloud_name=cloud_name,
+            api_key=api_key,
+            api_secret=api_secret,
+            secure=True,
+        )
+
+    def init(self) -> str:
+        return self._cloud_name
+
+    def put_object(self, path: str, data: bytes, content_type: str) -> dict:
+        import cloudinary.uploader
+
+        return cloudinary.uploader.upload(
+            io.BytesIO(data),
+            resource_type="raw",
+            public_id=path,
+            overwrite=True,
+            invalidate=True,
+        )
+
+    def get_object(self, path: str) -> tuple[bytes, str]:
+        url = f"https://res.cloudinary.com/{self._cloud_name}/raw/upload/{path}"
+        resp = requests.get(url, timeout=60)
+        resp.raise_for_status()
+        ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        return resp.content, ctype
+
+
 def get_storage() -> StorageBackend:
     global _storage
     if _storage is None:
@@ -84,6 +130,16 @@ def get_storage() -> StorageBackend:
 
         if STORAGE_BACKEND == "emergent":
             _storage = EmergentObjectStorage(EMERGENT_LLM_KEY)
+        elif STORAGE_BACKEND == "cloudinary":
+            cloud_name = os.environ.get("CLOUDINARY_CLOUD_NAME")
+            api_key = os.environ.get("CLOUDINARY_API_KEY")
+            api_secret = os.environ.get("CLOUDINARY_API_SECRET")
+            if not (cloud_name and api_key and api_secret):
+                raise RuntimeError(
+                    "CLOUDINARY_CLOUD_NAME / CLOUDINARY_API_KEY / CLOUDINARY_API_SECRET "
+                    "are required for the cloudinary storage backend"
+                )
+            _storage = CloudinaryStorage(cloud_name, api_key, api_secret)
         else:
             raise RuntimeError(f"Unsupported STORAGE_BACKEND: {STORAGE_BACKEND}")
     return _storage
