@@ -6,7 +6,7 @@ import pytest
 import requests
 from PIL import Image
 
-BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://app-preview-live-10.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://client-builds.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
 SEED_ADMIN_EMAIL = "admin@lumiere.studio"
