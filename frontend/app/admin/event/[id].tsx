@@ -55,6 +55,10 @@ export default function AdminEvent() {
   const [threshold, setThreshold] = useState("85");
   const [savingThreshold, setSavingThreshold] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [confirmDeleteEvent, setConfirmDeleteEvent] = useState(false);
+  const [deleteText, setDeleteText] = useState("");
+  const [deletingEvent, setDeletingEvent] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<any>(null);
 
   // share
@@ -302,6 +306,37 @@ export default function AdminEvent() {
       load();
     } catch {
       toast.show("Could not delete", "error");
+    }
+  };
+
+  // ---------- Gallery lifecycle (archive / delete) ----------
+  const toggleArchive = async () => {
+    const archived = event?.status === "archived";
+    setArchiving(true);
+    try {
+      await api.post(`/events/${id}/${archived ? "unarchive" : "archive"}`);
+      toast.show(
+        archived ? "Gallery restored — back online" : "Gallery archived — now offline",
+        archived ? "success" : "info"
+      );
+      load();
+    } catch (e: any) {
+      toast.show(e?.message || "Could not update gallery", "error");
+    } finally {
+      setArchiving(false);
+    }
+  };
+
+  const deleteEvent = async () => {
+    setDeletingEvent(true);
+    try {
+      const r = await api.del(`/events/${id}`);
+      setConfirmDeleteEvent(false);
+      toast.show(`Gallery deleted · ${r.photos_removed} photo${r.photos_removed !== 1 ? "s" : ""} removed`, "info");
+      router.replace("/admin");
+    } catch (e: any) {
+      toast.show(e?.message || "Could not delete gallery", "error");
+      setDeletingEvent(false);
     }
   };
 
@@ -702,9 +737,85 @@ export default function AdminEvent() {
               matches look off.
             </Text>
             <Button testID="reindex-btn" title="Re-index faces" variant="secondary" icon="refresh" loading={reindexing} onPress={reindex} />
+
+            <View style={styles.divider} />
+            <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Gallery status</Text>
+            <View style={styles.statusRow}>
+              <Text style={styles.muted}>Current</Text>
+              <Pill
+                label={event?.status === "archived" ? "Archived · offline" : "Active · online"}
+                tone={event?.status === "archived" ? "warning" : "success"}
+              />
+            </View>
+            <Text style={styles.muted}>
+              {event?.status === "archived"
+                ? "This gallery is offline. Clients and share links see a message to contact you. Restore it to bring it back online."
+                : "Archiving takes the gallery offline. Clients and share links will be asked to contact you for access. You can restore it anytime."}
+            </Text>
+            <Button
+              testID="archive-btn"
+              title={event?.status === "archived" ? "Restore gallery" : "Archive gallery"}
+              variant="secondary"
+              icon={event?.status === "archived" ? "cloud-upload-outline" : "archive-outline"}
+              loading={archiving}
+              onPress={toggleArchive}
+            />
+
+            <View style={styles.dangerZone}>
+              <Text style={styles.dangerTitle}>Danger zone</Text>
+              <Text style={styles.muted}>
+                Permanently delete this gallery and all its photos. Images are removed from cloud
+                storage and face data is erased. This cannot be undone.
+              </Text>
+              <Button
+                testID="delete-event-btn"
+                title="Delete gallery"
+                variant="danger"
+                icon="trash-outline"
+                onPress={() => {
+                  setDeleteText("");
+                  setConfirmDeleteEvent(true);
+                }}
+              />
+            </View>
           </>
         )}
       </ScrollView>
+
+      {/* delete gallery confirm (type-to-confirm) */}
+      <Modal visible={confirmDeleteEvent} transparent animationType="fade" onRequestClose={() => setConfirmDeleteEvent(false)}>
+        <Pressable style={styles.modalBg} onPress={() => !deletingEvent && setConfirmDeleteEvent(false)}>
+          <Pressable style={styles.modalCard} testID="delete-event-modal" onPress={() => {}}>
+            <Ionicons name="warning-outline" size={28} color={colors.onError} />
+            <Text style={styles.modalTitle}>Delete this gallery?</Text>
+            <Text style={styles.modalText}>
+              This permanently deletes {event?.photo_count ?? 0} photo{(event?.photo_count ?? 0) !== 1 ? "s" : ""} from cloud
+              storage, erases all face data, and removes every client's access. This cannot be undone.
+            </Text>
+            <Text style={[styles.muted, { alignSelf: "stretch", marginBottom: spacing.xs }]}>
+              Type DELETE to confirm
+            </Text>
+            <TextField
+              testID="delete-confirm-input"
+              value={deleteText}
+              onChangeText={setDeleteText}
+              autoCapitalize="characters"
+              placeholder="DELETE"
+            />
+            <Button
+              testID="confirm-delete-event-btn"
+              title="Delete permanently"
+              variant="danger"
+              disabled={deleteText.trim().toUpperCase() !== "DELETE"}
+              loading={deletingEvent}
+              onPress={deleteEvent}
+            />
+            <Pressable onPress={() => !deletingEvent && setConfirmDeleteEvent(false)} style={{ marginTop: spacing.md, alignItems: "center" }}>
+              <Text style={styles.muted}>Cancel</Text>
+            </Pressable>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       {/* delete confirm */}
       <Modal visible={!!confirmDelete} transparent animationType="fade" onRequestClose={() => setConfirmDelete(null)}>
@@ -796,4 +907,8 @@ const styles = StyleSheet.create({
   modalCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.xl, width: "100%", alignItems: "center" },
   modalTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, marginTop: spacing.md, marginBottom: spacing.sm },
   modalText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base, textAlign: "center", marginBottom: spacing.xl, lineHeight: 20 },
+  divider: { height: 1, backgroundColor: colors.surfaceTertiary, marginTop: spacing.xl },
+  statusRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
+  dangerZone: { marginTop: spacing["2xl"], borderWidth: 1, borderColor: colors.error, borderRadius: radius.md, padding: spacing.lg, gap: spacing.md },
+  dangerTitle: { color: colors.onError, fontFamily: fonts.display, fontSize: fontSize.lg },
 });

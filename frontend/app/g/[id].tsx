@@ -33,6 +33,7 @@ export default function PublicGallery() {
   const toast = useToast();
 
   const [phase, setPhase] = useState<Phase>("loading");
+  const [disabledMsg, setDisabledMsg] = useState<string>("");
   const [event, setEvent] = useState<any>(null);
   const [visitorName, setVisitorName] = useState<string>("");
 
@@ -131,8 +132,10 @@ export default function PublicGallery() {
       }
       setPhase("gate");
     } catch (e: any) {
-      if (e instanceof ApiError && e.status === 403) setPhase("disabled");
-      else setPhase("notfound");
+      if (e instanceof ApiError && e.status === 403) {
+        setDisabledMsg(e.message || "");
+        setPhase("disabled");
+      } else setPhase("notfound");
     }
   }, [id]);
 
@@ -215,7 +218,7 @@ export default function PublicGallery() {
         </Text>
         <Text style={styles.unavailSub}>
           {phase === "disabled"
-            ? "The photographer has turned off sharing for this gallery."
+            ? disabledMsg || "The photographer has turned off sharing for this gallery."
             : "This link may be incorrect or has expired."}
         </Text>
       </View>

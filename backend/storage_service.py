@@ -34,6 +34,11 @@ class StorageBackend:
         objects directly (callers then fall back to the /api/files proxy)."""
         return None
 
+    def delete_prefix(self, prefix: str) -> int:
+        """Delete every stored object under ``prefix``. Returns the count
+        removed. Backends that don't support deletion return 0."""
+        return 0
+
 
 class EmergentObjectStorage(StorageBackend):
     """Emergent-managed object storage (S3-compatible under the hood)."""
@@ -131,6 +136,30 @@ class CloudinaryStorage(StorageBackend):
         if not path:
             return None
         return f"https://res.cloudinary.com/{self._cloud_name}/raw/upload/{path}"
+
+    def delete_prefix(self, prefix: str) -> int:
+        """Delete all raw objects under ``prefix`` (originals + thumbnails)."""
+        import cloudinary.api
+
+        total = 0
+        for _ in range(200):  # safety cap; each call removes up to 1000
+            try:
+                resp = cloudinary.api.delete_resources_by_prefix(
+                    prefix, resource_type="raw", type="upload"
+                )
+            except Exception as e:
+                logger.error(f"Cloudinary delete_prefix failed for {prefix}: {e}")
+                break
+            deleted = resp.get("deleted", {}) or {}
+            total += sum(1 for v in deleted.values() if v == "deleted")
+            if not resp.get("partial"):
+                break
+        # Best-effort: remove the now-empty folder tree.
+        try:
+            cloudinary.api.delete_folder(prefix)
+        except Exception:
+            pass
+        return total
 
 
 def get_storage() -> StorageBackend:

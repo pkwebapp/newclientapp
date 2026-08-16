@@ -101,7 +101,11 @@ export default function AdminDashboard() {
                     </Text>
                   </View>
                   <View style={{ alignItems: "flex-end", gap: 6 }}>
-                    <Pill label={e.indexing_status} tone={statusTone(e.indexing_status) as any} />
+                    {e.status === "archived" ? (
+                      <Pill label="Archived" tone="warning" />
+                    ) : (
+                      <Pill label={e.indexing_status} tone={statusTone(e.indexing_status) as any} />
+                    )}
                     <Ionicons name="chevron-forward" size={18} color={colors.muted} />
                   </View>
                 </Pressable>

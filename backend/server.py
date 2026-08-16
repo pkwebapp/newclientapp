@@ -50,11 +50,23 @@ def gen_otp() -> str:
     return f"{random.randint(0, 999999):06d}"
 
 
+# Shown to clients/visitors when a gallery has been taken offline (archived).
+ARCHIVED_MESSAGE = (
+    "This gallery has been archived. Please contact your photographer for access."
+)
+
+
 async def get_event_or_404(event_id: str) -> dict:
     event = await db.events.find_one({"event_id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
     return event
+
+
+def ensure_event_available(event: dict) -> None:
+    """Block client/public access to archived (offline) galleries."""
+    if event.get("status") == "archived":
+        raise HTTPException(status_code=403, detail=ARCHIVED_MESSAGE)
 
 
 async def admin_event_or_404(event_id: str, admin: dict) -> dict:
@@ -66,6 +78,7 @@ async def admin_event_or_404(event_id: str, admin: dict) -> dict:
 
 async def client_grant_or_403(event_id: str, client_user: dict) -> dict:
     """Return the active access grant for this client on the event, else 403."""
+    ensure_event_available(await get_event_or_404(event_id))
     ors = []
     if client_user.get("email"):
         ors.append({"client_email": client_user["email"].lower()})
@@ -103,6 +116,7 @@ def public_event(event: dict) -> dict:
         "photo_count": event.get("photo_count", 0),
         "cover_path": event.get("cover_path"),
         "cover_url": _public_url(event.get("cover_path")),
+        "status": event.get("status", "active"),
         "share_enabled": event.get("share_enabled", True),
         "created_at": event.get("created_at"),
     }
@@ -445,6 +459,71 @@ async def reindex_event(event_id: str, admin: dict = Depends(require_admin)):
     await db.client_albums.delete_many({"event_id": event_id})
     await db.events.update_one({"event_id": event_id}, {"$set": {"indexing_status": "ready" if photos else "empty"}})
     return {"status": "reindexed", "photos": len(photos), "faces_indexed": total_faces}
+
+
+@api_router.post("/events/{event_id}/archive")
+async def archive_event(event_id: str, admin: dict = Depends(require_admin)):
+    """Take a gallery offline. Clients/public can no longer view it (they are
+    asked to contact the photographer) until it is restored."""
+    await admin_event_or_404(event_id, admin)
+    await db.events.update_one({"event_id": event_id}, {"$set": {"status": "archived"}})
+    event = await get_event_or_404(event_id)
+    return public_event(event)
+
+
+@api_router.post("/events/{event_id}/unarchive")
+async def unarchive_event(event_id: str, admin: dict = Depends(require_admin)):
+    """Bring an archived gallery back online."""
+    await admin_event_or_404(event_id, admin)
+    await db.events.update_one({"event_id": event_id}, {"$set": {"status": "active"}})
+    event = await get_event_or_404(event_id)
+    return public_event(event)
+
+
+@api_router.delete("/events/{event_id}")
+async def delete_event(event_id: str, admin: dict = Depends(require_admin)):
+    """Permanently delete a gallery and everything it owns: images + thumbnails
+    from Cloudinary (original source), the AWS Rekognition face collection, and
+    all related database records. This cannot be undone."""
+    event = await admin_event_or_404(event_id, admin)
+
+    # 1) Delete the face collection from Rekognition (original source).
+    faces_collection_deleted = False
+    cid = event.get("collection_id")
+    if cid:
+        try:
+            await run_in_threadpool(get_face_engine().delete_collection, cid)
+            faces_collection_deleted = True
+        except Exception as e:
+            logger.error(f"delete_event: rekognition delete_collection failed: {e}")
+
+    # 2) Delete all stored objects (originals + thumbnails) from storage.
+    cloudinary_deleted = 0
+    try:
+        prefix = f"{APP_NAME}/events/{event_id}"
+        cloudinary_deleted = await run_in_threadpool(get_storage().delete_prefix, prefix)
+    except Exception as e:
+        logger.error(f"delete_event: storage delete_prefix failed: {e}")
+
+    # 3) Delete all related database records.
+    photos_removed = await db.photos.count_documents({"event_id": event_id})
+    await db.photos.delete_many({"event_id": event_id})
+    await db.faces.delete_many({"event_id": event_id})
+    await db.client_albums.delete_many({"event_id": event_id})
+    await db.photo_likes.delete_many({"event_id": event_id})
+    await db.gallery_visitors.delete_many({"event_id": event_id})
+    await db.access_grants.delete_many({"event_id": event_id})
+    await db.consent_logs.delete_many({"event_id": event_id})
+    await db.events.delete_one({"event_id": event_id})
+
+    return {
+        "status": "deleted",
+        "event_id": event_id,
+        "photos_removed": photos_removed,
+        "cloudinary_objects_deleted": cloudinary_deleted,
+        "faces_collection_deleted": faces_collection_deleted,
+    }
+
 
 
 async def _ingest_photo(event: dict, data: bytes, filename: str, content_type: str) -> dict:
@@ -1001,6 +1080,8 @@ async def client_events(user: dict = Depends(require_client)):
         event = await db.events.find_one({"event_id": g["event_id"]}, {"_id": 0})
         if not event:
             continue
+        if event.get("status") == "archived":
+            continue  # archived galleries are offline for clients
         album = await db.client_albums.find_one(
             {"event_id": g["event_id"], "client_user_id": user["user_id"]}, {"_id": 0}
         )
@@ -1256,6 +1337,7 @@ async def public_event_info(event_id: str):
     event = await db.events.find_one({"event_id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(status_code=404, detail="Gallery not found")
+    ensure_event_available(event)
     if not event.get("share_enabled", True):
         raise HTTPException(status_code=403, detail="This gallery is not currently shared")
     return {
@@ -1273,6 +1355,7 @@ async def public_access(event_id: str, body: PublicAccessBody):
     event = await db.events.find_one({"event_id": event_id}, {"_id": 0})
     if not event:
         raise HTTPException(status_code=404, detail="Gallery not found")
+    ensure_event_available(event)
     if not event.get("share_enabled", True):
         raise HTTPException(status_code=403, detail="This gallery is not currently shared")
 
