@@ -9,7 +9,7 @@ from PIL import Image
 
 BASE_URL = os.environ.get(
     "EXPO_PUBLIC_BACKEND_URL",
-    "https://client-builds.preview.emergentagent.com",
+    "https://pkweb-client.preview.emergentagent.com",
 ).rstrip("/")
 API = f"{BASE_URL}/api"
 

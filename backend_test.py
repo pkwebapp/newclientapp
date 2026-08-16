@@ -11,7 +11,7 @@ import requests
 from pathlib import Path
 
 # Backend URL from environment
-BACKEND_URL = os.getenv("BACKEND_URL", "https://3c9dba23-7af3-4206-b248-56c35ce521c7.preview.emergentagent.com/api")
+BACKEND_URL = os.getenv("BACKEND_URL", "https://pkweb-client.preview.emergentagent.com/api")
 
 # Admin credentials
 ADMIN_EMAIL = "admin@lumiere.studio"
