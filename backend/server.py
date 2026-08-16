@@ -19,7 +19,7 @@ from config import (
     ADMIN_SEED_EMAIL, ADMIN_SEED_PASSWORD,
 )
 from storage_service import get_storage
-from face_engine import get_face_engine, check_selfie_quality
+from face_engine import get_face_engine, NotIndexedError
 from email_service import send_otp_email
 from auth_utils import (
     hash_password, verify_password, new_user_id, create_session,
@@ -389,6 +389,47 @@ async def update_event(event_id: str, body: EventUpdate, admin: dict = Depends(r
     return public_event(event)
 
 
+@api_router.post("/events/{event_id}/reindex")
+async def reindex_event(event_id: str, admin: dict = Depends(require_admin)):
+    """Rebuild the face collection for an event and re-index all its photos.
+    Needed after switching the face engine (e.g. mock -> AWS Rekognition)."""
+    event = await admin_event_or_404(event_id, admin)
+    engine = get_face_engine()
+    storage = get_storage()
+    cid = event["collection_id"]
+
+    # Fresh collection.
+    await run_in_threadpool(engine.delete_collection, cid)
+    await run_in_threadpool(engine.ensure_collection, cid)
+
+    photos = await db.photos.find({"event_id": event_id}, {"_id": 0}).to_list(5000)
+    await db.faces.delete_many({"event_id": event_id})
+
+    total_faces = 0
+    for p in photos:
+        try:
+            content, _ = await run_in_threadpool(storage.get_object, p["storage_path"])
+            faces = await run_in_threadpool(engine.index_photo, cid, p["photo_id"], content)
+        except Exception as e:
+            logger.error(f"reindex photo {p['photo_id']} failed: {e}")
+            faces = []
+        if faces:
+            await db.faces.insert_many([{
+                "face_id": f["face_id"],
+                "event_id": event_id,
+                "photo_id": p["photo_id"],
+                "bounding_box": f.get("bounding_box"),
+                "indexed_at": now_iso(),
+            } for f in faces])
+        await db.photos.update_one({"photo_id": p["photo_id"]}, {"$set": {"face_count": len(faces), "indexing_status": "indexed"}})
+        total_faces += len(faces)
+
+    # Stale matched albums must be re-computed by clients.
+    await db.client_albums.delete_many({"event_id": event_id})
+    await db.events.update_one({"event_id": event_id}, {"$set": {"indexing_status": "ready" if photos else "empty"}})
+    return {"status": "reindexed", "photos": len(photos), "faces_indexed": total_faces}
+
+
 @api_router.post("/events/{event_id}/photos")
 async def upload_photo(event_id: str, file: UploadFile = File(...), admin: dict = Depends(require_admin)):
     event = await admin_event_or_404(event_id, admin)
@@ -662,19 +703,23 @@ async def selfie_search(event_id: str, file: UploadFile = File(...), user: dict 
     if not data:
         raise HTTPException(status_code=400, detail="Empty selfie")
 
+    engine = get_face_engine()
+
     # 1) Quality gate (raw selfie never stored).
-    quality = await run_in_threadpool(check_selfie_quality, data)
+    quality = await run_in_threadpool(engine.check_quality, data)
     if not quality.ok:
         return {"status": "retake", "reason": quality.reason}
 
     # 2) Search collection.
     threshold = float(event.get("similarity_threshold", DEFAULT_SIMILARITY_THRESHOLD))
     faces = await db.faces.find({"event_id": event_id}, {"_id": 0}).to_list(200000)
-    engine = get_face_engine()
     seed = f"{user['user_id']}:{event_id}"
-    matches = await run_in_threadpool(
-        engine.search, event["collection_id"], data, threshold, faces, seed
-    )
+    try:
+        matches = await run_in_threadpool(
+            engine.search, event["collection_id"], data, threshold, faces, seed
+        )
+    except NotIndexedError as e:
+        raise HTTPException(status_code=409, detail=str(e))
 
     # 3) Dedupe by photo (multi-face photo appears once, keep best similarity).
     best: dict[str, float] = {}

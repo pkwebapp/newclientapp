@@ -53,10 +53,14 @@ My Photos album. Raw selfie never stored (only match references).
 - Admin: admin@lumiere.studio / Admin@12345 (see /app/memory/test_credentials.md)
 
 ## Backlog / Remaining
-- P0: Swap MockFaceEngine → RekognitionFaceEngine when AWS keys provided (create collection,
-  index_faces, search_faces_by_image, quality via Rekognition attributes incl. pose >45° &
-  face-out-of-frame). FACE_ENGINE=rekognition.
+- [x] DONE (2026-06): Real AWS Rekognition engine live (FACE_ENGINE=rekognition, us-east-1).
+      create/delete collection, IndexFaces (ExternalImageId=photo_id), SearchFacesByImage with
+      configurable threshold, DetectFaces quality gate (no-face/multi-face/low-confidence/yaw>45°/
+      pitch/out-of-frame/dark/blur), DeleteFaces. Verified: self-match 100%, cross-person no-match,
+      quality rejections. Admin "Re-index faces" endpoint POST /events/{id}/reindex for migration.
 - P1: SMS provider (e.g. Twilio) for real phone OTP delivery; set OTP_DEV_MODE=false in prod.
 - P1: Bulk/zip photo upload for ~1000-photo events; background indexing queue + progress.
-- P2: Download/share My Photos; pinch-to-zoom in fullscreen viewer; watermarking; expiring
-  share links; per-event storage cleanup on deletion.
+- P1: Also call DeleteFaces on Rekognition when admin deletes a client's face data (currently
+      deletes the matched album + consent; the client's indexed event faces remain — acceptable
+      since faces belong to event photos, not the selfie which is never stored).
+- P2: Download/share My Photos; pinch-to-zoom viewer; watermarking; expiring share links.

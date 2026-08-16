@@ -42,6 +42,7 @@ export default function AdminEvent() {
   const [fullAccess, setFullAccess] = useState(false);
   const [threshold, setThreshold] = useState("85");
   const [savingThreshold, setSavingThreshold] = useState(false);
+  const [reindexing, setReindexing] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<any>(null);
 
   const load = useCallback(async () => {
@@ -156,6 +157,19 @@ export default function AdminEvent() {
       toast.show(e?.message || "Could not save", "error");
     } finally {
       setSavingThreshold(false);
+    }
+  };
+
+  const reindex = async () => {
+    setReindexing(true);
+    try {
+      const r = await api.post(`/events/${id}/reindex`);
+      toast.show(`Re-indexed ${r.photos} photos · ${r.faces_indexed} faces`, "success");
+      load();
+    } catch (e: any) {
+      toast.show(e?.message || "Re-index failed", "error");
+    } finally {
+      setReindexing(false);
     }
   };
 
@@ -326,6 +340,13 @@ export default function AdminEvent() {
               <InfoRow label="Photographer" value={event?.photographer || "—"} />
               <InfoRow label="Photos" value={String(event?.photo_count)} />
             </View>
+
+            <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Face index</Text>
+            <Text style={styles.muted}>
+              Rebuild face data for this gallery — run this after enabling AWS face search or if
+              matches look off.
+            </Text>
+            <Button testID="reindex-btn" title="Re-index faces" variant="secondary" icon="refresh" loading={reindexing} onPress={reindex} />
           </>
         )}
       </ScrollView>
