@@ -76,3 +76,12 @@ My Photos album. Raw selfie never stored (only match references).
       deletes the matched album + consent; the client's indexed event faces remain — acceptable
       since faces belong to event photos, not the selfie which is never stored).
 - P2: Download/share My Photos; pinch-to-zoom viewer; watermarking; expiring share links.
+
+
+## Album Flipbook Module (added)
+- Separate product from the photo Gallery (own `albums` collection, routes `/api/albums/*`, self-contained WebGL viewer). Gallery untouched.
+- Admin: Studio Console -> Albums (create, upload/replace PDF, publish/unpublish, copy link, preview, delete).
+- Pipeline: admin uploads a designed album PDF (page1 front cover 12x18, interior 12x36 lay-flat spreads, last back cover) -> PyMuPDF renders each page to 3 JPEG resolutions -> stored in Cloudinary.
+- Viewer: Three.js/WebGL flipbook served at `/api/albums/public/{token}/view`, embedded in Expo route `/a/{shareToken}` (iframe on web, WebView on native). Features: 3D cover opening, realistic page bending + dynamic shadows, continuous lay-flat spreads with center seam, drag/swipe/keyboard nav, zoom (wheel/pinch/double-tap), spread counter, optional page-turn sound, premium loader, WebGL fallback.
+- Security: unguessable share_token; drafts require secret preview_token (?k=); published required for public access.
+- Deps added: PyMuPDF (backend), react-native-webview + expo-document-picker (frontend).

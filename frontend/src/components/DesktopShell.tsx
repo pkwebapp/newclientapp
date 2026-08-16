@@ -12,6 +12,7 @@ type NavItem = { label: string; icon: keyof typeof Ionicons.glyphMap; href: stri
 const ADMIN_NAV: NavItem[] = [
   { label: "Dashboard", icon: "grid-outline", href: "/admin" },
   { label: "New Event", icon: "add-circle-outline", href: "/admin/new-event" },
+  { label: "Albums", icon: "book-outline", href: "/admin/albums" },
 ];
 
 const CLIENT_NAV: NavItem[] = [

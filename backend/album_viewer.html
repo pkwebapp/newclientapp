@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+<title>Album</title>
+<style>
+  :root { --fg: #e9e4d8; --muted: rgba(233,228,216,0.55); }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b0b0d; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--fg);
+    background: radial-gradient(120% 90% at 50% 18%, #24242c 0%, #131318 45%, #0b0b0d 100%);
+    touch-action: none;
+  }
+  #stage { position: fixed; inset: 0; }
+  canvas { display: block; }
+
+  #loader { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 18px; z-index: 40;
+    background: radial-gradient(120% 90% at 50% 30%, #23232b 0%, #101015 60%, #0b0b0d 100%);
+    transition: opacity .6s ease; text-align: center; padding: 24px; }
+  #loader.hide { opacity: 0; pointer-events: none; }
+  .brand { font-family: Georgia, serif; letter-spacing: .16em; font-size: 13px; text-transform: uppercase; color: var(--muted); }
+  .ltitle { font-family: Georgia, serif; font-size: 24px; color: var(--fg); }
+  .bar { width: min(240px, 60vw); height: 3px; border-radius: 3px; background: rgba(255,255,255,.10); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg,#c8a86a,#efe0bd); transition: width .25s ease; }
+  .lsub { font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+
+  #ui { position: fixed; inset: 0; z-index: 20; pointer-events: none; transition: opacity .4s ease; }
+  #ui.faded { opacity: 0; }
+  .topbar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center;
+    justify-content: space-between; padding: 16px 18px; background: linear-gradient(180deg, rgba(0,0,0,.45), rgba(0,0,0,0)); }
+  .title { font-family: Georgia, serif; font-size: 16px; }
+  .subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .btn { pointer-events: auto; cursor: pointer; border: 1px solid rgba(255,255,255,.14);
+    background: rgba(20,20,24,.55); color: var(--fg); border-radius: 999px; width: 42px; height: 42px;
+    display: inline-flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); transition: background .2s, transform .1s; }
+  .btn:hover { background: rgba(40,40,48,.7); } .btn:active { transform: scale(.94); }
+  .btn svg { width: 18px; height: 18px; } .row { display: flex; gap: 10px; }
+  .nav { position: absolute; top: 50%; transform: translateY(-50%); }
+  .nav.left { left: 14px; } .nav.right { right: 14px; } .nav .btn { width: 50px; height: 50px; }
+  .bottombar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center;
+    justify-content: center; gap: 16px; padding: 18px; background: linear-gradient(0deg, rgba(0,0,0,.5), rgba(0,0,0,0)); }
+  .counter { pointer-events: none; font-size: 12.5px; letter-spacing: .14em; text-transform: uppercase; font-variant-numeric: tabular-nums; }
+
+  #openhint { position: absolute; left: 50%; bottom: 18%; transform: translateX(-50%); pointer-events: none; text-align: center; }
+  #openhint .pill { display: inline-block; padding: 10px 18px; border-radius: 999px; background: rgba(15,15,18,.6);
+    border: 1px solid rgba(255,255,255,.12); backdrop-filter: blur(8px); font-size: 13px; letter-spacing: .04em;
+    animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{ opacity:.65; transform: translateY(0);} 50%{ opacity:1; transform: translateY(-4px);} }
+  #rotatehint { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: rgba(15,15,18,.6);
+    border: 1px solid rgba(255,255,255,.12); color: var(--muted); padding: 8px 14px; border-radius: 999px; font-size: 12px; display: none; z-index: 21; }
+  #err { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center; padding: 24px; text-align: center; }
+  #err .t { font-family: Georgia, serif; font-size: 20px; margin-bottom: 8px; }
+  #err .d { color: var(--muted); font-size: 14px; line-height: 1.5; max-width: 420px; }
+  .retry { margin-top: 16px; cursor: pointer; border: 1px solid rgba(255,255,255,.2); background: rgba(30,30,36,.7); color: var(--fg); padding: 10px 20px; border-radius: 999px; font-size: 14px; }
+</style>
+</head>
+<body>
+  <div id="stage"></div>
+  <div id="loader">
+    <div class="brand">Photo Album</div>
+    <div class="ltitle" id="l-title">Preparing your album…</div>
+    <div class="bar"><i id="l-bar"></i></div>
+    <div class="lsub" id="l-sub">Loading pages</div>
+  </div>
+  <div id="ui" class="faded">
+    <div class="topbar">
+      <div><div class="title" id="ui-title"></div><div class="subtitle" id="ui-sub"></div></div>
+      <div class="row">
+        <div class="btn" id="btn-zoomout" title="Zoom out"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg></div>
+        <div class="btn" id="btn-zoomin" title="Zoom in"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="11" cy="11" r="7"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/><line x1="16.5" y1="16.5" x2="21" y2="21"/></svg></div>
+        <div class="btn" id="btn-sound" title="Page sound"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9v6h4l5 4V5L8 9H4z"/><line id="mute-line" x1="16" y1="9" x2="21" y2="14"/><line id="mute-line2" x1="21" y1="9" x2="16" y2="14"/></svg></div>
+        <div class="btn" id="btn-full" title="Fullscreen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></div>
+      </div>
+    </div>
+    <div class="nav left"><div class="btn" id="btn-prev"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg></div></div>
+    <div class="nav right"><div class="btn" id="btn-next"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg></div></div>
+    <div class="bottombar"><div class="counter" id="counter"></div></div>
+  </div>
+  <div id="openhint"><span class="pill">Tap to open the album</span></div>
+  <div id="rotatehint">↻ Rotate your phone for the best album experience</div>
+  <div id="err"><div><div class="t" id="err-t">Something went wrong</div><div class="d" id="err-d"></div><button class="retry" onclick="location.reload()">Retry</button></div></div>
+
+<script type="importmap">
+{ "imports": { "three": "__THREE_URL__" } }
+</script>
+<script>
+  window.addEventListener('error', function (e) {
+    if (e && (e.filename || '').indexOf('three.module.js') !== -1) {
+      document.getElementById('loader').classList.add('hide');
+      document.getElementById('err-t').textContent = '3D engine failed to load';
+      document.getElementById('err-d').textContent = 'Please check your connection and retry.';
+      document.getElementById('err').style.display = 'flex';
+    }
+  }, true);
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+const MANIFEST_URL = "__MANIFEST_URL__";
+
+function webglOK(){ try { const c=document.createElement('canvas'); return !!(window.WebGLRenderingContext && (c.getContext('webgl')||c.getContext('experimental-webgl'))); } catch(e){ return false; } }
+function showError(t,d){ document.getElementById('loader').classList.add('hide'); document.getElementById('err-t').textContent=t; document.getElementById('err-d').textContent=d||''; document.getElementById('err').style.display='flex'; }
+
+// ---- constants ----
+const PAGE_W = 9, PAGE_H = 6;           // one page (18x12 in, scaled)
+const SEG = 30;
+const THICK = 0.05, COVER_THICK = 0.16;
+
+let scene, camera, renderer, book, groundShadow;
+let leftPage, rightPage, coverMesh, backMesh, turnLeaf;
+let stackLeft, stackRight;
+let manifest, spreads = [], S = 0;
+let spreadIndex = 0;                      // 0 closed, 1..S spreads, S+1 back-closed
+let anim = null, drag = null;
+let zoom = 1, zoomTarget = 1, panX = 0, panY = 0, panTX = 0, panTY = 0;
+let bookOffset = -PAGE_W/2, bookOffsetTarget = -PAGE_W/2;
+let soundOn = false, idleTimer = null;
+const clock = new THREE.Clock();
+
+const texLoader = new THREE.TextureLoader(); texLoader.crossOrigin='anonymous';
+const imgCache = new Map();
+function loadBaseTex(url){
+  if(!url) return Promise.resolve(null);
+  if(imgCache.has(url)) return imgCache.get(url);
+  const p = new Promise((res)=>{ texLoader.load(url,(t)=>{ t.colorSpace=THREE.SRGBColorSpace;
+    t.anisotropy = renderer? renderer.capabilities.getMaxAnisotropy():4; t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;
+    t.generateMipmaps=true; t.minFilter=THREE.LinearMipmapLinearFilter; res(t); }, undefined, ()=>res(null)); });
+  imgCache.set(url,p); return p;
+}
+function pickUrl(node, level){ if(!node||!node.urls) return null; return node.urls[level]||node.urls.medium||node.urls.high||node.urls.thumb||null; }
+
+// Configure a cloned texture to show a half (or full) of a base texture.
+// side: 'left' | 'right' | 'full'. mirror flips horizontally (for back faces).
+function halfTex(base, side, mirror){
+  if(!base) return null;
+  const t = base.clone(); t.needsUpdate = true;
+  t.colorSpace = THREE.SRGBColorSpace; t.wrapS=t.wrapT=THREE.ClampToEdgeWrapping;
+  let rep=1, off=0;
+  if(side==='left'){ rep=0.5; off=0; } else if(side==='right'){ rep=0.5; off=0.5; }
+  if(mirror){ t.repeat.x = -rep; t.offset.x = off + rep; }
+  else { t.repeat.x = rep; t.offset.x = off; }
+  return t;
+}
+
+async function setPageTexture(mesh, node, side, level, mirror){
+  const base = await loadBaseTex(pickUrl(node, level));
+  const t = halfTex(base, side, mirror);
+  if(t){ mesh.material.map = t; mesh.material.needsUpdate = true; }
+}
+
+// ---- geometry helpers ----
+function pageGeometry(){
+  // plane x:0..PAGE_W (left edge=spine at 0), y:-H/2..H/2, full UV 0..1
+  const g = new THREE.PlaneGeometry(PAGE_W, PAGE_H, SEG, 1);
+  const pos = g.attributes.position;
+  for(let i=0;i<pos.count;i++) pos.setX(i, pos.getX(i)+PAGE_W/2);
+  pos.needsUpdate = true;
+  g.userData.baseX = Array.from({length:pos.count},(_,i)=>pos.getX(i));
+  return g;
+}
+function pageMaterial(){ return new THREE.MeshStandardMaterial({ color:0xffffff, roughness:0.82, metalness:0.0, side:THREE.FrontSide }); }
+function creamMaterial(){ return new THREE.MeshStandardMaterial({ color:0xefe9dc, roughness:0.9, side:THREE.FrontSide }); }
+
+function initThree(){
+  const stage = document.getElementById('stage');
+  scene = new THREE.Scene();
+  camera = new THREE.PerspectiveCamera(38, innerWidth/innerHeight, 0.1, 300);
+  camera.position.set(0,0,40);
+  renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true, powerPreference:'high-performance' });
+  renderer.setSize(innerWidth, innerHeight); renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+  renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.06;
+  stage.appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0xffffff, 0.66));
+  scene.add(new THREE.HemisphereLight(0xffffff, 0x2a2a30, 0.42));
+  const key = new THREE.DirectionalLight(0xfff4e2, 1.1); key.position.set(-7,11,14); key.castShadow=true;
+  key.shadow.mapSize.set(1024,1024); key.shadow.camera.near=1; key.shadow.camera.far=80;
+  key.shadow.camera.left=-24; key.shadow.camera.right=24; key.shadow.camera.top=16; key.shadow.camera.bottom=-16; key.shadow.bias=-0.0005;
+  scene.add(key);
+  const fill = new THREE.DirectionalLight(0xbfd0ff, 0.22); fill.position.set(9,5,7); scene.add(fill);
+
+  groundShadow = new THREE.Mesh(new THREE.PlaneGeometry(PAGE_W*3.4, PAGE_H*2.3),
+    new THREE.MeshBasicMaterial({ map: radialShadow(), transparent:true, opacity:0.34, depthWrite:false }));
+  groundShadow.position.set(0,0,-0.7); scene.add(groundShadow);
+
+  book = new THREE.Group(); scene.add(book);
+
+  // static left/right pages
+  leftPage = new THREE.Mesh(pageGeometry(), pageMaterial()); leftPage.position.x = -PAGE_W; // spans -PAGE_W..0
+  rightPage = new THREE.Mesh(pageGeometry(), pageMaterial());                                 // spans 0..PAGE_W
+  leftPage.castShadow = rightPage.castShadow = true; leftPage.receiveShadow = rightPage.receiveShadow = true;
+  // cover / back cover (single page, sit at right/left position respectively)
+  coverMesh = new THREE.Mesh(pageGeometry(), pageMaterial());  coverMesh.castShadow = true;
+  backMesh  = new THREE.Mesh(pageGeometry(), pageMaterial());  backMesh.position.x = -PAGE_W; backMesh.castShadow = true;
+  // turning leaf (bendable), pivots at spine (x=0), geometry 0..PAGE_W, DoubleSide for front/back
+  turnLeaf = new THREE.Mesh(pageGeometry(), new THREE.MeshStandardMaterial({ color:0xffffff, roughness:0.82, side:THREE.DoubleSide }));
+  turnLeaf.castShadow = true; turnLeaf.visible = false;
+
+  // subtle page-stack thickness slabs
+  const slabMat = new THREE.MeshStandardMaterial({ color:0xece5d6, roughness:0.95 });
+  stackLeft = new THREE.Mesh(new THREE.BoxGeometry(1,PAGE_H*0.995,1), slabMat.clone());
+  stackRight = new THREE.Mesh(new THREE.BoxGeometry(1,PAGE_H*0.995,1), slabMat.clone());
+  stackLeft.castShadow = stackRight.castShadow = true;
+
+  book.add(leftPage, rightPage, coverMesh, backMesh, turnLeaf, stackLeft, stackRight);
+
+  addEventListener('resize', onResize); onResize(); attachInput(); animate();
+}
+
+function radialShadow(){ const c=document.createElement('canvas'); c.width=c.height=256; const x=c.getContext('2d');
+  const g=x.createRadialGradient(128,128,18,128,128,128); g.addColorStop(0,'rgba(0,0,0,0.55)'); g.addColorStop(.6,'rgba(0,0,0,0.22)'); g.addColorStop(1,'rgba(0,0,0,0)');
+  x.fillStyle=g; x.fillRect(0,0,256,256); const t=new THREE.CanvasTexture(c); t.colorSpace=THREE.SRGBColorSpace; return t; }
+
+function getSpread(k){ return spreads[k-1] || null; }   // k in 1..S
+
+// ---- static layout for a given spreadIndex ----
+async function renderStatic(){
+  const k = spreadIndex;
+  const isClosed = (k===0), isBackClosed = (k===S+1), isSpread = (k>=1 && k<=S);
+  leftPage.visible = rightPage.visible = isSpread;
+  coverMesh.visible = isClosed; backMesh.visible = isBackClosed;
+  turnLeaf.visible = false;
+  stackLeft.visible = stackRight.visible = isSpread;
+  bookOffsetTarget = isClosed ? -PAGE_W/2 : (isBackClosed ? PAGE_W/2 : 0);
+
+  if(isClosed){
+    coverMesh.position.x = 0;
+    await setPageTexture(coverMesh, manifest.cover, 'full', 'high', false);
+  } else if(isBackClosed){
+    await setPageTexture(backMesh, manifest.back_cover, 'full', 'high', false);
+  } else if(isSpread){
+    const node = getSpread(k);
+    await setPageTexture(leftPage, node, 'left', 'high', false);
+    await setPageTexture(rightPage, node, 'right', 'high', false);
+    layoutStacks();
+  }
+  updateCounter();
+}
+
+function layoutStacks(){
+  const gapW = 0.9;
+  const lw = Math.max(0.15, (spreadIndex-1) * (THICK*3) + 0.15);
+  const rw = Math.max(0.15, (S - spreadIndex) * (THICK*3) + 0.15);
+  stackLeft.scale.x = lw; stackLeft.position.set(-PAGE_W - lw/2 + 0.02, 0, -0.02);
+  stackRight.scale.x = rw; stackRight.position.set(PAGE_W + rw/2 - 0.02, 0, -0.02);
+}
+
+// ---- one turning leaf between spread boundaries ----
+// leaf j (0..S): j=0 cover; j=S back cover; else middle. spreadIndex k turns leaf k (next) or k-1 (prev).
+function leafFaces(j){
+  if(j===0) return { front:{node:manifest.cover, side:'full'}, back:{node:getSpread(1), side:'left'}, cover:true };
+  if(j===S) return { front:{node:getSpread(S), side:'right'}, back:{node:manifest.back_cover, side:'full'}, cover:true };
+  return { front:{node:getSpread(j), side:'right'}, back:{node:getSpread(j+1), side:'left'}, cover:false };
+}
+
+async function beginTurn(dir, fromProgress){
+  if(anim) return;
+  if(dir>0 && spreadIndex>S) return;
+  if(dir<0 && spreadIndex<=0) return;
+  const j = dir>0 ? spreadIndex : spreadIndex-1;      // leaf being turned
+  const f = leafFaces(j);
+  // Reveal destination static beneath the turning leaf.
+  const destForward = dir>0;
+  // set static pages appropriate to show reveal
+  await prepStaticForTurn(j, dir, f);
+  turnLeaf.visible = true;
+  turnLeaf.userData = { j, dir, faces:f, faceShown:null };
+  const startP = fromProgress!=null ? fromProgress : (dir>0 ? 0 : 1);
+  anim = { from:startP, to:(dir>0?1:0), t:0, dur:0.9 };
+  await preloadNeighbors('high');
+}
+
+async function prepStaticForTurn(j, dir, f){
+  // Show the pages that should be visible under the turning leaf during the motion.
+  leftPage.visible = rightPage.visible = true;
+  coverMesh.visible = backMesh.visible = false;
+  stackLeft.visible = stackRight.visible = true;
+  if(dir>0){
+    // turning leaf currently covers the RIGHT; reveal next right underneath.
+    if(j===0){ // opening: left blank(cream), reveal spread1 right
+      leftPage.visible = false; bookOffsetTarget = 0;
+      await setPageTexture(rightPage, getSpread(1), 'right', 'high', false);
+    } else if(j===S){ // closing to back: reveal nothing new on right; keep left
+      await setPageTexture(leftPage, getSpread(S), 'left', 'high', false);
+      rightPage.visible = false; bookOffsetTarget = 0;
+    } else {
+      await setPageTexture(leftPage, getSpread(j), 'left', 'high', false);
+      await setPageTexture(rightPage, getSpread(j+1), 'right', 'high', false);
+      bookOffsetTarget = 0;
+    }
+  } else {
+    // prev: turning leaf comes from left to right; reveal previous left underneath.
+    if(j===0){ // closing front cover: from spread1 -> closed
+      bookOffsetTarget = 0; leftPage.visible=false;
+      await setPageTexture(rightPage, getSpread(1), 'right', 'high', false);
+    } else if(j===S){ // reopening from back
+      bookOffsetTarget = 0; rightPage.visible=false;
+      await setPageTexture(leftPage, getSpread(S), 'left', 'high', false);
+    } else {
+      await setPageTexture(leftPage, getSpread(j), 'left', 'high', false);
+      await setPageTexture(rightPage, getSpread(j+1), 'right', 'high', false);
+      bookOffsetTarget = 0;
+    }
+  }
+  layoutStacks();
+}
+
+function applyBend(mesh, progress){
+  const amp = Math.sin(Math.PI*progress) * (turnLeaf.userData.faces.cover ? 0.45 : 0.9);
+  const geo = mesh.geometry, pos = geo.attributes.position, baseX = geo.userData.baseX;
+  for(let i=0;i<pos.count;i++){ const nx = baseX[i]/PAGE_W; pos.setZ(i, Math.sin(Math.PI*nx)*amp); }
+  pos.needsUpdate = true; geo.computeVertexNormals();
+}
+
+async function setTurnFace(shown){
+  const d = turnLeaf.userData; if(d.faceShown===shown) return; d.faceShown = shown;
+  const spec = shown==='front' ? d.faces.front : d.faces.back;
+  // Back face is viewed from behind once turned -> mirror so it reads correctly.
+  const mirror = (shown==='back');
+  await setPageTexture(turnLeaf, spec.node, spec.side, 'high', mirror);
+}
+
+function setTurnProgress(p){
+  const angle = -Math.PI * p;                  // 0 (right) .. -PI (left)
+  turnLeaf.rotation.y = angle;
+  turnLeaf.position.z = 0.35;                  // lift above static pages
+  applyBend(turnLeaf, p);
+  setTurnFace(p < 0.5 ? 'front' : 'back');
+  if(groundShadow){
+    groundShadow.material.opacity = 0.30 + 0.22*Math.sin(Math.PI*p);
+    groundShadow.position.x = Math.cos(angle)*PAGE_W*0.5 + bookOffset;
+  }
+}
+
+function endTurn(){
+  const d = turnLeaf.userData; const dir = d.dir;
+  spreadIndex = Math.max(0, Math.min(S+1, spreadIndex + (dir>0?1:-1)));
+  anim = null; turnLeaf.visible = false; turnLeaf.rotation.y = 0; turnLeaf.position.z = 0;
+  renderStatic(); playPageSound(); preloadNeighbors('high'); hideOpenHint();
+}
+
+function preloadNeighbors(level){
+  const jobs=[];
+  for(const k of [spreadIndex-1, spreadIndex, spreadIndex+1]){
+    const n = getSpread(k); if(n){ jobs.push(loadBaseTex(pickUrl(n, level))); }
+  }
+  return Promise.all(jobs);
+}
+function progressiveLoadRest(){ let k=1; const step=()=>{ if(k>S) return; const n=getSpread(k); if(n) loadBaseTex(pickUrl(n,'medium')).then(()=>{ k++; setTimeout(step,50); }); else { k++; step(); } }; step(); }
+
+// ---- navigation ----
+function easeInOut(t){ return t<0.5 ? 2*t*t : 1-Math.pow(-2*t+2,2)/2; }
+function canNext(){ return spreadIndex <= S; }
+function canPrev(){ return spreadIndex >= 1; }
+function go(dir){ if(zoomTarget>1.05||anim) return; if(dir>0 && !canNext()) return; if(dir<0 && !canPrev()) return; beginTurn(dir); showUI(); }
+
+// ---- camera ----
+function fitCamera(){
+  const open = spreadIndex>=1 && spreadIndex<=S;
+  const contentW = (open ? PAGE_W*2 : PAGE_W) * 1.14;
+  const contentH = PAGE_H * 1.2;
+  const vf = camera.fov*Math.PI/180;
+  const dH = (contentH/2)/Math.tan(vf/2);
+  const dW = (contentW/2)/(Math.tan(vf/2)*camera.aspect);
+  const dist = Math.max(dH,dW)/zoom;
+  camera.position.set(panX + bookOffset*0, panY, dist);
+  camera.position.x = panX; camera.lookAt(panX, panY, 0);
+}
+function onResize(){ camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth,innerHeight);
+  const portrait = innerHeight>innerWidth; document.getElementById('rotatehint').style.display = (portrait && spreadIndex>=1 && spreadIndex<=S)?'block':'none'; }
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  zoom += (zoomTarget-zoom)*Math.min(1,dt*10);
+  panX += (panTX-panX)*Math.min(1,dt*10); panY += (panTY-panY)*Math.min(1,dt*10);
+  bookOffset += (bookOffsetTarget-bookOffset)*Math.min(1,dt*7); book.position.x = bookOffset;
+  if(anim){ anim.t += dt/anim.dur; const p=Math.min(1,anim.t); const e=anim.from+(anim.to-anim.from)*easeInOut(p); setTurnProgress(e); if(p>=1) endTurn(); }
+  else if(drag && drag.turning){ setTurnProgress(drag.progress); }
+  else if(groundShadow){ groundShadow.position.x += (bookOffset-groundShadow.position.x)*Math.min(1,dt*8);
+    groundShadow.material.opacity += (0.32-groundShadow.material.opacity)*Math.min(1,dt*8); }
+  fitCamera(); renderer.render(scene,camera);
+}
+
+// ---- input ----
+let pinch=0;
+function attachInput(){
+  const el = renderer.domElement;
+  el.addEventListener('pointerdown', onDown); el.addEventListener('pointermove', onMove);
+  el.addEventListener('pointerup', onUp); el.addEventListener('pointercancel', onUp);
+  el.addEventListener('wheel', onWheel, {passive:false}); el.addEventListener('dblclick', ()=> setZoom(zoomTarget>1.05?1:2.2));
+  addEventListener('keydown', onKey);
+  document.getElementById('btn-next').onclick = ()=> go(1);
+  document.getElementById('btn-prev').onclick = ()=> go(-1);
+  document.getElementById('btn-zoomin').onclick = ()=> setZoom(zoomTarget*1.4);
+  document.getElementById('btn-zoomout').onclick = ()=> setZoom(zoomTarget/1.4);
+  document.getElementById('btn-full').onclick = toggleFull;
+  document.getElementById('btn-sound').onclick = toggleSound;
+  el.addEventListener('touchmove', (e)=>{ if(e.touches.length===2){ e.preventDefault(); const dx=e.touches[0].clientX-e.touches[1].clientX, dy=e.touches[0].clientY-e.touches[1].clientY; const d=Math.hypot(dx,dy); if(pinch) setZoom(zoomTarget*(d/pinch)); pinch=d; } }, {passive:false});
+  el.addEventListener('touchend', ()=> pinch=0);
+}
+function onDown(e){ showUI(); if(anim) return;
+  if(zoomTarget>1.05){ drag={pan:true,x:e.clientX,y:e.clientY,sx:panTX,sy:panTY}; return; }
+  if(spreadIndex===0){ drag={tapOpen:true,x:e.clientX,moved:0}; return; }
+  if(spreadIndex>S){ drag={tapClose:true,x:e.clientX,moved:0}; return; }
+  const dir = (e.clientX/innerWidth)>0.5 ? 1 : -1;
+  if(dir>0 && !canNext()){ drag=null; return; } if(dir<0 && !canPrev()){ drag=null; return; }
+  const j = dir>0 ? spreadIndex : spreadIndex-1; const f = leafFaces(j);
+  turnLeaf.visible=true; turnLeaf.userData={j,dir,faces:f,faceShown:null};
+  prepStaticForTurn(j,dir,f);
+  drag={ x:e.clientX,y:e.clientY,lastX:e.clientX,lastT:performance.now(),vx:0,moved:0,
+    turning:{j,dir}, progress: dir>0?0:1, start: dir>0?0:1 };
+}
+function onMove(e){ showUI(); if(!drag) return;
+  if(drag.pan){ const k=0.02/zoomTarget; panTX=drag.sx-(e.clientX-drag.x)*k; panTY=drag.sy+(e.clientY-drag.y)*k; return; }
+  if(drag.tapOpen||drag.tapClose){ drag.moved=Math.abs(e.clientX-drag.x); return; }
+  if(!drag.turning) return;
+  const now=performance.now(); const dx=e.clientX-drag.x; drag.moved=Math.abs(dx);
+  const span=innerWidth*0.5; drag.progress=clamp01(drag.start + (-dx/span));
+  drag.vx=(e.clientX-drag.lastX)/Math.max(1,now-drag.lastT); drag.lastX=e.clientX; drag.lastT=now;
+}
+function onUp(){ if(!drag) return; const d=drag; drag=null;
+  if(d.pan) return;
+  if(d.tapOpen){ if((d.moved||0)<8) go(1); else { /* ignore */ } return; }
+  if(d.tapClose){ if((d.moved||0)<8) go(-1); return; }
+  if(!d.turning) return; const t=d.turning; const fast=Math.abs(d.vx)>0.4;
+  let complete; if(t.dir>0) complete = d.progress>0.5 || (fast && d.vx<0); else complete = d.progress<0.5 || (fast && d.vx>0);
+  if((d.moved||0)<8) complete=true;
+  anim={ from:d.progress, to: t.dir>0?(complete?1:0):(complete?0:1), t:0, dur:0.45+0.25*(1-Math.min(1,Math.abs(d.vx))) };
+  if(!complete && ((t.dir>0 && d.progress<0.02)||(t.dir<0 && d.progress>0.98))){ // nothing to animate
+    turnLeaf.visible=false; renderStatic();
+  }
+}
+function onWheel(e){ e.preventDefault(); setZoom(zoomTarget*(e.deltaY<0?1.12:0.89)); showUI(); }
+function onKey(e){ if(e.key==='ArrowRight'||e.key===' ') go(1); else if(e.key==='ArrowLeft') go(-1); else if(e.key==='Escape'){ if(document.fullscreenElement) document.exitFullscreen(); setZoom(1); } }
+function setZoom(z){ zoomTarget=Math.max(1,Math.min(4,z)); if(zoomTarget<=1.02){ zoomTarget=1; panTX=0; panTY=0; } showUI(); }
+function clamp01(v){ return Math.max(0,Math.min(1,v)); }
+
+function updateCounter(){ const c=document.getElementById('counter');
+  if(spreadIndex===0) c.textContent='Cover'; else if(spreadIndex>S) c.textContent='Back Cover';
+  else c.textContent='Spread '+String(spreadIndex).padStart(2,'0')+' / '+String(S).padStart(2,'0');
+  document.getElementById('btn-prev').style.opacity = canPrev()?'1':'0.3';
+  document.getElementById('btn-next').style.opacity = canNext()?'1':'0.3'; onResize(); }
+function showUI(){ const ui=document.getElementById('ui'); ui.classList.remove('faded'); clearTimeout(idleTimer); idleTimer=setTimeout(()=>ui.classList.add('faded'),3200); }
+function hideOpenHint(){ document.getElementById('openhint').style.display='none'; }
+function toggleFull(){ if(!document.fullscreenElement) document.documentElement.requestFullscreen?.(); else document.exitFullscreen?.(); }
+
+let audioCtx=null;
+function toggleSound(){ soundOn=!soundOn; document.getElementById('mute-line').style.display=soundOn?'none':'block'; document.getElementById('mute-line2').style.display=soundOn?'none':'block'; }
+function playPageSound(){ if(!soundOn) return; try{ audioCtx=audioCtx||new (window.AudioContext||window.webkitAudioContext)(); const ctx=audioCtx, dur=0.3;
+  const b=ctx.createBuffer(1,ctx.sampleRate*dur,ctx.sampleRate); const d=b.getChannelData(0);
+  for(let i=0;i<d.length;i++){ const t=i/d.length; d[i]=(Math.random()*2-1)*Math.pow(1-t,2.4)*0.5; }
+  const s=ctx.createBufferSource(); s.buffer=b; const f=ctx.createBiquadFilter(); f.type='bandpass'; f.frequency.value=2500; f.Q.value=0.7;
+  const g=ctx.createGain(); g.gain.value=0.22; s.connect(f); f.connect(g); g.connect(ctx.destination); s.start(); }catch(e){} }
+
+async function boot(){
+  if(!webglOK()){ showError('3D viewer not supported','Try the latest Chrome or Safari.'); return; }
+  let m; try{ const r=await fetch(MANIFEST_URL,{cache:'no-store'}); if(!r.ok) throw 0; m=await r.json(); }
+  catch(e){ showError('Unable to load this album','It may be private or removed.'); return; }
+  manifest=m; spreads=m.spreads||[]; S=spreads.length;
+  document.getElementById('ui-title').textContent=m.title||'Album';
+  document.getElementById('ui-sub').textContent=[m.client_name,m.event_name].filter(Boolean).join('   ·   ');
+  document.getElementById('l-title').textContent=m.title||'Preparing your album…';
+  soundOn=!!(m.settings&&m.settings.page_turn_sound);
+  document.getElementById('mute-line').style.display=soundOn?'none':'block'; document.getElementById('mute-line2').style.display=soundOn?'none':'block';
+
+  initThree();
+  const bar=document.getElementById('l-bar'); bar.style.width='20%';
+  await loadBaseTex(pickUrl(m.cover,'high')); bar.style.width='55%';
+  if(getSpread(1)) await loadBaseTex(pickUrl(getSpread(1),'high')); bar.style.width='100%';
+  document.getElementById('l-sub').textContent='Ready';
+  await renderStatic();               // closed cover
+  setTimeout(()=>{ document.getElementById('loader').classList.add('hide'); showUI();
+    document.getElementById('openhint').style.display='block'; progressiveLoadRest();
+    if(m.settings&&m.settings.auto_open) setTimeout(()=>go(1),900); }, 350);
+}
+boot();
+</script>
+</body>
+</html>

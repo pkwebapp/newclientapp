@@ -1632,6 +1632,11 @@ async def meta():
 # App wiring
 # ---------------------------------------------------------------------------
 app.include_router(api_router)
+
+# Album module (separate product) — mounts its own /api/albums router + viewer.
+from album_routes import album_router  # noqa: E402
+app.include_router(album_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,

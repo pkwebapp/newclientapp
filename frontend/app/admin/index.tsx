@@ -80,6 +80,21 @@ export default function AdminDashboard() {
             <Stat label="Photos" value={events.reduce((a, e) => a + (e.photo_count || 0), 0)} icon="image-outline" />
           </View>
 
+          <Pressable
+            testID="admin-albums-card"
+            onPress={() => router.push("/admin/albums")}
+            style={styles.albumsCard}
+          >
+            <View style={styles.rowIcon}>
+              <Ionicons name="book-outline" size={20} color={colors.brand} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>Album Flipbooks</Text>
+              <Text style={styles.rowSub}>Upload a designed PDF album and share a premium 3D viewer</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+          </Pressable>
+
           {events.length === 0 ? (
             <EmptyState icon="add-circle-outline" title="Create your first event" subtitle="Set up a gallery, upload photos, and invite your clients." />
           ) : (
@@ -137,6 +152,17 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   statsRow: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.lg },
+  albumsCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.brandTertiary,
+  },
   gridWrap: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   rowDesktop: { width: "48.5%" },
   stat: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, alignItems: "flex-start" },
