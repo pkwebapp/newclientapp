@@ -430,49 +430,38 @@ async def reindex_event(event_id: str, admin: dict = Depends(require_admin)):
     return {"status": "reindexed", "photos": len(photos), "faces_indexed": total_faces}
 
 
-@api_router.post("/events/{event_id}/photos")
-async def upload_photo(event_id: str, file: UploadFile = File(...), admin: dict = Depends(require_admin)):
-    event = await admin_event_or_404(event_id, admin)
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="Empty file")
-
+async def _ingest_photo(event: dict, data: bytes, filename: str, content_type: str) -> dict:
+    """Store original + thumbnail, index faces, persist photo + face docs."""
+    event_id = event["event_id"]
     photo_id = f"pho_{uuid.uuid4().hex[:12]}"
-    ext = (file.filename or "photo.jpg").split(".")[-1].lower()
+    ext = (filename or "photo.jpg").split(".")[-1].lower()
     if ext not in ("jpg", "jpeg", "png", "webp", "heic"):
         ext = "jpg"
     storage = get_storage()
-
-    try:
-        thumb_bytes, w, h = await run_in_threadpool(make_thumbnail, data)
-    except Exception:
-        raise HTTPException(status_code=400, detail="Unsupported or corrupt image")
+    thumb_bytes, w, h = await run_in_threadpool(make_thumbnail, data)
 
     orig_path = f"{APP_NAME}/events/{event_id}/{photo_id}.{ext}"
     thumb_path = f"{APP_NAME}/events/{event_id}/{photo_id}_thumb.jpg"
-    ctype = file.content_type or "image/jpeg"
-    await run_in_threadpool(storage.put_object, orig_path, data, ctype)
+    await run_in_threadpool(storage.put_object, orig_path, data, content_type or "image/jpeg")
     await run_in_threadpool(storage.put_object, thumb_path, thumb_bytes, "image/jpeg")
 
-    # Face detection + indexing (mock/real engine).
     engine = get_face_engine()
     faces = await run_in_threadpool(engine.index_photo, event["collection_id"], photo_id, data)
-    face_docs = [{
-        "face_id": f["face_id"],
-        "event_id": event_id,
-        "photo_id": photo_id,
-        "bounding_box": f.get("bounding_box"),
-        "indexed_at": now_iso(),
-    } for f in faces]
-    if face_docs:
-        await db.faces.insert_many(face_docs)
+    if faces:
+        await db.faces.insert_many([{
+            "face_id": f["face_id"],
+            "event_id": event_id,
+            "photo_id": photo_id,
+            "bounding_box": f.get("bounding_box"),
+            "indexed_at": now_iso(),
+        } for f in faces])
 
     photo = {
         "photo_id": photo_id,
         "event_id": event_id,
         "storage_path": orig_path,
         "thumb_path": thumb_path,
-        "filename": file.filename,
+        "filename": filename,
         "width": w,
         "height": h,
         "face_count": len(faces),
@@ -484,11 +473,84 @@ async def upload_photo(event_id: str, file: UploadFile = File(...), admin: dict 
     set_fields = {"indexing_status": "ready"}
     if not event.get("cover_path"):
         set_fields["cover_path"] = thumb_path
-    await db.events.update_one(
-        {"event_id": event_id},
-        {"$inc": {"photo_count": 1}, "$set": set_fields},
-    )
+        event["cover_path"] = thumb_path  # so subsequent imports in a loop don't reset
+    await db.events.update_one({"event_id": event_id}, {"$inc": {"photo_count": 1}, "$set": set_fields})
+    return photo
+
+
+@api_router.post("/events/{event_id}/photos")
+async def upload_photo(event_id: str, file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+    event = await admin_event_or_404(event_id, admin)
+    data = await file.read()
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    try:
+        photo = await _ingest_photo(event, data, file.filename or "photo.jpg", file.content_type or "image/jpeg")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="Unsupported or corrupt image")
     return public_photo(photo)
+
+
+class S3ImportBody(BaseModel):
+    bucket: Optional[str] = None
+    prefix: Optional[str] = ""
+    max_files: int = 200
+
+
+@api_router.post("/events/{event_id}/import-s3")
+async def import_from_s3(event_id: str, body: S3ImportBody, admin: dict = Depends(require_admin)):
+    """Pull image objects from a configured S3-compatible bucket into this event."""
+    event = await admin_event_or_404(event_id, admin)
+    bucket = body.bucket or os.environ.get("S3_IMPORT_BUCKET")
+    if not bucket:
+        raise HTTPException(status_code=400, detail="No S3 bucket configured. Set S3_IMPORT_BUCKET or pass a bucket.")
+
+    import boto3
+
+    creds = dict(
+        aws_access_key_id=os.environ.get("AWS_ACCESS_KEY_ID"),
+        aws_secret_access_key=os.environ.get("AWS_SECRET_ACCESS_KEY"),
+    )
+    try:
+        locator = boto3.client("s3", **creds)
+        loc = await run_in_threadpool(lambda: locator.get_bucket_location(Bucket=bucket))
+        region = loc.get("LocationConstraint") or "us-east-1"
+        s3 = boto3.client("s3", region_name=region, **creds)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cannot access bucket '{bucket}': {type(e).__name__}")
+
+    IMG_EXT = (".jpg", ".jpeg", ".png", ".webp", ".heic")
+    imported, faces_total, skipped = 0, 0, 0
+    token = None
+    while imported < body.max_files:
+        kwargs = {"Bucket": bucket, "MaxKeys": 100}
+        if body.prefix:
+            kwargs["Prefix"] = body.prefix
+        if token:
+            kwargs["ContinuationToken"] = token
+        resp = await run_in_threadpool(lambda: s3.list_objects_v2(**kwargs))
+        for obj in resp.get("Contents", []):
+            if imported >= body.max_files:
+                break
+            key = obj["Key"]
+            if key.endswith("/") or not key.lower().endswith(IMG_EXT):
+                continue
+            try:
+                o = await run_in_threadpool(lambda: s3.get_object(Bucket=bucket, Key=key))
+                data = o["Body"].read()
+                photo = await _ingest_photo(event, data, key.split("/")[-1], o.get("ContentType", "image/jpeg"))
+                imported += 1
+                faces_total += photo["face_count"]
+            except Exception as e:
+                logger.error(f"S3 import {key} failed: {e}")
+                skipped += 1
+        if not resp.get("IsTruncated"):
+            break
+        token = resp.get("NextContinuationToken")
+
+    return {"status": "imported", "bucket": bucket, "imported": imported, "faces_indexed": faces_total, "skipped": skipped}
 
 
 @api_router.get("/events/{event_id}/photos")
@@ -806,6 +868,9 @@ async def serve_file(path: str, user: dict = Depends(user_from_token_or_header))
         try:
             grant = await client_grant_or_403(photo["event_id"], user)
             if grant.get("full_gallery_access"):
+                authorized = True
+            elif path == event.get("cover_path"):
+                # Cover thumbnail is visible to any granted client (gallery card).
                 authorized = True
             else:
                 album = await db.client_albums.find_one(

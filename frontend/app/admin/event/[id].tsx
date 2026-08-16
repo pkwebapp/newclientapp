@@ -35,6 +35,7 @@ export default function AdminEvent() {
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [importingS3, setImportingS3] = useState(false);
 
   // access form
   const [channel, setChannel] = useState<"email" | "phone">("email");
@@ -96,6 +97,23 @@ export default function AdminEvent() {
     setUploading(false);
     toast.show(`Uploaded & indexed ${ok} photo${ok !== 1 ? "s" : ""}`, ok ? "success" : "error");
     load();
+  };
+
+  const importS3 = async () => {
+    setImportingS3(true);
+    try {
+      const r = await api.post(`/events/${id}/import-s3`, {});
+      if (r.imported > 0) {
+        toast.show(`Imported ${r.imported} photos · ${r.faces_indexed} faces`, "success");
+      } else {
+        toast.show("No images found in the S3 bucket yet", "info");
+      }
+      load();
+    } catch (e: any) {
+      toast.show(e?.message || "S3 import failed", "error");
+    } finally {
+      setImportingS3(false);
+    }
   };
 
   const addGrant = async () => {
@@ -221,6 +239,7 @@ export default function AdminEvent() {
             </View>
 
             <Button testID="upload-photos-btn" title={uploading ? "Uploading…" : "Upload photos"} icon="cloud-upload-outline" loading={uploading} onPress={uploadPhotos} />
+            <Button testID="import-s3-btn" title="Import from S3 bucket" variant="ghost" icon="cloud-download-outline" loading={importingS3} onPress={importS3} style={{ marginTop: spacing.md }} />
 
             {photos.length === 0 ? (
               <EmptyState icon="images-outline" title="No photos yet" subtitle="Upload event photos — faces are detected and indexed automatically." />

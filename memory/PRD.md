@@ -27,6 +27,18 @@ processing; admin can delete client face data.
   expo-image-picker, react-native-keyboard-controller. AuthContext + Toast providers.
 - Integrations: Emergent Object Storage, Emergent Resend email, Emergent Google OAuth.
 
+## Iteration 2 (2026-06) — Rename + demo + S3 import
+- Renamed app **Lumiere → PIK Connect** (app.json name, landing logo, boot splash, email from-name).
+- Root-caused reported "no selfie step / no photos / no back button": client account had no shared
+  gallery and dead-ended. Fixed by seeding a real demo gallery "Beach Wedding (Demo)" (6 AWS-indexed
+  face photos) and granting it to the user's client account. The Scan-my-face step + back button appear
+  once a gallery is shared.
+- Verified admin login (admin@lumiere.studio / Admin@12345) works.
+- Added **S3 import**: POST /api/events/{id}/import-s3 (bucket via S3_IMPORT_BUCKET=faceser, region auto)
+  + admin "Import from S3" button — pulls images from the studio's own S3 bucket and indexes them.
+- Relaxed /api/files auth so a granted client can load an event's COVER thumbnail without full access.
+- Verified: 13/13 backend tests + full UI flows.
+
 ## Data Model
 users, user_sessions (TTL), otp_codes, events, photos, faces (face↔photo), access_grants,
 client_albums (My Photos), consent_logs.

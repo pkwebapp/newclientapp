@@ -27,7 +27,7 @@ export default function Landing() {
         <View style={styles.top}>
           <View style={styles.logoRow}>
             <Ionicons name="aperture-outline" size={26} color={colors.brand} />
-            <Text style={styles.logo}>LUMIERE</Text>
+            <Text style={styles.logo}>PIK CONNECT</Text>
           </View>
         </View>
 

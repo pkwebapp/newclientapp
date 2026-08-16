@@ -9,7 +9,7 @@ export default function Index() {
   if (loading) {
     return (
       <View style={styles.container} testID="boot-loading">
-        <Text style={styles.brand}>Lumiere</Text>
+        <Text style={styles.brand}>PIK Connect</Text>
         <ActivityIndicator color={colors.brand} style={{ marginTop: 16 }} />
       </View>
     );
