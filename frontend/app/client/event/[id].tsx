@@ -5,7 +5,7 @@ import { BlurView } from "expo-blur";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-import { api } from "@/src/api/client";
+import { api, downloadPhoto } from "@/src/api/client";
 import { PhotoGrid } from "@/src/components/PhotoGrid";
 import { EmptyState, GlassHeader, Button, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
@@ -17,8 +17,9 @@ export default function ClientEventDetail() {
   const toast = useToast();
 
   const [detail, setDetail] = useState<any>(null);
-  const [tab, setTab] = useState<"mine" | "all">("mine");
+  const [tab, setTab] = useState<"mine" | "liked" | "all">("mine");
   const [myPhotos, setMyPhotos] = useState<any[]>([]);
+  const [likedPhotos, setLikedPhotos] = useState<any[]>([]);
   const [allPhotos, setAllPhotos] = useState<any[]>([]);
   const [searched, setSearched] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -30,6 +31,8 @@ export default function ClientEventDetail() {
       const mp = await api.get(`/client/events/${id}/my-photos`);
       setMyPhotos(mp.photos);
       setSearched(mp.searched);
+      const lk = await api.get(`/client/events/${id}/liked`);
+      setLikedPhotos(lk.photos);
       if (d.full_gallery_access) {
         const ap = await api.get(`/client/events/${id}/photos`);
         setAllPhotos(ap);
@@ -48,22 +51,62 @@ export default function ClientEventDetail() {
   );
 
   useEffect(() => {
-    if (detail && !detail.full_gallery_access) setTab("mine");
-  }, [detail]);
+    if (detail && !detail.full_gallery_access && tab === "all") setTab("mine");
+  }, [detail, tab]);
 
   const showAll = detail?.full_gallery_access;
-  const photos = tab === "mine" ? myPhotos : allPhotos;
+  const photos = tab === "mine" ? myPhotos : tab === "liked" ? likedPhotos : allPhotos;
 
   const goScan = () => router.push(`/client/selfie/${id}`);
 
+  const setLikedFlag = (photoId: string, liked: boolean) => {
+    const upd = (arr: any[]) => arr.map((p) => (p.photo_id === photoId ? { ...p, liked } : p));
+    setMyPhotos(upd);
+    setAllPhotos(upd);
+  };
+
+  const toggleLike = async (photo: any) => {
+    const next = !photo.liked;
+    // optimistic
+    setLikedFlag(photo.photo_id, next);
+    setLikedPhotos((prev) =>
+      next
+        ? prev.some((p) => p.photo_id === photo.photo_id)
+          ? prev.map((p) => (p.photo_id === photo.photo_id ? { ...p, liked: true } : p))
+          : [{ ...photo, liked: true }, ...prev]
+        : prev.filter((p) => p.photo_id !== photo.photo_id)
+    );
+    try {
+      await api.post(`/client/events/${id}/photos/${photo.photo_id}/like`);
+    } catch (e: any) {
+      // revert
+      setLikedFlag(photo.photo_id, !next);
+      loadDetail();
+      toast.show(e?.message || "Could not update like", "error");
+    }
+  };
+
+  const download = async (photo: any) => {
+    try {
+      await downloadPhoto(photo);
+    } catch {
+      toast.show("Could not download", "error");
+    }
+  };
+
+  const TABS: { key: "mine" | "liked" | "all"; label: string }[] = [
+    { key: "mine", label: `My Photos${myPhotos.length ? ` (${myPhotos.length})` : ""}` },
+    { key: "liked", label: `Liked${likedPhotos.length ? ` (${likedPhotos.length})` : ""}` },
+    ...(showAll ? [{ key: "all" as const, label: "All Photos" }] : []),
+  ];
+
   const header = (
     <View style={{ paddingTop: spacing.lg }}>
-      {showAll && (
-        <BlurView intensity={30} tint="dark" style={styles.segment}>
-          <Segment label={`My Photos${myPhotos.length ? ` (${myPhotos.length})` : ""}`} active={tab === "mine"} onPress={() => setTab("mine")} testID="tab-my-photos" />
-          <Segment label="All Photos" active={tab === "all"} onPress={() => setTab("all")} testID="tab-all-photos" />
-        </BlurView>
-      )}
+      <BlurView intensity={30} tint="dark" style={styles.segment}>
+        {TABS.map((t) => (
+          <Segment key={t.key} label={t.label} active={tab === t.key} onPress={() => setTab(t.key)} testID={`tab-${t.key}`} />
+        ))}
+      </BlurView>
     </View>
   );
 
@@ -93,14 +136,26 @@ export default function ClientEventDetail() {
         <View style={{ flex: 1 }}>
           {header}
           <EmptyState
-            icon="images-outline"
-            title={tab === "mine" ? "No matches found" : "No photos yet"}
-            subtitle={tab === "mine" ? "We couldn't find you in this gallery. Try scanning again with better lighting." : "The studio hasn't added photos yet."}
+            icon={tab === "liked" ? "heart-outline" : "images-outline"}
+            title={tab === "mine" ? "No matches found" : tab === "liked" ? "No liked photos yet" : "No photos yet"}
+            subtitle={
+              tab === "mine"
+                ? "We couldn't find you in this gallery. Try scanning again with better lighting."
+                : tab === "liked"
+                ? "Tap the heart on any photo to save it to your Liked gallery."
+                : "The studio hasn't added photos yet."
+            }
             action={tab === "mine" ? <Button testID="scan-cta-retry" title="Scan again" icon="camera" onPress={goScan} /> : undefined}
           />
         </View>
       ) : (
-        <PhotoGrid photos={photos} showScore={tab === "mine"} ListHeaderComponent={header} />
+        <PhotoGrid
+          photos={photos}
+          showScore={tab !== "all"}
+          onToggleLike={toggleLike}
+          onDownload={download}
+          ListHeaderComponent={header}
+        />
       )}
 
       {/* Floating scan CTA */}

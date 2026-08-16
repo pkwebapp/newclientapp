@@ -247,15 +247,18 @@ export default function AdminEvent() {
               <EmptyState icon="images-outline" title="No photos yet" subtitle="Upload event photos — faces are detected and indexed automatically." />
             ) : (
               <View style={styles.thumbGrid}>
-                {photos.map((p) => (
-                  <View key={p.photo_id} style={[styles.thumb, isDesktop && styles.thumbDesktop]} testID={`admin-photo-${p.photo_id}`}>
-                    <Image source={{ uri: fileUrl(p.thumb_path) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} cachePolicy="memory-disk" />
-                    {p.face_count > 0 && (
-                      <View style={styles.faceBadge}>
-                        <Ionicons name="person" size={10} color={colors.onBrand} />
-                        <Text style={styles.faceBadgeText}>{p.face_count}</Text>
-                      </View>
-                    )}
+                {photos.map((p, i) => (
+                  <View key={p.photo_id} style={[styles.thumbCell, isDesktop && styles.thumbCellDesktop]}>
+                    <View style={styles.thumbImg} testID={`admin-photo-${p.photo_id}`}>
+                      <Image source={{ uri: fileUrl(p.thumb_path) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} cachePolicy="memory-disk" />
+                      {p.face_count > 0 && (
+                        <View style={styles.faceBadge}>
+                          <Ionicons name="person" size={10} color={colors.onBrand} />
+                          <Text style={styles.faceBadgeText}>{p.face_count}</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.thumbCaption} numberOfLines={1}>{p.filename || `#${i + 1}`}</Text>
                   </View>
                 ))}
               </View>
@@ -327,12 +330,24 @@ export default function AdminEvent() {
             <Text style={styles.muted}>Clients who have searched. Delete removes their face signature & album.</Text>
             {clients.map((c) => (
               <View key={c.client_user_id} style={styles.grantRow} testID={`client-${c.client_user_id}`}>
-                <Ionicons name="person-circle-outline" size={22} color={colors.brand} />
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.grantValue}>{c.name || c.email || c.phone}</Text>
-                  <Text style={styles.muted}>{c.matched_count} matched photos</Text>
-                </View>
-                <Pressable testID={`delete-face-${c.client_user_id}`} onPress={() => setConfirmDelete(c)} hitSlop={8}>
+                <Pressable
+                  testID={`view-client-${c.client_user_id}`}
+                  onPress={() =>
+                    router.push({
+                      pathname: "/admin/client-gallery",
+                      params: { eventId: String(id), clientId: c.client_user_id, name: c.name || c.email || c.phone || "" },
+                    })
+                  }
+                  style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, flex: 1 }}
+                >
+                  <Ionicons name="person-circle-outline" size={22} color={colors.brand} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.grantValue}>{c.name || c.email || c.phone}</Text>
+                    <Text style={styles.muted}>{c.matched_count} matched · tap to view galleries</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+                </Pressable>
+                <Pressable testID={`delete-face-${c.client_user_id}`} onPress={() => setConfirmDelete(c)} hitSlop={8} style={{ paddingLeft: spacing.sm }}>
                   <Ionicons name="trash-outline" size={20} color={colors.onError} />
                 </Pressable>
               </View>
@@ -413,8 +428,10 @@ const styles = StyleSheet.create({
   statusTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.lg },
   statusSub: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
   thumbGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.lg },
-  thumb: { width: "31.8%", aspectRatio: 1, borderRadius: radius.sm, overflow: "hidden", backgroundColor: colors.surfaceSecondary },
-  thumbDesktop: { width: "23%" },
+  thumbCell: { width: "31.8%" },
+  thumbCellDesktop: { width: "23%" },
+  thumbImg: { width: "100%", aspectRatio: 1, borderRadius: radius.sm, overflow: "hidden", backgroundColor: colors.surfaceSecondary },
+  thumbCaption: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 4 },
   faceBadge: { position: "absolute", bottom: 4, right: 4, flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: colors.brand, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.pill },
   faceBadgeText: { color: colors.onBrand, fontSize: 10, fontWeight: "700" },
   sectionTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, marginBottom: spacing.sm },

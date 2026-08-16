@@ -1,4 +1,4 @@
-import { Platform } from "react-native";
+import { Platform, Linking } from "react-native";
 
 const BASE = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`;
 
@@ -22,6 +22,36 @@ export class ApiError extends Error {
 export function fileUrl(path?: string | null): string | undefined {
   if (!path) return undefined;
   return `${BASE}/files/${path}?token=${authToken ?? ""}`;
+}
+
+/** Download the original image. Web = blob download; native = open in browser. */
+export async function downloadPhoto(photo: {
+  storage_path?: string | null;
+  thumb_path?: string | null;
+  filename?: string | null;
+  photo_id: string;
+}): Promise<void> {
+  const url = fileUrl(photo.storage_path || photo.thumb_path);
+  if (!url) return;
+  const name = photo.filename || `${photo.photo_id}.jpg`;
+  if (Platform.OS === "web") {
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const href = window.URL.createObjectURL(blob);
+      const a = window.document.createElement("a");
+      a.href = href;
+      a.download = name;
+      window.document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => window.URL.revokeObjectURL(href), 1000);
+    } catch {
+      window.open(url, "_blank");
+    }
+  } else {
+    Linking.openURL(url).catch(() => {});
+  }
 }
 
 async function request(path: string, opts: any = {}) {

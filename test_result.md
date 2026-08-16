@@ -206,15 +206,90 @@ frontend:
             (~390px) shows NO sidebar and the original mobile blur-header layout, everything still
             works. Also confirm the refresh-auth fix and image loading still work on desktop.
 
+  - task: "Like + Download photos, Liked gallery tab, filename captions, admin client gallery"
+    implemented: true
+    working: "NA"
+    file: "src/components/PhotoGrid.tsx, src/api/client.ts, app/client/event/[id].tsx, app/admin/client-gallery.tsx, app/admin/event/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Client can LIKE photos (heart on cards + in fullscreen viewer) and DOWNLOAD (viewer
+            button; web=blob download, native=open URL). Filename/#number below every photo. New
+            "Liked" tab in client gallery (My Photos / Liked / [All Photos]). Admin opens a client's
+            galleries via /admin/client-gallery (Matched/Liked tabs) from the event Access tab.
+
+backend:
+  - task: "Photo likes + admin client photos endpoints"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            New photo_likes collection + endpoints:
+            • POST /api/client/events/{event_id}/photos/{photo_id}/like — toggle (client must see the
+              photo: full access OR in matched album). Returns {liked, liked_count}.
+            • GET /api/client/events/{event_id}/liked — client's liked photos.
+            • GET /api/events/{event_id}/clients/{client_user_id}/photos — admin {matched, liked}.
+            public_photo now returns filename; my-photos/all-photos/search annotate liked;
+            serve_file authorizes liked photos; indexes added. FACE_ENGINE=rekognition (live).
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL 16 TESTS PASSED. filename present on admin+client photos; like toggle
+            true→false→true with correct liked_count; /liked returns liked photos; liked
+            annotation persists; admin client {matched,liked} works; 401 no-token, 403 client-on-
+            admin-endpoint, 404 non-existent photo; my-photos regression OK. Client used:
+            user_f150d45d44b1. 0 failures — production-ready.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL 16 BACKEND TESTS PASSED - Photo likes feature fully functional.
+            
+            Tested with:
+            • Admin: admin@lumiere.studio
+            • Client: tester_like@example.com (user_f150d45d44b1)
+            • Event: evt_9a54b15846be (8 photos)
+            
+            PASSED TESTS:
+            1. ✅ GET /api/events/{event_id}/photos (admin) - All 8 photos include 'filename' field
+            2. ✅ GET /api/client/events/{event_id}/photos (client) - All 8 photos include 'filename' and 'liked' fields
+            3. ✅ POST /api/client/events/{event_id}/photos/{photo_id}/like - Toggle works correctly:
+               • First call: liked=true, liked_count=1
+               • Second call: liked=false, liked_count=0
+               • Third call: liked=true, liked_count=1
+            4. ✅ GET /api/client/events/{event_id}/liked - Returns correct liked photos with all fields
+            5. ✅ Re-fetch photos - Liked annotation persists correctly (liked=true for liked photo)
+            6. ✅ GET /api/events/{event_id}/clients/{client_user_id}/photos (admin) - Returns client's matched and liked galleries correctly
+            7. ✅ Auth checks:
+               • Like without token → 401 ✓
+               • Admin endpoint with client token → 403 ✓
+               • Like non-existent photo → 404 ✓
+            8. ✅ Regression: GET /api/client/events/{event_id}/my-photos - Still works correctly
+            
+            All endpoints return correct status codes, proper response structures, and accurate data.
+            The like toggle functionality works perfectly, and the 'liked' annotation is correctly
+            applied across all photo listing endpoints. Authorization and permission checks are working
+            as expected.
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 1
+  test_sequence: 2
   run_ui: true
 
 test_plan:
   current_focus:
-    - "Full desktop/web redesign — sidebar shell + responsive layouts (all screens)"
+    - "Photo likes + admin client photos endpoints"
+    - "Like + Download photos, Liked gallery tab, filename captions, admin client gallery"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
@@ -246,3 +321,20 @@ agent_communication:
         the token prevents any API calls from firing before authentication is confirmed.
         
         No issues found. Both features are production-ready.
+    - agent: "testing"
+      message: |
+        ✅ BACKEND TESTING COMPLETE - Photo likes feature fully functional.
+        
+        Tested all new backend endpoints for photo likes functionality:
+        • All 16 tests PASSED (0 failures)
+        • Filename field present in all photo responses
+        • Like toggle works correctly (on/off/on)
+        • Liked annotation persists across photo listings
+        • Admin can view client galleries (matched + liked)
+        • Auth/permission checks working (401, 403, 404)
+        • Regression test passed (my-photos endpoint)
+        
+        Event evt_9a54b15846be now has 8 indexed photos (was 6).
+        Test client: tester_like@example.com (user_f150d45d44b1)
+        
+        Backend is production-ready. All endpoints return correct status codes and data structures.

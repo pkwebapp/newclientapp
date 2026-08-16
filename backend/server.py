@@ -667,11 +667,26 @@ def public_photo(p: dict) -> dict:
         "event_id": p["event_id"],
         "thumb_path": p.get("thumb_path"),
         "storage_path": p.get("storage_path"),
+        "filename": p.get("filename"),
         "width": p.get("width"),
         "height": p.get("height"),
         "face_count": p.get("face_count", 0),
         "indexing_status": p.get("indexing_status"),
     }
+
+
+async def _liked_ids(event_id: str, user_id: str) -> set:
+    docs = await db.photo_likes.find(
+        {"event_id": event_id, "client_user_id": user_id}, {"_id": 0, "photo_id": 1}
+    ).to_list(20000)
+    return {d["photo_id"] for d in docs}
+
+
+async def _annotate_liked(event_id: str, user_id: str, photos: list[dict]) -> list[dict]:
+    liked = await _liked_ids(event_id, user_id)
+    for p in photos:
+        p["liked"] = p["photo_id"] in liked
+    return photos
 
 
 # ---------------------------------------------------------------------------
@@ -731,7 +746,9 @@ async def client_all_photos(event_id: str, user: dict = Depends(require_client))
     if not grant.get("full_gallery_access", False):
         raise HTTPException(status_code=403, detail="Full gallery access not granted")
     photos = await db.photos.find({"event_id": event_id}, {"_id": 0}).sort("uploaded_at", -1).to_list(5000)
-    return [public_photo(p) for p in photos]
+    result = [public_photo(p) for p in photos]
+    await _annotate_liked(event_id, user["user_id"], result)
+    return result
 
 
 @api_router.post("/client/events/{event_id}/consent")
@@ -805,6 +822,7 @@ async def selfie_search(event_id: str, file: UploadFile = File(...), user: dict 
     )
 
     photos = await _photos_with_scores(matched_photo_ids, best)
+    await _annotate_liked(event_id, user["user_id"], photos)
     return {
         "status": "matched",
         "threshold": threshold,
@@ -824,6 +842,7 @@ async def my_photos(event_id: str, user: dict = Depends(require_client)):
         return {"searched": False, "count": 0, "photos": [], "last_searched_at": None}
     scores = album.get("scores", {})
     photos = await _photos_with_scores(album.get("photo_ids", []), scores)
+    await _annotate_liked(event_id, user["user_id"], photos)
     return {
         "searched": True,
         "count": len(photos),
@@ -846,6 +865,84 @@ async def _photos_with_scores(photo_ids: list[str], scores: dict) -> list[dict]:
         pp["similarity"] = scores.get(pid)
         out.append(pp)
     return out
+
+
+async def _client_can_see_photo(event_id: str, user: dict, grant: dict, photo_id: str) -> bool:
+    """A client may act on a photo they can already view: full-gallery access,
+    or the photo is in their matched album."""
+    if grant.get("full_gallery_access", False):
+        return True
+    album = await db.client_albums.find_one(
+        {"event_id": event_id, "client_user_id": user["user_id"]}
+    )
+    return bool(album and photo_id in album.get("photo_ids", []))
+
+
+@api_router.post("/client/events/{event_id}/photos/{photo_id}/like")
+async def toggle_like(event_id: str, photo_id: str, user: dict = Depends(require_client)):
+    grant = await client_grant_or_403(event_id, user)
+    photo = await db.photos.find_one({"photo_id": photo_id, "event_id": event_id}, {"_id": 0})
+    if not photo:
+        raise HTTPException(status_code=404, detail="Photo not found")
+    if not await _client_can_see_photo(event_id, user, grant, photo_id):
+        raise HTTPException(status_code=403, detail="Not allowed to like this photo")
+    key = {"event_id": event_id, "client_user_id": user["user_id"], "photo_id": photo_id}
+    existing = await db.photo_likes.find_one(key)
+    if existing:
+        await db.photo_likes.delete_one(key)
+        liked = False
+    else:
+        await db.photo_likes.insert_one({**key, "created_at": now_iso()})
+        liked = True
+    count = await db.photo_likes.count_documents(
+        {"event_id": event_id, "client_user_id": user["user_id"]}
+    )
+    return {"liked": liked, "liked_count": count}
+
+
+@api_router.get("/client/events/{event_id}/liked")
+async def client_liked(event_id: str, user: dict = Depends(require_client)):
+    await client_grant_or_403(event_id, user)
+    likes = await db.photo_likes.find(
+        {"event_id": event_id, "client_user_id": user["user_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(20000)
+    ids = [l["photo_id"] for l in likes]
+    album = await db.client_albums.find_one(
+        {"event_id": event_id, "client_user_id": user["user_id"]}, {"_id": 0}
+    )
+    scores = album.get("scores", {}) if album else {}
+    photos = await _photos_with_scores(ids, scores)
+    for p in photos:
+        p["liked"] = True
+    return {"count": len(photos), "photos": photos}
+
+
+@api_router.get("/events/{event_id}/clients/{client_user_id}/photos")
+async def admin_client_photos(event_id: str, client_user_id: str, admin: dict = Depends(require_admin)):
+    """Admin view of a specific client's Matched (My Photos) + Liked galleries."""
+    await admin_event_or_404(event_id, admin)
+    u = await db.users.find_one({"user_id": client_user_id}, {"_id": 0, "password_hash": 0})
+    album = await db.client_albums.find_one(
+        {"event_id": event_id, "client_user_id": client_user_id}, {"_id": 0}
+    )
+    matched_ids = album.get("photo_ids", []) if album else []
+    scores = album.get("scores", {}) if album else {}
+    matched = await _photos_with_scores(matched_ids, scores)
+    likes = await db.photo_likes.find(
+        {"event_id": event_id, "client_user_id": client_user_id}, {"_id": 0}
+    ).sort("created_at", -1).to_list(20000)
+    liked_ids = [l["photo_id"] for l in likes]
+    liked = await _photos_with_scores(liked_ids, scores)
+    return {
+        "client": {
+            "client_user_id": client_user_id,
+            "name": u.get("name") if u else None,
+            "email": u.get("email") if u else None,
+            "phone": u.get("phone") if u else None,
+        },
+        "matched": matched,
+        "liked": liked,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -878,6 +975,14 @@ async def serve_file(path: str, user: dict = Depends(user_from_token_or_header))
                 )
                 if album and photo["photo_id"] in album.get("photo_ids", []):
                     authorized = True
+                else:
+                    like = await db.photo_likes.find_one({
+                        "event_id": photo["event_id"],
+                        "client_user_id": user["user_id"],
+                        "photo_id": photo["photo_id"],
+                    })
+                    if like:
+                        authorized = True
         except HTTPException:
             authorized = False
     if not authorized:
@@ -929,6 +1034,8 @@ async def on_startup():
         await db.faces.create_index("event_id")
         await db.access_grants.create_index("event_id")
         await db.client_albums.create_index([("event_id", 1), ("client_user_id", 1)], unique=True)
+        await db.photo_likes.create_index([("event_id", 1), ("client_user_id", 1), ("photo_id", 1)], unique=True)
+        await db.photo_likes.create_index([("event_id", 1), ("client_user_id", 1)])
     except Exception as e:
         logger.error(f"Index creation issue: {e}")
 
