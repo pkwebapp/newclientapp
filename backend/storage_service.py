@@ -29,6 +29,11 @@ class StorageBackend:
     def get_object(self, path: str) -> tuple[bytes, str]:
         raise NotImplementedError
 
+    def public_url(self, path: str) -> str | None:
+        """Public CDN URL for an object, or None if the backend can't serve
+        objects directly (callers then fall back to the /api/files proxy)."""
+        return None
+
 
 class EmergentObjectStorage(StorageBackend):
     """Emergent-managed object storage (S3-compatible under the hood)."""
@@ -121,6 +126,11 @@ class CloudinaryStorage(StorageBackend):
         resp.raise_for_status()
         ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
         return resp.content, ctype
+
+    def public_url(self, path: str) -> str | None:
+        if not path:
+            return None
+        return f"https://res.cloudinary.com/{self._cloud_name}/raw/upload/{path}"
 
 
 def get_storage() -> StorageBackend:

@@ -102,6 +102,7 @@ def public_event(event: dict) -> dict:
         "indexing_status": event.get("indexing_status", "empty"),
         "photo_count": event.get("photo_count", 0),
         "cover_path": event.get("cover_path"),
+        "cover_url": _public_url(event.get("cover_path")),
         "share_enabled": event.get("share_enabled", True),
         "created_at": event.get("created_at"),
     }
@@ -937,12 +938,25 @@ async def export_visitors(event_id: str, admin: dict = Depends(require_admin)):
     )
 
 
+def _public_url(path: str | None) -> str | None:
+    """Direct CDN URL for a stored object (Cloudinary), or None so the client
+    falls back to the authenticated /api/files proxy."""
+    if not path:
+        return None
+    try:
+        return get_storage().public_url(path)
+    except Exception:
+        return None
+
+
 def public_photo(p: dict) -> dict:
     return {
         "photo_id": p["photo_id"],
         "event_id": p["event_id"],
         "thumb_path": p.get("thumb_path"),
         "storage_path": p.get("storage_path"),
+        "url": _public_url(p.get("storage_path")),
+        "thumb_url": _public_url(p.get("thumb_path")),
         "filename": p.get("filename"),
         "width": p.get("width"),
         "height": p.get("height"),

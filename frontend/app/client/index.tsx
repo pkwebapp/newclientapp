@@ -14,7 +14,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-import { api, fileUrl } from "@/src/api/client";
+import { api, imgUrl } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { EmptyState, Pill, GlassHeader, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
@@ -94,7 +94,7 @@ export default function ClientEvents() {
                 style={styles.card}
               >
                 <Image
-                  source={{ uri: fileUrl(e.cover_path) || FALLBACK }}
+                  source={{ uri: imgUrl(e.cover_url, e.cover_path) || FALLBACK }}
                   style={StyleSheet.absoluteFill}
                   contentFit="cover"
                   transition={250}

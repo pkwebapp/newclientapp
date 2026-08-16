@@ -18,7 +18,7 @@ import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-import { api, ApiError, fileUrl, getAuthToken, UploadItem } from "@/src/api/client";
+import { api, ApiError, imgUrl, getAuthToken, UploadItem } from "@/src/api/client";
 import { Button, TextField, Pill, GlassHeader, EmptyState, useToast } from "@/src/components/ui";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
@@ -461,7 +461,7 @@ export default function AdminEvent() {
                 {photos.map((p, i) => (
                   <View key={p.photo_id} style={[styles.thumbCell, isDesktop && styles.thumbCellDesktop]}>
                     <View style={styles.thumbImg} testID={`admin-photo-${p.photo_id}`}>
-                      <Image source={{ uri: fileUrl(p.thumb_path) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} cachePolicy="memory-disk" />
+                      <Image source={{ uri: imgUrl(p.thumb_url, p.thumb_path) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} cachePolicy="memory-disk" />
                       {p.indexing_status && p.indexing_status !== "indexed" && (
                         <View style={[styles.faceBadge, styles.pendingBadge]}>
                           <Ionicons name={p.indexing_status === "failed" ? "alert" : "time-outline"} size={10} color={colors.onBrand} />

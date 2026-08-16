@@ -24,14 +24,26 @@ export function fileUrl(path?: string | null): string | undefined {
   return `${BASE}/files/${path}?token=${authToken ?? ""}`;
 }
 
+/**
+ * Resolve an image source. Prefers a direct CDN url (e.g. Cloudinary) supplied
+ * by the backend so bytes are served straight from the CDN edge; falls back to
+ * the authenticated /api/files proxy when no direct url is available.
+ */
+export function imgUrl(direct?: string | null, path?: string | null): string | undefined {
+  return direct || fileUrl(path);
+}
+
 /** Download the original image. Web = blob download; native = open in browser. */
 export async function downloadPhoto(photo: {
+  url?: string | null;
+  thumb_url?: string | null;
   storage_path?: string | null;
   thumb_path?: string | null;
   filename?: string | null;
   photo_id: string;
 }): Promise<void> {
-  const url = fileUrl(photo.storage_path || photo.thumb_path);
+  const url =
+    photo.url || photo.thumb_url || fileUrl(photo.storage_path || photo.thumb_path);
   if (!url) return;
   const name = photo.filename || `${photo.photo_id}.jpg`;
   if (Platform.OS === "web") {

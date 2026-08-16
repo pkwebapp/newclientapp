@@ -14,13 +14,15 @@ import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
-import { fileUrl } from "@/src/api/client";
+import { imgUrl } from "@/src/api/client";
 import { Pill } from "@/src/components/ui";
 
 export type Photo = {
   photo_id: string;
   thumb_path?: string | null;
   storage_path?: string | null;
+  url?: string | null;
+  thumb_url?: string | null;
   filename?: string | null;
   width?: number;
   height?: number;
@@ -76,7 +78,7 @@ export function PhotoGrid({
           style={[styles.card, { height: h }]}
         >
           <Image
-            source={{ uri: fileUrl(item.thumb_path || item.storage_path) }}
+            source={{ uri: imgUrl(item.thumb_url || item.url, item.thumb_path || item.storage_path) }}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
             transition={200}
@@ -187,7 +189,7 @@ function FullscreenViewer({
           renderItem={({ item }) => (
             <Pressable style={{ width: screenW, height: screenH }} onPress={onClose}>
               <Image
-                source={{ uri: fileUrl(item.storage_path || item.thumb_path) }}
+                source={{ uri: imgUrl(item.url || item.thumb_url, item.storage_path || item.thumb_path) }}
                 style={{ width: screenW, height: screenH }}
                 contentFit="contain"
                 transition={150}
