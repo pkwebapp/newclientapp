@@ -51,6 +51,11 @@ export default function AdminDashboard() {
         title="Studio Console"
         subtitle={user?.email}
         topInset={insets.top}
+        left={
+          <Pressable testID="admin-home-btn" onPress={() => router.push("/login")} hitSlop={10} style={{ padding: 6 }}>
+            <Ionicons name="home-outline" size={22} color={colors.onSurfaceTertiary} />
+          </Pressable>
+        }
         right={
           <Pressable testID="admin-signout-btn" onPress={signOut} hitSlop={10} style={{ padding: 6 }}>
             <Ionicons name="log-out-outline" size={22} color={colors.onSurfaceTertiary} />

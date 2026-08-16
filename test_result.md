@@ -101,3 +101,116 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+
+user_problem_statement: |
+  Continuation of PIK Connect (Lumiere Gallery) — photographer client gallery app
+  (Expo + FastAPI + MongoDB, AWS Rekognition face search).
+  Reported bug: After uploading 6 photos, refreshing the browser makes photos "go missing"
+  and shows "Not authenticated" error.
+  Feature request: Add a Home button on the Studio Console (admin dashboard) header.
+
+frontend:
+  - task: "Fix refresh race: 'Not authenticated' + missing photos on browser refresh"
+    implemented: true
+    working: true
+    file: "app/admin/_layout.tsx, app/client/_layout.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Root cause: on a hard browser refresh directly on a protected screen (e.g. admin
+            event detail), the screen's useFocusEffect fired API calls + image loads (fileUrl
+            with ?token=) BEFORE AuthProvider's async bootstrap restored the token via
+            storage.secureGet -> setAuthToken. When the screen won the race, requests went out
+            with authToken=null -> backend 401 "Not authenticated", and photos appeared missing.
+            Fix: added auth-gate layouts app/admin/_layout.tsx and app/client/_layout.tsx that
+            show a loader while auth `loading` is true, redirect to the correct login if no user,
+            and only render (mount + fetch) child screens once authenticated. This removes the race.
+            Verify: login as admin (admin@lumiere.studio / Admin@12345), open the "Test" event
+            (evt_9a54b15846be) detail page, then REFRESH the browser repeatedly. Photos (6) must
+            stay visible and NO "Not authenticated" toast should appear. Also refresh on /admin.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ PASS - Tested browser refresh 5 times on event detail page (evt_9a54b15846be):
+            • All 5 refreshes successful - photos remained visible (6 photos each time)
+            • No "Not authenticated" error toasts appeared
+            • No 401 authentication errors in network requests
+            • User stayed logged in on all refreshes
+            • URL remained on event detail page (no redirects to login)
+            • Indexing status showed "6/6 indexed · 6 faces detected" consistently
+            Also tested dashboard refresh 2 times - no issues.
+            The auth gate layout is working correctly - it shows a brief loading screen while
+            restoring the token, then renders the protected content only after authentication
+            is confirmed. This eliminates the race condition completely.
+
+  - task: "Add Home button to Studio Console (admin dashboard) header"
+    implemented: true
+    working: true
+    file: "app/admin/index.tsx, src/components/ui.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Added an optional `left` slot to GlassHeader and a home-outline button (testID
+            "admin-home-btn") on the top-left of the Studio Console header that navigates to
+            "/login" (the PIK Connect landing/home). Verify tapping it lands on the landing page
+            with "Find my photos" / "Studio sign in".
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ PASS - Home button working correctly:
+            • Home button (home-outline icon) visible in top-left of Studio Console header
+            • Clicking the button successfully navigates to /login landing page
+            • Landing page displays correctly with:
+              - Hero text: "Your moments, found in an instant."
+              - "Find my photos" button
+              - "Studio sign in" button
+            The home button provides a clear way for admins to return to the main landing page
+            from the Studio Console.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 1
+  run_ui: true
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: |
+        Please test the two frontend items above. Admin creds: admin@lumiere.studio / Admin@12345.
+        Existing event "Test" id evt_9a54b15846be has 6 indexed photos. Focus especially on the
+        REFRESH-on-event-detail scenario (the reported bug) — refresh several times to catch the race.
+    - agent: "testing"
+      message: |
+        ✅ TESTING COMPLETE - Both tasks PASSED successfully.
+        
+        TASK 1 (CRITICAL BUG FIX): Refresh race condition - ✅ PASS
+        • Tested 5 consecutive browser refreshes on event detail page
+        • All 6 photos remained visible after every refresh
+        • No "Not authenticated" errors appeared
+        • No 401 authentication errors in network requests
+        • User stayed logged in throughout all refreshes
+        • Dashboard refresh also tested (2x) - no issues
+        
+        TASK 2 (FEATURE): Home button - ✅ PASS
+        • Home button visible in top-left of Studio Console header
+        • Successfully navigates to /login landing page
+        • Landing page displays all expected content
+        
+        The auth gate layout fix is working perfectly. The brief loading screen while restoring
+        the token prevents any API calls from firing before authentication is confirmed.
+        
+        No issues found. Both features are production-ready.

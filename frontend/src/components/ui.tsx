@@ -216,12 +216,14 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
 export function GlassHeader({
   title,
   onBack,
+  left,
   right,
   subtitle,
   topInset = 0,
 }: {
   title: string;
   onBack?: () => void;
+  left?: React.ReactNode;
   right?: React.ReactNode;
   subtitle?: string;
   topInset?: number;
@@ -233,6 +235,8 @@ export function GlassHeader({
           <Pressable testID="header-back" onPress={onBack} style={styles.iconBtn} hitSlop={10}>
             <Ionicons name="chevron-back" size={24} color={colors.onSurface} />
           </Pressable>
+        ) : left ? (
+          <View style={{ minWidth: 40 }}>{left}</View>
         ) : (
           <View style={{ width: 40 }} />
         )}
