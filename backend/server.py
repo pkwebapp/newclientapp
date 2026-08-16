@@ -5,6 +5,7 @@ import csv
 import uuid
 import base64
 import random
+import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -446,7 +447,9 @@ async def reindex_event(event_id: str, admin: dict = Depends(require_admin)):
 
 
 async def _ingest_photo(event: dict, data: bytes, filename: str, content_type: str) -> dict:
-    """Store original + thumbnail, index faces, persist photo + face docs."""
+    """Store original + thumbnail and queue the photo for background face indexing.
+    Indexing (the slow AWS Rekognition step) is handled asynchronously by the
+    indexing worker so bulk uploads of hundreds of photos stay fast."""
     event_id = event["event_id"]
     photo_id = f"pho_{uuid.uuid4().hex[:12]}"
     ext = (filename or "photo.jpg").split(".")[-1].lower()
@@ -460,17 +463,6 @@ async def _ingest_photo(event: dict, data: bytes, filename: str, content_type: s
     await run_in_threadpool(storage.put_object, orig_path, data, content_type or "image/jpeg")
     await run_in_threadpool(storage.put_object, thumb_path, thumb_bytes, "image/jpeg")
 
-    engine = get_face_engine()
-    faces = await run_in_threadpool(engine.index_photo, event["collection_id"], photo_id, data)
-    if faces:
-        await db.faces.insert_many([{
-            "face_id": f["face_id"],
-            "event_id": event_id,
-            "photo_id": photo_id,
-            "bounding_box": f.get("bounding_box"),
-            "indexed_at": now_iso(),
-        } for f in faces])
-
     photo = {
         "photo_id": photo_id,
         "event_id": event_id,
@@ -479,18 +471,116 @@ async def _ingest_photo(event: dict, data: bytes, filename: str, content_type: s
         "filename": filename,
         "width": w,
         "height": h,
-        "face_count": len(faces),
-        "indexing_status": "indexed",
+        "face_count": 0,
+        "indexing_status": "pending",
         "uploaded_at": now_iso(),
     }
     await db.photos.insert_one(photo)
 
-    set_fields = {"indexing_status": "ready"}
+    set_fields = {"indexing_status": "indexing"}
     if not event.get("cover_path"):
         set_fields["cover_path"] = thumb_path
         event["cover_path"] = thumb_path  # so subsequent imports in a loop don't reset
     await db.events.update_one({"event_id": event_id}, {"$inc": {"photo_count": 1}, "$set": set_fields})
+    _wake_indexer()
     return photo
+
+
+# ---------------------------------------------------------------------------
+# Background face-indexing worker
+# ---------------------------------------------------------------------------
+INDEX_BATCH = 5
+_indexer_event: Optional[asyncio.Event] = None
+_indexer_task: Optional[asyncio.Task] = None
+
+
+def _wake_indexer():
+    if _indexer_event is not None:
+        try:
+            _indexer_event.set()
+        except Exception:
+            pass
+
+
+async def _index_one_photo(event: dict, photo: dict) -> None:
+    engine = get_face_engine()
+    storage = get_storage()
+    try:
+        content, _ = await run_in_threadpool(storage.get_object, photo["storage_path"])
+        faces = await run_in_threadpool(engine.index_photo, event["collection_id"], photo["photo_id"], content)
+        if faces:
+            await db.faces.insert_many([{
+                "face_id": f["face_id"],
+                "event_id": photo["event_id"],
+                "photo_id": photo["photo_id"],
+                "bounding_box": f.get("bounding_box"),
+                "indexed_at": now_iso(),
+            } for f in faces])
+        await db.photos.update_one(
+            {"photo_id": photo["photo_id"]},
+            {"$set": {"face_count": len(faces), "indexing_status": "indexed", "indexed_at": now_iso()}},
+        )
+    except Exception as e:
+        logger.error(f"index photo {photo['photo_id']} failed: {e}")
+        await db.photos.update_one(
+            {"photo_id": photo["photo_id"]},
+            {"$set": {"indexing_status": "failed", "index_error": str(e)[:200]}},
+        )
+
+
+async def _refresh_event_index_status(event_id: str) -> None:
+    total = await db.photos.count_documents({"event_id": event_id})
+    remaining = await db.photos.count_documents(
+        {"event_id": event_id, "indexing_status": {"$in": ["pending", "indexing"]}}
+    )
+    if total == 0:
+        status = "empty"
+    elif remaining > 0:
+        status = "indexing"
+    else:
+        status = "ready"
+    await db.events.update_one({"event_id": event_id}, {"$set": {"indexing_status": status}})
+
+
+async def _indexing_loop():
+    global _indexer_event
+    _indexer_event = asyncio.Event()
+    logger.info("Face-indexing worker started")
+    while True:
+        try:
+            pending = await db.photos.find(
+                {"indexing_status": "pending"}, {"_id": 0}
+            ).limit(INDEX_BATCH).to_list(INDEX_BATCH)
+
+            if not pending:
+                _indexer_event.clear()
+                try:
+                    await asyncio.wait_for(_indexer_event.wait(), timeout=15)
+                except asyncio.TimeoutError:
+                    pass
+                continue
+
+            ids = [p["photo_id"] for p in pending]
+            await db.photos.update_many(
+                {"photo_id": {"$in": ids}}, {"$set": {"indexing_status": "indexing"}}
+            )
+
+            events_cache: dict[str, dict] = {}
+
+            async def handle(p):
+                ev = events_cache.get(p["event_id"])
+                if ev is None:
+                    ev = await db.events.find_one({"event_id": p["event_id"]})
+                    events_cache[p["event_id"]] = ev
+                if ev:
+                    await _index_one_photo(ev, p)
+
+            await asyncio.gather(*[handle(p) for p in pending])
+            for eid in {p["event_id"] for p in pending}:
+                await _refresh_event_index_status(eid)
+        except Exception as e:
+            logger.error(f"indexing worker error: {e}")
+            await asyncio.sleep(3)
 
 
 @api_router.post("/events/{event_id}/photos")
@@ -506,6 +596,29 @@ async def upload_photo(event_id: str, file: UploadFile = File(...), admin: dict 
     except Exception:
         raise HTTPException(status_code=400, detail="Unsupported or corrupt image")
     return public_photo(photo)
+
+
+@api_router.post("/events/{event_id}/photos/bulk")
+async def upload_photos_bulk(event_id: str, files: list[UploadFile] = File(...),
+                             admin: dict = Depends(require_admin)):
+    """Store many photos in a single request; face indexing is queued in the
+    background. Returns per-file results so the client can drive a progress bar."""
+    event = await admin_event_or_404(event_id, admin)
+    results = []
+    uploaded = 0
+    for f in files:
+        try:
+            data = await f.read()
+            if not data:
+                results.append({"filename": f.filename, "ok": False, "error": "empty"})
+                continue
+            photo = await _ingest_photo(event, data, f.filename or "photo.jpg", f.content_type or "image/jpeg")
+            uploaded += 1
+            results.append({"filename": f.filename, "ok": True, "photo_id": photo["photo_id"]})
+        except Exception as e:
+            logger.error(f"bulk upload {getattr(f, 'filename', '?')} failed: {e}")
+            results.append({"filename": getattr(f, "filename", None), "ok": False, "error": "unsupported"})
+    return {"uploaded": uploaded, "received": len(files), "results": results}
 
 
 class S3ImportBody(BaseModel):
@@ -565,7 +678,7 @@ async def import_from_s3(event_id: str, body: S3ImportBody, admin: dict = Depend
             break
         token = resp.get("NextContinuationToken")
 
-    return {"status": "imported", "bucket": bucket, "imported": imported, "faces_indexed": faces_total, "skipped": skipped}
+    return {"status": "imported", "bucket": bucket, "imported": imported, "queued_for_indexing": imported, "skipped": skipped}
 
 
 @api_router.get("/events/{event_id}/photos")
@@ -580,12 +693,20 @@ async def indexing_status(event_id: str, admin: dict = Depends(require_admin)):
     event = await admin_event_or_404(event_id, admin)
     total = await db.photos.count_documents({"event_id": event_id})
     indexed = await db.photos.count_documents({"event_id": event_id, "indexing_status": "indexed"})
+    pending = await db.photos.count_documents({"event_id": event_id, "indexing_status": {"$in": ["pending", "indexing"]}})
+    failed = await db.photos.count_documents({"event_id": event_id, "indexing_status": "failed"})
     faces = await db.faces.count_documents({"event_id": event_id})
+    processed = indexed + failed
+    percent = 100 if total == 0 else round(processed / total * 100)
     return {
         "status": event.get("indexing_status", "empty"),
         "total_photos": total,
         "indexed_photos": indexed,
+        "pending_photos": pending,
+        "failed_photos": failed,
         "total_faces": faces,
+        "percent": percent,
+        "complete": pending == 0,
     }
 
 
@@ -668,12 +789,34 @@ async def list_event_clients(event_id: str, admin: dict = Depends(require_admin)
 
 @api_router.delete("/events/{event_id}/clients/{client_user_id}/face-data")
 async def delete_client_face_data(event_id: str, client_user_id: str, admin: dict = Depends(require_admin)):
-    """Right-to-be-forgotten: delete the client's matched album for this event.
-    (Raw selfies are never stored; only match references exist.)"""
-    await admin_event_or_404(event_id, admin)
+    """Right-to-be-forgotten: remove this person's indexed faces from the AWS
+    Rekognition collection (DeleteFaces) so they can never be matched again, and
+    delete their matched album + consent. (Raw selfies are never stored.)"""
+    event = await admin_event_or_404(event_id, admin)
+    album = await db.client_albums.find_one(
+        {"event_id": event_id, "client_user_id": client_user_id}, {"_id": 0}
+    )
+    deleted_faces = 0
+    if album and album.get("face_ids"):
+        face_ids = list({fid for fid in album["face_ids"] if fid})
+        if face_ids:
+            engine = get_face_engine()
+            try:
+                # Rekognition DeleteFaces accepts up to 1000 ids per call.
+                for i in range(0, len(face_ids), 1000):
+                    await run_in_threadpool(engine.delete_faces, event["collection_id"], face_ids[i:i + 1000])
+            except Exception as e:
+                logger.error(f"Rekognition DeleteFaces failed for {client_user_id}: {e}")
+            # Drop the local face records + refresh affected photo face counts.
+            await db.faces.delete_many({"event_id": event_id, "face_id": {"$in": face_ids}})
+            for pid in {p for p in album.get("photo_ids", [])}:
+                remaining = await db.faces.count_documents({"event_id": event_id, "photo_id": pid})
+                await db.photos.update_one({"photo_id": pid}, {"$set": {"face_count": remaining}})
+            deleted_faces = len(face_ids)
+
     await db.client_albums.delete_many({"event_id": event_id, "client_user_id": client_user_id})
     await db.consent_logs.delete_many({"event_id": event_id, "client_user_id": client_user_id})
-    return {"status": "deleted"}
+    return {"status": "deleted", "faces_removed": deleted_faces}
 
 
 # ---------------------------------------------------------------------------
@@ -933,6 +1076,7 @@ async def selfie_search(event_id: str, file: UploadFile = File(...), user: dict 
         if pid not in best or m["similarity"] > best[pid]:
             best[pid] = m["similarity"]
     matched_photo_ids = sorted(best.keys(), key=lambda p: best[p], reverse=True)
+    matched_face_ids = [m["face_id"] for m in matches]
 
     # 4) Upsert private "My Photos" album.
     await db.client_albums.update_one(
@@ -941,6 +1085,7 @@ async def selfie_search(event_id: str, file: UploadFile = File(...), user: dict 
             "event_id": event_id,
             "client_user_id": user["user_id"],
             "photo_ids": matched_photo_ids,
+            "face_ids": matched_face_ids,
             "scores": {p: best[p] for p in matched_photo_ids},
             "last_searched_at": now_iso(),
         }},
@@ -1292,6 +1437,17 @@ async def on_startup():
         logger.error(f"Admin seed failed: {e}")
 
 
+    # Recover any photos left mid-indexing by a previous restart, then start the worker.
+    try:
+        await db.photos.update_many({"indexing_status": "indexing"}, {"$set": {"indexing_status": "pending"}})
+    except Exception as e:
+        logger.error(f"Indexing recovery failed: {e}")
+    global _indexer_task
+    _indexer_task = asyncio.create_task(_indexing_loop())
+
+
 @app.on_event("shutdown")
 async def on_shutdown():
+    if _indexer_task:
+        _indexer_task.cancel()
     client.close()

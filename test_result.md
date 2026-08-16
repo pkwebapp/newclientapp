@@ -353,10 +353,86 @@ backend:
             
             Backend is production-ready. 0 failures.
 
+  - task: "Bulk upload + background face-indexing queue + live status; Rekognition RTBF DeleteFaces"
+    implemented: true
+    working: true
+    file: "backend/server.py, backend/face_engine.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Decoupled photo storage from face indexing so bulk uploads are fast.
+            • _ingest_photo now stores original+thumbnail and marks photo indexing_status="pending"
+              (no inline Rekognition). Event indexing_status set to "indexing".
+            • New background asyncio worker claims pending photos in batches of 5, indexes via
+              Rekognition, inserts face docs, marks "indexed"/"failed", refreshes event status to
+              "ready" when the queue drains. Started on startup; stuck "indexing" reset to "pending".
+            • NEW POST /api/events/{id}/photos/bulk (admin) — accepts multiple files (field "files"),
+              stores all + queues indexing, returns {uploaded, received, results:[{filename,ok,photo_id}]}.
+            • Existing single POST /api/events/{id}/photos is now store-fast + queued too.
+            • GET /api/events/{id}/indexing-status now returns: status, total_photos, indexed_photos,
+              pending_photos, failed_photos, total_faces, percent, complete.
+            • RTBF: DELETE /api/events/{id}/clients/{client_user_id}/face-data now calls Rekognition
+              DeleteFaces on the client's matched face_ids (persisted in client_albums by selfie_search),
+              deletes those face docs, refreshes photo face_count, then removes album+consent. Returns
+              {status:"deleted", faces_removed:N}.
+            Test with admin admin@lumiere.studio / Admin@12345. FACE_ENGINE=rekognition is LIVE; test
+            images without faces index with 0 faces (expected). Verify: create event; POST /photos/bulk
+            with 3 small images returns uploaded=3 immediately; /indexing-status shows pending>0 right
+            after then percent=100 & complete=true & status="ready" within a few seconds. RTBF endpoint
+            returns 200 with faces_removed (0 if the client had no matched faces).
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL 10 TESTS PASSED - Bulk upload + background indexing feature fully functional.
+            
+            Tested comprehensive lifecycle with fresh event (evt_2ef7813e668e):
+            
+            PASSED TESTS:
+            1. ✅ POST /api/events (admin) - Event created successfully
+            2. ✅ POST /api/events/{event_id}/photos/bulk (admin) - Bulk upload of 4 images:
+               • Response returned quickly (1.82s) - NOT blocking on indexing ✓
+               • uploaded=4, received=4, all results ok=true ✓
+               • Each result contains {filename, ok:true, photo_id} ✓
+            3. ✅ GET /api/events/{event_id}/indexing-status (admin) - Immediate status check:
+               • Returns ALL required fields: status, total_photos, indexed_photos, pending_photos, 
+                 failed_photos, total_faces, percent, complete ✓
+               • total_photos=4 (matches uploaded count) ✓
+               • status=indexing, pending=4, indexed=0, percent=0, complete=False ✓
+            4. ✅ Poll GET /api/events/{event_id}/indexing-status (admin) - Background indexing:
+               • Reached percent=100, complete=true, pending=0 after 2 seconds ✓
+               • status="ready", indexed=4, total_faces=0 (no faces in test images, expected) ✓
+               • GET /api/events/{event_id} confirms indexing_status="ready" ✓
+            5. ✅ POST /api/events/{event_id}/photos (admin) - Single upload regression:
+               • Photo uploaded successfully (pho_3695c5d28267) ✓
+               • Indexing completed (percent=100, complete=true) ✓
+               • total_photos=5 after single upload ✓
+            6. ✅ DELETE /api/events/{event_id}/clients/{client_user_id}/face-data (admin) - RTBF:
+               • Returns 200 with status="deleted", faces_removed=0 ✓
+               • No server errors (tested with non-existent user_id) ✓
+            7. ✅ Auth checks:
+               • POST /api/events/{event_id}/photos/bulk (no token) → 401 ✓
+               • POST /api/events/{event_id}/photos/bulk (client token) → 403 ✓
+            
+            Background indexing worker confirmed running in logs:
+            • "Face-indexing worker started" message present ✓
+            • Photos processed asynchronously in batches ✓
+            • Event status transitions: empty → indexing → ready ✓
+            
+            All endpoints return correct status codes, proper response structures, and accurate data.
+            The bulk upload is fast (non-blocking), background indexing works correctly, and the
+            indexing-status endpoint provides real-time progress updates. RTBF cleanup works without
+            errors. Authorization checks are working as expected.
+            
+            Backend is production-ready. 0 failures.
+
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 3
+  test_sequence: 4
   run_ui: true
 
 test_plan:
@@ -368,13 +444,18 @@ test_plan:
 agent_communication:
     - agent: "main"
       message: |
-        NEW FEATURE for backend testing: Public shareable galleries. Please test the endpoints
-        described in the "Public shareable galleries" task above. Admin creds:
-        admin@lumiere.studio / Admin@12345. Create a fresh event to test against (it will have
-        share_enabled=true by default). Focus on the full lifecycle: share info + HD QR base64,
-        public event info (no auth), public access with name+mobile returning a working client
-        token, visitor listing + CSV export, block (must 403 on re-access & revoke gallery
-        access) / unblock, and share_enabled toggle gating the public endpoints (403 when off).
+        NEW backend feature for testing: Bulk upload + background face-indexing queue + RTBF cleanup.
+        Admin creds admin@lumiere.studio / Admin@12345. FACE_ENGINE=rekognition is LIVE — using small
+        test images WITHOUT faces is fine (they index with 0 faces). Focus on:
+        1) POST /api/events/{id}/photos/bulk with several image files returns immediately with
+           uploaded=count (does NOT block on indexing).
+        2) GET /api/events/{id}/indexing-status returns new fields (percent, complete, pending_photos,
+           failed_photos) and, when polled over ~5-10s, transitions to percent=100 / complete=true /
+           status="ready" as the background worker finishes.
+        3) Single POST /api/events/{id}/photos still works (store-fast).
+        4) RTBF DELETE /api/events/{id}/clients/{client_user_id}/face-data returns 200 with
+           faces_removed and does not error (non-existent client id → faces_removed=0).
+        5) Auth: bulk endpoint without token → 401; with client token → 403.
     - agent: "testing"
       message: |
         ✅ TESTING COMPLETE - Both tasks PASSED successfully.
@@ -436,5 +517,23 @@ agent_communication:
         All endpoints return correct status codes, proper response structures, and accurate data.
         The visitor blocking/unblocking flow works perfectly with immediate session revocation.
         The share_enabled toggle correctly gates public access.
+        
+        Backend is production-ready. 0 failures.
+    - agent: "testing"
+      message: |
+        ✅ BACKEND TESTING COMPLETE - Bulk upload + background indexing feature fully functional.
+        
+        Tested comprehensive lifecycle with fresh event (evt_2ef7813e668e):
+        • All 10 tests PASSED (0 failures)
+        • Bulk upload returns immediately (1.82s for 4 images) - NOT blocking on indexing ✓
+        • Indexing-status returns all required fields (status, total_photos, indexed_photos, 
+          pending_photos, failed_photos, total_faces, percent, complete) ✓
+        • Background indexing completes within 2 seconds (percent=100, complete=true, status=ready) ✓
+        • Single upload regression works correctly ✓
+        • RTBF cleanup returns 200 with status=deleted, faces_removed=0 (no errors) ✓
+        • Auth checks: 401 without token, 403 with client token ✓
+        
+        Background indexing worker confirmed running in logs. Photos processed asynchronously.
+        Event status transitions correctly: empty → indexing → ready.
         
         Backend is production-ready. 0 failures.

@@ -105,7 +105,36 @@ export const api = {
   patch: (p: string, json?: any) => request(p, { method: "PATCH", json }),
   del: (p: string) => request(p, { method: "DELETE" }),
   upload,
+  uploadBulk,
 };
+
+export type UploadItem = { uri?: string; name: string; type: string; file?: any };
+
+/** Upload many files in one multipart request (field name "files"). */
+async function uploadBulk(path: string, items: UploadItem[]) {
+  const form = new FormData();
+  for (const it of items) {
+    if (Platform.OS === "web") {
+      const blob = it.file ?? (await (await fetch(it.uri!)).blob());
+      form.append("files", blob, it.name);
+    } else {
+      form.append("files", { uri: it.uri, name: it.name, type: it.type } as any);
+    }
+  }
+  const headers: Record<string, string> = {};
+  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+  const res = await fetch(BASE + path, { method: "POST", headers, body: form });
+  const text = await res.text();
+  let data: any = text;
+  try {
+    data = JSON.parse(text);
+  } catch {}
+  if (!res.ok) {
+    const msg = (data && data.detail) || "Upload failed";
+    throw new ApiError(res.status, msg);
+  }
+  return data;
+}
 
 /** No-auth request for public shareable-gallery endpoints. */
 async function publicRequest(path: string, opts: any = {}) {

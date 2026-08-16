@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -18,7 +18,7 @@ import * as Clipboard from "expo-clipboard";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-import { api, ApiError, fileUrl, getAuthToken } from "@/src/api/client";
+import { api, ApiError, fileUrl, getAuthToken, UploadItem } from "@/src/api/client";
 import { Button, TextField, Pill, GlassHeader, EmptyState, useToast } from "@/src/components/ui";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
@@ -40,6 +40,8 @@ export default function AdminEvent() {
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [uploadDone, setUploadDone] = useState(0);
+  const [uploadTotal, setUploadTotal] = useState(0);
   const [importingS3, setImportingS3] = useState(false);
 
   // access form
@@ -88,7 +90,74 @@ export default function AdminEvent() {
     }, [load])
   );
 
+  // Poll indexing status while photos are still being indexed in the background.
+  useEffect(() => {
+    if (!status || status.complete || (status.total_photos ?? 0) === 0) return;
+    const t = setInterval(async () => {
+      try {
+        const st = await api.get(`/events/${id}/indexing-status`);
+        setStatus(st);
+        if (st.complete) {
+          setEvent((e: any) => (e ? { ...e, indexing_status: st.status } : e));
+          const ps = await api.get(`/events/${id}/photos`);
+          setPhotos(ps);
+        }
+      } catch {}
+    }, 2500);
+    return () => clearInterval(t);
+  }, [status, id]);
+
+  const CHUNK = 8;
+
+  const runBulkUpload = async (items: UploadItem[]) => {
+    if (!items.length) return;
+    setUploading(true);
+    setUploadTotal(items.length);
+    setUploadDone(0);
+    let ok = 0;
+    for (let i = 0; i < items.length; i += CHUNK) {
+      const chunk = items.slice(i, i + CHUNK);
+      try {
+        const r = await api.uploadBulk(`/events/${id}/photos/bulk`, chunk);
+        ok += r.uploaded || 0;
+      } catch {
+        // continue with remaining chunks
+      }
+      setUploadDone(Math.min(i + chunk.length, items.length));
+    }
+    setUploading(false);
+    setUploadTotal(0);
+    toast.show(`Uploaded ${ok} photo${ok !== 1 ? "s" : ""} · indexing in background`, ok ? "success" : "error");
+    // Kick off status polling.
+    try {
+      const st = await api.get(`/events/${id}/indexing-status`);
+      setStatus(st);
+      setEvent((e: any) => (e ? { ...e, indexing_status: st.status } : e));
+      const ps = await api.get(`/events/${id}/photos`);
+      setPhotos(ps);
+    } catch {}
+  };
+
+  // Web: pick many files or an entire folder via a native file input.
+  const pickWebFiles = (folder: boolean) => {
+    const input = window.document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.multiple = true;
+    if (folder) (input as any).webkitdirectory = true;
+    input.onchange = async () => {
+      const files = Array.from(input.files || []).filter((f) => f.type.startsWith("image/"));
+      const items = files.map((f) => ({ name: f.name, type: f.type || "image/jpeg", file: f }));
+      await runBulkUpload(items);
+    };
+    input.click();
+  };
+
   const uploadPhotos = async () => {
+    if (Platform.OS === "web") {
+      pickWebFiles(false);
+      return;
+    }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
       toast.show("Photo access is needed to upload", "error");
@@ -97,20 +166,16 @@ export default function AdminEvent() {
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       allowsMultipleSelection: true,
-      quality: 0.8,
+      selectionLimit: 0,
+      quality: 0.85,
     });
     if (result.canceled || !result.assets?.length) return;
-    setUploading(true);
-    let ok = 0;
-    for (const asset of result.assets) {
-      try {
-        await api.upload(`/events/${id}/photos`, asset.uri, asset.fileName || "photo.jpg", asset.mimeType || "image/jpeg");
-        ok++;
-      } catch {}
-    }
-    setUploading(false);
-    toast.show(`Uploaded & indexed ${ok} photo${ok !== 1 ? "s" : ""}`, ok ? "success" : "error");
-    load();
+    const items = result.assets.map((a, i) => ({
+      uri: a.uri,
+      name: a.fileName || `photo_${Date.now()}_${i}.jpg`,
+      type: a.mimeType || "image/jpeg",
+    }));
+    await runBulkUpload(items);
   };
 
   const importS3 = async () => {
@@ -328,26 +393,56 @@ export default function AdminEvent() {
         {tab === "photos" && (
           <>
             <View style={styles.statusCard}>
-              <View>
+              <View style={{ flex: 1 }}>
                 <Text style={styles.statusTitle}>Indexing status</Text>
                 <Text style={styles.statusSub}>
-                  {status?.indexed_photos}/{status?.total_photos} indexed · {status?.total_faces} faces detected
+                  {status?.indexed_photos ?? 0}/{status?.total_photos ?? 0} indexed · {status?.total_faces ?? 0} faces
+                  {status?.failed_photos ? ` · ${status.failed_photos} failed` : ""}
                 </Text>
               </View>
-              <Pill label={event?.indexing_status} tone={event?.indexing_status === "ready" ? "success" : "neutral"} />
+              <Pill
+                label={status?.complete === false ? "Indexing…" : (event?.indexing_status || "empty")}
+                tone={status?.complete === false ? "gold" : event?.indexing_status === "ready" ? "success" : "neutral"}
+              />
             </View>
 
+            {status && status.total_photos > 0 && status.complete === false && (
+              <View style={styles.progressWrap} testID="indexing-progress">
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${status.percent ?? 0}%` }]} />
+                </View>
+                <Text style={styles.progressLabel}>Indexing faces… {status.percent ?? 0}%</Text>
+              </View>
+            )}
+
+            {uploading && (
+              <View style={styles.progressWrap} testID="upload-progress">
+                <View style={styles.progressTrack}>
+                  <View style={[styles.progressFill, { width: `${uploadTotal ? Math.round((uploadDone / uploadTotal) * 100) : 0}%` }]} />
+                </View>
+                <Text style={styles.progressLabel}>Uploading {uploadDone}/{uploadTotal}…</Text>
+              </View>
+            )}
+
             <Button testID="upload-photos-btn" title={uploading ? "Uploading…" : "Upload photos"} icon="cloud-upload-outline" loading={uploading} onPress={uploadPhotos} />
+            {Platform.OS === "web" && (
+              <Button testID="upload-folder-btn" title="Upload a folder" variant="secondary" icon="folder-open-outline" disabled={uploading} onPress={() => pickWebFiles(true)} style={{ marginTop: spacing.md }} />
+            )}
             <Button testID="import-s3-btn" title="Import from S3 bucket" variant="ghost" icon="cloud-download-outline" loading={importingS3} onPress={importS3} style={{ marginTop: spacing.md }} />
 
             {photos.length === 0 ? (
-              <EmptyState icon="images-outline" title="No photos yet" subtitle="Upload event photos — faces are detected and indexed automatically." />
+              <EmptyState icon="images-outline" title="No photos yet" subtitle="Upload event photos — faces are detected and indexed automatically in the background." />
             ) : (
               <View style={styles.thumbGrid}>
                 {photos.map((p, i) => (
                   <View key={p.photo_id} style={[styles.thumbCell, isDesktop && styles.thumbCellDesktop]}>
                     <View style={styles.thumbImg} testID={`admin-photo-${p.photo_id}`}>
                       <Image source={{ uri: fileUrl(p.thumb_path) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} cachePolicy="memory-disk" />
+                      {p.indexing_status && p.indexing_status !== "indexed" && (
+                        <View style={[styles.faceBadge, styles.pendingBadge]}>
+                          <Ionicons name={p.indexing_status === "failed" ? "alert" : "time-outline"} size={10} color={colors.onBrand} />
+                        </View>
+                      )}
                       {p.face_count > 0 && (
                         <View style={styles.faceBadge}>
                           <Ionicons name="person" size={10} color={colors.onBrand} />
@@ -650,6 +745,11 @@ const styles = StyleSheet.create({
   linkActions: { flexDirection: "row", gap: spacing.md },
   qrCard: { backgroundColor: "#FFFFFF", borderRadius: radius.lg, padding: spacing.lg, alignItems: "center", justifyContent: "center", alignSelf: "center", marginTop: spacing.md, marginBottom: spacing.lg },
   qrImg: { width: 240, height: 240 },
+  progressWrap: { marginBottom: spacing.md },
+  progressTrack: { height: 8, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary, overflow: "hidden" },
+  progressFill: { height: 8, borderRadius: radius.pill, backgroundColor: colors.brand },
+  progressLabel: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 6 },
+  pendingBadge: { backgroundColor: "rgba(0,0,0,0.6)", left: 6, right: undefined },
   visitorsHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xl },
   exportBtn: { flexDirection: "row", alignItems: "center", gap: 4 },
   exportText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
