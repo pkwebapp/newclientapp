@@ -7,7 +7,7 @@ import os
 import sys
 
 # Backend URL from environment
-BACKEND_URL = "https://7dc433a4-e7b0-407a-b095-a7b123d53383.preview.emergentagent.com/api"
+BACKEND_URL = "https://new-client-hub.preview.emergentagent.com/api"
 
 # Admin credentials
 ADMIN_EMAIL = "admin@lumiere.studio"

@@ -10,7 +10,7 @@ import io
 from PIL import Image
 
 # Configuration
-BASE_URL = "https://pkweb-client.preview.emergentagent.com/api"
+BASE_URL = "https://new-client-hub.preview.emergentagent.com/api"
 ADMIN_EMAIL = "admin@lumiere.studio"
 ADMIN_PASSWORD = "Admin@12345"
 
