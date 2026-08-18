@@ -85,3 +85,12 @@ My Photos album. Raw selfie never stored (only match references).
 - Viewer: Three.js/WebGL flipbook served at `/api/albums/public/{token}/view`, embedded in Expo route `/a/{shareToken}` (iframe on web, WebView on native). Features: 3D cover opening, realistic page bending + dynamic shadows, continuous lay-flat spreads with center seam, drag/swipe/keyboard nav, zoom (wheel/pinch/double-tap), spread counter, optional page-turn sound, premium loader, WebGL fallback.
 - Security: unguessable share_token; drafts require secret preview_token (?k=); published required for public access.
 - Deps added: PyMuPDF (backend), react-native-webview + expo-document-picker (frontend).
+
+## Session (June 2026): Album refinements — COMPLETE & TESTED (16/16 backend + full UI)
+User request: no flash on page turns; landscape fullscreen on mobile; autoplay with speed option; fading exit button; Album Share/Access/Settings tabs like Gallery (link+QR, grants by email/phone visible in client app, music upload, archive, delete).
+Implemented:
+1. Viewer (backend/album_viewer.html): anti-flash (resolvedTex cache + best-cached-level instant fallback + leaf-face high-res preload + thumbs-first progressive load + paper-tone materials); forced-landscape CSS rotation on portrait touch devices with input remap (VW/VH/ptX/ptY); autoplay (default ON, 3.5s, Slow/Normal/Fast pill, pauses on interaction, stops at back cover); background music autoplay+mute btn; fading Exit(X) btn posting 'album-close' (RN WebView msg / iframe postMessage).
+2. Native route app/a/[token].tsx: expo-screen-orientation LANDSCAPE lock on focus, unlock on exit; handles album-close from WebView and web iframe.
+3. Backend album_routes.py: access grants (POST/GET/DELETE /albums/{id}/access, collection album_access_grants), GET /albums/client/mine (client app), music upload/delete (Cloudinary, own /music prefix, survives PDF replace since pages render under /pages prefix), archive/unarchive (public 403 when archived, preview key bypasses), PATCH autoplay/autoplay_interval (clamped 1.5-8s), delete also erases grants.
+4. New admin screen app/admin/album/[id].tsx with Pages/Share/Access/Settings tabs; albums list cards now navigate to it; client home shows "Your Albums" section for granted albums.
+Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header on small screens; pre-existing RN-web shadow*/pointerEvents deprecation warnings.

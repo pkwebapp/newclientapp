@@ -1,8 +1,8 @@
-import { useState } from "react";
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useState } from "react";
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
 import { WebView } from "react-native-webview";
-import { useLocalSearchParams, useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import * as ScreenOrientation from "expo-screen-orientation";
 
 /**
  * Public Album Flipbook viewer route: /a/:token (mirrors the gallery share flow).
@@ -19,6 +19,32 @@ export default function AlbumViewerRoute() {
   const base = process.env.EXPO_PUBLIC_BACKEND_URL;
   const src = `${base}/api/albums/public/${token}/view${k ? `?k=${k}` : ""}`;
 
+  const goBack = useCallback(() => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/");
+  }, [router]);
+
+  // Native: full-screen landscape while the album is open; restore on exit.
+  useFocusEffect(
+    useCallback(() => {
+      if (Platform.OS === "web") return;
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+      return () => {
+        ScreenOrientation.unlockAsync().catch(() => {});
+      };
+    }, [])
+  );
+
+  // Web: the embedded viewer posts {type:'album-close'} when Exit is tapped.
+  useEffect(() => {
+    if (Platform.OS !== "web") return;
+    const onMsg = (e: MessageEvent) => {
+      if (e?.data?.type === "album-close") goBack();
+    };
+    window.addEventListener("message", onMsg);
+    return () => window.removeEventListener("message", onMsg);
+  }, [goBack]);
+
   return (
     <View style={styles.container} testID="album-viewer-route">
       {Platform.OS === "web" ? (
@@ -28,13 +54,16 @@ export default function AlbumViewerRoute() {
           src={src}
           onLoad={() => setLoading(false)}
           style={{ border: "none", width: "100%", height: "100%", backgroundColor: "#0b0b0d" }}
-          allow="fullscreen; accelerometer; gyroscope"
+          allow="fullscreen; accelerometer; gyroscope; autoplay"
           allowFullScreen
         />
       ) : (
         <WebView
           source={{ uri: src }}
           onLoadEnd={() => setLoading(false)}
+          onMessage={(e) => {
+            if (e.nativeEvent.data === "album-close") goBack();
+          }}
           originWhitelist={["*"]}
           javaScriptEnabled
           domStorageEnabled
@@ -52,12 +81,6 @@ export default function AlbumViewerRoute() {
           <Text style={styles.loaderText}>Preparing your album…</Text>
         </View>
       ) : null}
-
-      {router.canGoBack() ? (
-        <Pressable style={styles.back} onPress={() => router.back()} hitSlop={12} testID="album-viewer-back">
-          <Ionicons name="chevron-back" size={22} color="#e9e4d8" />
-        </Pressable>
-      ) : null}
     </View>
   );
 }
@@ -67,9 +90,4 @@ const styles = StyleSheet.create({
   web: { flex: 1, backgroundColor: "#0b0b0d" },
   loader: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", gap: 12, backgroundColor: "#0b0b0d" },
   loaderText: { color: "rgba(233,228,216,0.6)", fontSize: 13, letterSpacing: 0.4 },
-  back: {
-    position: "absolute", top: 44, left: 16, width: 40, height: 40, borderRadius: 20,
-    alignItems: "center", justifyContent: "center",
-    backgroundColor: "rgba(20,20,24,0.55)", borderWidth: 1, borderColor: "rgba(255,255,255,0.14)",
-  },
 });

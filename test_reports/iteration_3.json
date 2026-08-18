@@ -1,0 +1,61 @@
+{
+  "summary": "PIK Connect Album module NEW features tested end-to-end (backend + frontend). Backend: 16/16 pytest passed in /app/backend/tests/test_album_features.py covering access grants (email/phone/list/revoke), GET /api/albums/client/mine (grant->published->visible; excludes draft, revoked), music upload/delete + music_url in public manifest + music survives PDF replace (rendered assets under .../pages/ prefix), non-audio ext rejected (400), archive blocks public with 403 archived message but preview_token (?k=) bypasses, unarchive restores 200, PATCH new settings (autoplay/auto_open/page_turn_sound persisted in public manifest) with autoplay_interval clamped to 1.5-8.0, plus regression (album create/upload/publish/delete + gallery /events + /meta). Frontend: admin login -> Studio Console -> Album Flipbooks -> albums list shows 'Autoplay Test Album' -> tapping opens /admin/album/alb_7941ec6a9588 with all 4 tabs (Pages/Share/Access/Settings) rendering and every documented testID present. Access tab: adding a fresh email grant creates a new album-grant-<id> row in the list. Public viewer at /a/309fc019102245efa6c84f240db8e360082f55c4 renders inside iframe with WebGL canvas, top-left exit (#btn-exit), music+mute (#btn-music,#music-mute), page-turn sound toggle, bottom play/pause (#btn-play) + speed pill (#btn-speed showing NORMAL) + page counter (COVER), and 'Tap to open the album' hint. Client OTP login (dev_code intercepted from network) for client@test.com lands on client-events-screen and Your Albums section shows the granted album card (client-album-alb_7941ec6a9588); tapping navigates to /a/<share_token> with the flipbook iframe loading. Note: forced-landscape rotation is touch-only (pointer:coarse) and correctly does not activate in desktop web preview — expected.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "client/index.tsx (client-events-screen)",
+        "issues": [
+          "OTP_DEV_MODE Demo code banner ('Demo code: 953754') is rendered at the very top of the ScrollView and visually overlays / pushes the 'Your Albums' section header out of the first fold on a 390x844 mobile viewport. Section title is in DOM as expected but may look missing to the eye. Consider moving the dev-code banner to a floating toast or below the section titles."
+        ]
+      }
+    ],
+    "react_native_issues": [
+      {
+        "component": "RN Web deprecations",
+        "issue": "Console warns 'shadow*' style props are deprecated (use boxShadow) on landing/login/dashboard and 'props.pointerEvents is deprecated (use style.pointerEvents)' on modal/animated views. Non-blocking. Reference: shared theme + KeyboardAvoidingView/animated overlays across screens."
+      },
+      {
+        "component": "Animated.useNativeDriver on web",
+        "issue": "Console: 'Animated: useNativeDriver is not supported because the native animated module is missing'. Not a bug, just extra noise on web preview; can be silenced by not passing useNativeDriver:true when Platform.OS === 'web'."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_album_features.py",
+    "/app/test_reports/pytest/album_features.xml",
+    "/app/backend/tests/test_lumiere_gallery.py",
+    "/app/backend/tests/test_pik_connect_bugs.py"
+  ],
+  "action_items": [
+    "(Optional polish) Reposition or hide the OTP_DEV_MODE 'Demo code' banner on client-events-screen so it doesn't visually cover the 'Your Albums' section title.",
+    "(Optional polish) Address RN Web deprecation warnings: migrate 'shadow*' to boxShadow and 'props.pointerEvents' to style.pointerEvents (carryover from iteration_2).",
+    "(Optional) Ionicons 'graduation-cap' warning if still present anywhere — swap to 'school' glyph (carryover from iteration_1)."
+  ],
+  "critical_code_review_comments": [
+    "album_routes.py cleanly separates rendered page assets (…/pages/) from music (…/music/) prefixes so 'Replace PDF' only wipes /pages/ and preserves music — confirmed by test_music_survives_pdf_replace.",
+    "Archive gate in _load_public_album correctly checks preview_token before returning 403 archived, keeping preview links usable for photographers.",
+    "PATCH /albums/{id} clamps autoplay_interval to [1.5,8.0] server-side (max(1.5, min(8.0, …))) — good defensive coding. Consider also validating via Pydantic Field(ge=1.5, le=8.0) for 422 semantics, but current behaviour is fine.",
+    "Public /albums/public/{token}/view HTML template is loaded from disk each request (album_viewer.html). At the cost of a tiny disk read this is fine; consider @lru_cache if you observe hot-path load.",
+    "_admin_album_or_404 restricts to created_by == admin.user_id — multi-admin studios sharing albums would need an ownership/team concept later; flag for product roadmap not a bug.",
+    "client/index.tsx 'Your Albums' + 'Your Galleries' composition is correct; both API calls (/api/albums/client/mine and /api/client/events) are triggered on mount. No _id leak observed anywhere in album responses."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_album_features.py (new)",
+    "/app/test_reports/pytest/album_features.xml (junit)"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 in test_album_features.py) + regression endpoints pass",
+    "frontend": "100% of tested UI flows (admin login->dashboard->albums list->album detail w/4 tabs & all testIDs, add grant, public viewer canvas+controls, client OTP login->Your Albums->flipbook viewer)"
+  },
+  "seed_data_creation": "Backend tests create a self-contained TEST_Album_* per module (PDF uploaded, published), grant fresh TEST_grantee_*/TEST_mine_*/TEST_draft_*/TEST_rev_* emails, and clean up the scratch album on teardown. Existing seeded alb_7941ec6a9588 was NOT modified. Frontend Access-tab test added one extra ui_grantee_<ts>@test.com grant on alb_7941ec6a9588 (safe residual, does not affect functionality).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_album_features.py — module-scoped scratch album ensures runs are hermetic. Use dev_code interception via page.on('response', ...) for /auth/client/request-otp when driving OTP login in Playwright (a second API-side request-otp invalidates the UI's code — verified). Public viewer iframe exposes element IDs #btn-exit, #btn-music, #music-mute, #btn-play, #btn-speed, #btn-sound, #btn-full, #openhint, #counter — use those (not React testIDs) inside the iframe. Forced landscape only activates on pointer:coarse (touch); desktop web preview is expected to stay portrait. QR image is served as data:image/png;base64 from /api/albums/{id}/share — expo-image on web strips src attr, verify by checking .qr_base64 payload from API rather than DOM src.",
+  "rca_of_issue": "N/A — no bugs to RCA in this iteration. All new album features (access grants, client/mine, music, archive, PATCH settings) work as specified backend-side; admin album detail (4 tabs) and public/client viewer flows work as specified frontend-side. Only cosmetic residues (RN Web shadow*/pointerEvents warnings, dev-mode OTP banner visual placement) noted."
+}

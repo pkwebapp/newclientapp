@@ -28,13 +28,18 @@ export default function ClientEvents() {
   const { user, signOut } = useAuth();
   const toast = useToast();
   const [events, setEvents] = useState<any[]>([]);
+  const [albums, setAlbums] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const res = await api.get("/client/events");
-      setEvents(res);
+      const [ev, al] = await Promise.all([
+        api.get("/client/events"),
+        api.get("/albums/client/mine").catch(() => []),
+      ]);
+      setEvents(ev);
+      setAlbums(al);
     } catch {
       toast.show("Could not load your galleries", "error");
     } finally {
@@ -79,11 +84,43 @@ export default function ClientEvents() {
             />
           }
         >
-          {events.length === 0 ? (
+          {albums.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Your Albums</Text>
+              {albums.map((a) => (
+                <Pressable
+                  key={a.album_id}
+                  testID={`client-album-${a.album_id}`}
+                  onPress={() => router.push(`/a/${a.share_token}` as any)}
+                  style={styles.albumCard}
+                >
+                  <View style={styles.albumThumb}>
+                    {a.cover_url ? (
+                      <Image source={{ uri: a.cover_url }} style={StyleSheet.absoluteFill} contentFit="cover" transition={200} />
+                    ) : (
+                      <Ionicons name="book" size={22} color={colors.brand} />
+                    )}
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.albumTitle} numberOfLines={1}>{a.title}</Text>
+                    <Text style={styles.albumMeta} numberOfLines={1}>
+                      {[a.event_name, `${a.total_spreads} spreads`].filter(Boolean).join(" · ")}
+                    </Text>
+                  </View>
+                  {a.has_music && <Ionicons name="musical-notes" size={16} color={colors.brand} />}
+                  <Ionicons name="chevron-forward" size={18} color={colors.onSurfaceTertiary} />
+                </Pressable>
+              ))}
+              <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>
+                {events.length > 0 ? "Your Galleries" : ""}
+              </Text>
+            </>
+          )}
+          {events.length === 0 && albums.length === 0 ? (
             <EmptyState
               icon="mail-open-outline"
               title="No galleries yet"
-              subtitle="When a studio shares an event with you, it will appear here. Pull down to refresh."
+              subtitle="When a studio shares an event or album with you, it will appear here. Pull down to refresh."
             />
           ) : (
             events.map((e) => (
@@ -156,6 +193,19 @@ const styles = StyleSheet.create({
   },
   cardBottom: { position: "absolute", left: spacing.lg, right: spacing.lg, bottom: spacing.lg },
   cardTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"] },
+  sectionTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, marginBottom: spacing.md },
+  albumCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginBottom: spacing.md,
+  },
+  albumThumb: { width: 44, height: 58, borderRadius: radius.sm, backgroundColor: colors.surfaceTertiary, alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  albumTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.lg },
+  albumMeta: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
   metaRow: { flexDirection: "row", alignItems: "center", marginTop: spacing.xs },
   meta: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.sm },
 });
