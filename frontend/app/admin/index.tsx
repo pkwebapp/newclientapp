@@ -116,6 +116,7 @@ export default function AdminDashboard() {
                     </Text>
                   </View>
                   <View style={{ alignItems: "flex-end", gap: 6 }}>
+                    {e.source === "gdrive" && <Pill label="Drive" tone="neutral" icon="logo-google" />}
                     {e.status === "archived" ? (
                       <Pill label="Archived" tone="warning" />
                     ) : (

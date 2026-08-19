@@ -223,6 +223,24 @@ export default function AdminEvent() {
     }
   };
 
+  const [syncing, setSyncing] = useState(false);
+  const syncDrive = async () => {
+    setSyncing(true);
+    try {
+      const r = await api.post(`/events/${id}/sync`, {});
+      const s = r?.sync || {};
+      toast.show(
+        `Synced · ${s.added || 0} new, ${s.updated || 0} updated, ${s.removed || 0} removed`,
+        "success"
+      );
+      load();
+    } catch (e: any) {
+      toast.show(e?.message || "Sync failed", "error");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const addGrant = async () => {
     if (!grantValue.trim()) {
       toast.show(channel === "email" ? "Enter client email" : "Enter client phone", "error");
@@ -483,11 +501,31 @@ export default function AdminEvent() {
               </View>
             )}
 
-            <Button testID="upload-photos-btn" title={uploading ? "Uploading…" : "Upload photos"} icon="cloud-upload-outline" loading={uploading} onPress={uploadPhotos} />
-            {Platform.OS === "web" && (
-              <Button testID="upload-folder-btn" title="Upload a folder" variant="secondary" icon="folder-open-outline" disabled={uploading} onPress={() => pickWebFiles(true)} style={{ marginTop: spacing.md }} />
+            {event?.source === "gdrive" ? (
+              <View style={styles.driveCard} testID="drive-panel">
+                <View style={styles.driveHead}>
+                  <Ionicons name="logo-google" size={18} color={colors.brand} />
+                  <Text style={styles.driveTitle}>Google Drive gallery</Text>
+                </View>
+                <Text style={styles.driveMeta} numberOfLines={1}>
+                  {event?.last_synced_at
+                    ? `Last synced ${new Date(event.last_synced_at).toLocaleString()}`
+                    : "Not synced yet"}
+                </Text>
+                <Button testID="sync-drive-btn" title={syncing ? "Syncing…" : "Sync now"} icon="sync-outline" loading={syncing} onPress={syncDrive} style={{ marginTop: spacing.md }} />
+                <Text style={styles.driveNote}>
+                  Originals stay on Google Drive. Add or remove photos in the folder, then tap Sync to refresh the gallery and index new faces.
+                </Text>
+              </View>
+            ) : (
+              <>
+                <Button testID="upload-photos-btn" title={uploading ? "Uploading…" : "Upload photos"} icon="cloud-upload-outline" loading={uploading} onPress={uploadPhotos} />
+                {Platform.OS === "web" && (
+                  <Button testID="upload-folder-btn" title="Upload a folder" variant="secondary" icon="folder-open-outline" disabled={uploading} onPress={() => pickWebFiles(true)} style={{ marginTop: spacing.md }} />
+                )}
+                <Button testID="import-s3-btn" title="Import from S3 bucket" variant="ghost" icon="cloud-download-outline" loading={importingS3} onPress={importS3} style={{ marginTop: spacing.md }} />
+              </>
             )}
-            <Button testID="import-s3-btn" title="Import from S3 bucket" variant="ghost" icon="cloud-download-outline" loading={importingS3} onPress={importS3} style={{ marginTop: spacing.md }} />
 
             {photos.length === 0 ? (
               <EmptyState icon="images-outline" title="No photos yet" subtitle="Upload event photos — faces are detected and indexed automatically in the background." />
@@ -857,6 +895,11 @@ const styles = StyleSheet.create({
   statusCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.lg },
   statusTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.lg },
   statusSub: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
+  driveCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, borderWidth: 1, borderColor: colors.brandTertiary },
+  driveHead: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  driveTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.lg },
+  driveMeta: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 4 },
+  driveNote: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: spacing.md, lineHeight: 18 },
   thumbGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.lg },
   thumbCell: { width: "31.8%" },
   thumbCellDesktop: { width: "23%" },

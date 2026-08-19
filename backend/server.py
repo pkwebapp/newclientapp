@@ -24,6 +24,8 @@ from config import (
 )
 from storage_service import get_storage
 from face_engine import get_face_engine, NotIndexedError
+import gdrive_service
+from gdrive_service import DriveError
 from email_service import send_otp_email
 from auth_utils import (
     hash_password, verify_password, new_user_id, create_session,
@@ -105,6 +107,9 @@ def make_thumbnail(image_bytes: bytes, max_side: int = 480) -> tuple[bytes, int,
 
 
 def public_event(event: dict) -> dict:
+    cover_url = _public_url(event.get("cover_path"))
+    if event.get("source") == "gdrive" and event.get("cover_drive_id"):
+        cover_url = _gdrive_proxy_url(event["cover_drive_id"], 600)
     return {
         "event_id": event["event_id"],
         "name": event["name"],
@@ -115,9 +120,13 @@ def public_event(event: dict) -> dict:
         "indexing_status": event.get("indexing_status", "empty"),
         "photo_count": event.get("photo_count", 0),
         "cover_path": event.get("cover_path"),
-        "cover_url": _public_url(event.get("cover_path")),
+        "cover_url": cover_url,
         "status": event.get("status", "active"),
         "share_enabled": event.get("share_enabled", True),
+        "source": event.get("source", "upload"),
+        "drive_folder_id": event.get("drive_folder_id"),
+        "drive_folder_link": event.get("drive_folder_link"),
+        "last_synced_at": event.get("last_synced_at"),
         "created_at": event.get("created_at"),
     }
 
@@ -392,6 +401,179 @@ async def create_event(body: EventCreate, admin: dict = Depends(require_admin)):
     return public_event(event)
 
 
+class GDriveEventCreate(BaseModel):
+    name: str
+    date: Optional[str] = None
+    category: str = "event"
+    photographer: Optional[str] = None
+    similarity_threshold: Optional[float] = None
+    drive_link: str
+
+
+async def _sync_gdrive_event(event: dict) -> dict:
+    """Re-scan the Drive folder: add new images, re-index changed ones, remove
+    deleted ones. Only metadata + web previews are used — no originals copied."""
+    event_id = event["event_id"]
+    folder_id = event["drive_folder_id"]
+    images = await run_in_threadpool(gdrive_service.list_folder_images, folder_id)
+
+    existing = {
+        p["drive_file_id"]: p
+        for p in await db.photos.find(
+            {"event_id": event_id, "source": "gdrive"}, {"_id": 0}
+        ).to_list(100000)
+    }
+    engine = get_face_engine()
+
+    seen: set[str] = set()
+    added = updated = 0
+    new_docs: list[dict] = []
+    for img in images:
+        fid = img["drive_file_id"]
+        seen.add(fid)
+        ex = existing.get(fid)
+        if not ex:
+            new_docs.append({
+                "photo_id": f"pho_{uuid.uuid4().hex[:12]}",
+                "event_id": event_id,
+                "source": "gdrive",
+                "drive_file_id": fid,
+                "filename": img.get("name"),
+                "folder_path": img.get("folder_path") or "",
+                "width": img.get("width"),
+                "height": img.get("height"),
+                "md5_checksum": img.get("md5_checksum"),
+                "modified_time": img.get("modified_time"),
+                "face_count": 0,
+                "indexing_status": "pending",
+                "uploaded_at": now_iso(),
+            })
+            added += 1
+        else:
+            changed = (
+                ex.get("md5_checksum") != img.get("md5_checksum")
+                or ex.get("modified_time") != img.get("modified_time")
+            )
+            set_fields = {
+                "filename": img.get("name"),
+                "folder_path": img.get("folder_path") or "",
+                "width": img.get("width"),
+                "height": img.get("height"),
+            }
+            if changed:
+                # Drop stale faces (ours + Rekognition) and re-queue for indexing.
+                old = await db.faces.find({"photo_id": ex["photo_id"]}, {"_id": 0, "face_id": 1}).to_list(1000)
+                if old:
+                    try:
+                        await run_in_threadpool(engine.delete_faces, event["collection_id"], [f["face_id"] for f in old])
+                    except Exception as e:  # noqa: BLE001
+                        logger.error(f"gdrive sync delete_faces: {e}")
+                    await db.faces.delete_many({"photo_id": ex["photo_id"]})
+                set_fields.update({
+                    "md5_checksum": img.get("md5_checksum"),
+                    "modified_time": img.get("modified_time"),
+                    "indexing_status": "pending",
+                    "face_count": 0,
+                })
+                updated += 1
+            await db.photos.update_one({"photo_id": ex["photo_id"]}, {"$set": set_fields})
+
+    if new_docs:
+        await db.photos.insert_many(new_docs)
+
+    # Remove images that disappeared from the Drive folder.
+    removed_photos = [p for fid, p in existing.items() if fid not in seen]
+    removed = 0
+    for p in removed_photos:
+        old = await db.faces.find({"photo_id": p["photo_id"]}, {"_id": 0, "face_id": 1}).to_list(1000)
+        if old:
+            try:
+                await run_in_threadpool(engine.delete_faces, event["collection_id"], [f["face_id"] for f in old])
+            except Exception as e:  # noqa: BLE001
+                logger.error(f"gdrive sync delete_faces(removed): {e}")
+        await db.faces.delete_many({"photo_id": p["photo_id"]})
+        await db.photos.delete_one({"photo_id": p["photo_id"]})
+        removed += 1
+
+    cover_drive_id = event.get("cover_drive_id")
+    if (not cover_drive_id or cover_drive_id not in seen) and images:
+        cover_drive_id = images[0]["drive_file_id"]
+
+    total = await db.photos.count_documents({"event_id": event_id})
+    await db.events.update_one(
+        {"event_id": event_id},
+        {"$set": {
+            "photo_count": total,
+            "cover_drive_id": cover_drive_id,
+            "last_synced_at": now_iso(),
+        }},
+    )
+    await _refresh_event_index_status(event_id)
+    _wake_indexer()
+    return {"total": total, "added": added, "updated": updated, "removed": removed}
+
+
+@api_router.post("/events/gdrive")
+async def create_gdrive_event(body: GDriveEventCreate, admin: dict = Depends(require_admin)):
+    """Create a gallery from a public Google Drive folder link. Originals stay
+    on Drive; we index web previews for face search."""
+    if body.category not in CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Category must be one of {CATEGORIES}")
+    if not gdrive_service.is_configured():
+        raise HTTPException(status_code=400, detail="Google Drive is not configured on the server yet.")
+    try:
+        folder_id = gdrive_service.extract_folder_id(body.drive_link)
+    except DriveError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Validate the folder is reachable up-front (nice error before we create anything).
+    try:
+        await run_in_threadpool(gdrive_service.list_folder_images, folder_id)
+    except DriveError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    event_id = f"evt_{uuid.uuid4().hex[:12]}"
+    engine = get_face_engine()
+    collection_id = engine.create_collection(event_id)
+    event = {
+        "event_id": event_id,
+        "name": body.name,
+        "date": body.date,
+        "category": body.category,
+        "photographer": body.photographer,
+        "similarity_threshold": body.similarity_threshold or DEFAULT_SIMILARITY_THRESHOLD,
+        "collection_id": collection_id,
+        "indexing_status": "empty",
+        "photo_count": 0,
+        "cover_path": None,
+        "cover_drive_id": None,
+        "share_enabled": True,
+        "source": "gdrive",
+        "drive_folder_id": folder_id,
+        "drive_folder_link": body.drive_link.strip(),
+        "last_synced_at": None,
+        "created_by": admin["user_id"],
+        "created_at": now_iso(),
+    }
+    await db.events.insert_one(event)
+    sync = await _sync_gdrive_event(event)
+    fresh = await get_event_or_404(event_id)
+    return {**public_event(fresh), "sync": sync}
+
+
+@api_router.post("/events/{event_id}/sync")
+async def sync_gdrive_event(event_id: str, admin: dict = Depends(require_admin)):
+    event = await admin_event_or_404(event_id, admin)
+    if event.get("source") != "gdrive":
+        raise HTTPException(status_code=400, detail="This gallery is not a Google Drive gallery")
+    try:
+        sync = await _sync_gdrive_event(event)
+    except DriveError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    fresh = await get_event_or_404(event_id)
+    return {**public_event(fresh), "sync": sync}
+
+
 @api_router.get("/events")
 async def list_events(admin: dict = Depends(require_admin)):
     events = await db.events.find({"created_by": admin["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(500)
@@ -439,7 +621,10 @@ async def reindex_event(event_id: str, admin: dict = Depends(require_admin)):
     total_faces = 0
     for p in photos:
         try:
-            content, _ = await run_in_threadpool(storage.get_object, p["storage_path"])
+            if p.get("source") == "gdrive":
+                content, _ = await run_in_threadpool(gdrive_service.preview_bytes, p["drive_file_id"], 1600)
+            else:
+                content, _ = await run_in_threadpool(storage.get_object, p["storage_path"])
             faces = await run_in_threadpool(engine.index_photo, cid, p["photo_id"], content)
         except Exception as e:
             logger.error(f"reindex photo {p['photo_id']} failed: {e}")
@@ -587,7 +772,10 @@ async def _index_one_photo(event: dict, photo: dict) -> None:
     engine = get_face_engine()
     storage = get_storage()
     try:
-        content, _ = await run_in_threadpool(storage.get_object, photo["storage_path"])
+        if photo.get("source") == "gdrive":
+            content, _ = await run_in_threadpool(gdrive_service.preview_bytes, photo["drive_file_id"], 1600)
+        else:
+            content, _ = await run_in_threadpool(storage.get_object, photo["storage_path"])
         faces = await run_in_threadpool(engine.index_photo, event["collection_id"], photo["photo_id"], content)
         if faces:
             await db.faces.insert_many([{
@@ -1029,10 +1217,34 @@ def _public_url(path: str | None) -> str | None:
         return None
 
 
+def _gdrive_proxy_url(file_id: str, width: int) -> str:
+    base = (PUBLIC_BASE_URL or "").rstrip("/")
+    return f"{base}/api/gdrive/thumb/{file_id}?w={width}"
+
+
 def public_photo(p: dict) -> dict:
+    if p.get("source") == "gdrive":
+        fid = p.get("drive_file_id")
+        return {
+            "photo_id": p["photo_id"],
+            "event_id": p["event_id"],
+            "source": "gdrive",
+            "drive_file_id": fid,
+            "thumb_path": None,
+            "storage_path": None,
+            "url": _gdrive_proxy_url(fid, 1600),
+            "thumb_url": _gdrive_proxy_url(fid, 600),
+            "filename": p.get("filename"),
+            "folder": p.get("folder_path") or "",
+            "width": p.get("width"),
+            "height": p.get("height"),
+            "face_count": p.get("face_count", 0),
+            "indexing_status": p.get("indexing_status"),
+        }
     return {
         "photo_id": p["photo_id"],
         "event_id": p["event_id"],
+        "source": p.get("source", "upload"),
         "thumb_path": p.get("thumb_path"),
         "storage_path": p.get("storage_path"),
         "url": _public_url(p.get("storage_path")),
@@ -1570,6 +1782,35 @@ async def public_share_photos(share_id: str, user: dict = Depends(require_client
 # ---------------------------------------------------------------------------
 # Image serving (auth required; ?token= supported for web <img>)
 # ---------------------------------------------------------------------------
+_gdrive_cache: "dict[str, tuple[bytes, str]]" = {}
+_GDRIVE_CACHE_MAX = 400
+
+
+@api_router.get("/gdrive/thumb/{file_id}")
+async def gdrive_thumb(file_id: str, w: int = 600):
+    """Public proxy that streams a web-sized preview of a Google Drive image.
+    Only serves files that belong to one of our Drive galleries (no open proxy).
+    Originals are never served — width is clamped to preview sizes."""
+    photo = await db.photos.find_one(
+        {"drive_file_id": file_id, "source": "gdrive"}, {"_id": 0, "photo_id": 1}
+    )
+    if not photo:
+        raise HTTPException(status_code=404, detail="Not found")
+    width = 600 if w <= 600 else (1200 if w <= 1200 else 1600)
+    ckey = f"{file_id}:{width}"
+    hit = _gdrive_cache.get(ckey)
+    if hit is None:
+        try:
+            content, ctype = await run_in_threadpool(gdrive_service.preview_bytes, file_id, width)
+        except DriveError:
+            raise HTTPException(status_code=404, detail="Preview unavailable")
+        if len(_gdrive_cache) >= _GDRIVE_CACHE_MAX:
+            _gdrive_cache.pop(next(iter(_gdrive_cache)), None)
+        _gdrive_cache[ckey] = (content, ctype)
+        hit = (content, ctype)
+    return Response(content=hit[0], media_type=hit[1], headers={"Cache-Control": "public, max-age=86400"})
+
+
 @api_router.get("/files/{path:path}")
 async def serve_file(path: str, user: dict = Depends(user_from_token_or_header)):
     # Authorization: user must be admin owner OR a client with an active grant on the event.

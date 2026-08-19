@@ -20,6 +20,8 @@ export default function NewEvent() {
   const [date, setDate] = useState("");
   const [photographer, setPhotographer] = useState("");
   const [category, setCategory] = useState("wedding");
+  const [mode, setMode] = useState<"upload" | "gdrive">("upload");
+  const [driveLink, setDriveLink] = useState("");
   const [loading, setLoading] = useState(false);
 
   const create = async () => {
@@ -27,10 +29,32 @@ export default function NewEvent() {
       toast.show("Give your event a name", "error");
       return;
     }
+    if (mode === "gdrive" && !driveLink.trim()) {
+      toast.show("Paste a Google Drive folder link", "error");
+      return;
+    }
     setLoading(true);
     try {
-      const res = await api.post("/events", { name: name.trim(), date: date.trim() || undefined, photographer: photographer.trim() || undefined, category });
-      toast.show("Event created", "success");
+      let res: any;
+      if (mode === "gdrive") {
+        res = await api.post("/events/gdrive", {
+          name: name.trim(),
+          date: date.trim() || undefined,
+          photographer: photographer.trim() || undefined,
+          category,
+          drive_link: driveLink.trim(),
+        });
+        const n = res?.sync?.total ?? 0;
+        toast.show(`Gallery created — ${n} photo${n === 1 ? "" : "s"} found`, "success");
+      } else {
+        res = await api.post("/events", {
+          name: name.trim(),
+          date: date.trim() || undefined,
+          photographer: photographer.trim() || undefined,
+          category,
+        });
+        toast.show("Event created", "success");
+      }
       router.replace(`/admin/event/${res.event_id}`);
     } catch (e: any) {
       toast.show(e instanceof ApiError ? e.message : "Could not create event", "error");
@@ -43,7 +67,38 @@ export default function NewEvent() {
     <View style={styles.container} testID="new-event-screen">
       <GlassHeader title="New Event" onBack={() => router.back()} topInset={insets.top} />
       <KeyboardAwareScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + spacing["2xl"] }]} bottomOffset={24} keyboardShouldPersistTaps="handled">
-        <Text style={styles.label}>Category</Text>
+        <Text style={styles.label}>Photo source</Text>
+        <View style={styles.segment}>
+          <Pressable testID="source-upload" onPress={() => setMode("upload")} style={[styles.segBtn, mode === "upload" && styles.segBtnActive]}>
+            <Ionicons name="cloud-upload-outline" size={16} color={mode === "upload" ? colors.onBrand : colors.onSurfaceTertiary} />
+            <Text style={[styles.segText, mode === "upload" && styles.segTextActive]}>Upload photos</Text>
+          </Pressable>
+          <Pressable testID="source-gdrive" onPress={() => setMode("gdrive")} style={[styles.segBtn, mode === "gdrive" && styles.segBtnActive]}>
+            <Ionicons name="logo-google" size={16} color={mode === "gdrive" ? colors.onBrand : colors.onSurfaceTertiary} />
+            <Text style={[styles.segText, mode === "gdrive" && styles.segTextActive]}>Google Drive</Text>
+          </Pressable>
+        </View>
+
+        {mode === "gdrive" && (
+          <View style={styles.driveBox}>
+            <TextField
+              testID="drive-link-input"
+              label="Google Drive folder link"
+              value={driveLink}
+              onChangeText={setDriveLink}
+              placeholder="https://drive.google.com/drive/folders/..."
+              autoCapitalize="none"
+            />
+            <View style={styles.hintRow}>
+              <Ionicons name="information-circle-outline" size={15} color={colors.muted} />
+              <Text style={styles.hint}>
+                Share the folder as “Anyone with the link → Viewer”. Originals stay on Drive — we build a fast preview gallery with face search.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        <Text style={[styles.label, { marginTop: spacing.xl }]}>Category</Text>
         <View style={styles.chipWrap}>
           {CATEGORIES.map((c) => (
             <Pressable key={c} testID={`category-${c}`} onPress={() => setCategory(c)} style={[styles.chip, category === c && styles.chipActive]}>
@@ -57,7 +112,7 @@ export default function NewEvent() {
           <TextField testID="event-name-input" label="Event name" value={name} onChangeText={setName} placeholder="Sharma Wedding" />
           <TextField testID="event-date-input" label="Date" value={date} onChangeText={setDate} placeholder="2026-05-01" autoCapitalize="none" />
           <TextField testID="event-photographer-input" label="Photographer" value={photographer} onChangeText={setPhotographer} placeholder="Ravi Kapoor" />
-          <Button testID="create-event-btn" title="Create event" loading={loading} onPress={create} />
+          <Button testID="create-event-btn" title={mode === "gdrive" ? "Create Drive gallery" : "Create event"} loading={loading} onPress={create} />
         </View>
       </KeyboardAwareScrollView>
     </View>
@@ -73,4 +128,12 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   chipText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
   chipTextActive: { color: colors.onBrand, fontWeight: "600" },
+  segment: { flexDirection: "row", gap: spacing.sm, backgroundColor: colors.surfaceSecondary, borderRadius: radius.pill, padding: 4, borderWidth: 1, borderColor: colors.border },
+  segBtn: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, height: 40, borderRadius: radius.pill },
+  segBtnActive: { backgroundColor: colors.brand },
+  segText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
+  segTextActive: { color: colors.onBrand, fontWeight: "600" },
+  driveBox: { marginTop: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, borderWidth: 1, borderColor: colors.brandTertiary },
+  hintRow: { flexDirection: "row", gap: 6, alignItems: "flex-start", marginTop: spacing.xs },
+  hint: { flex: 1, color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 18 },
 });

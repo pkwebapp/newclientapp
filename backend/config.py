@@ -18,6 +18,7 @@ EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY")
 DEFAULT_SIMILARITY_THRESHOLD = float(os.environ.get("DEFAULT_SIMILARITY_THRESHOLD", "85"))
 FACE_ENGINE = os.environ.get("FACE_ENGINE", "mock")
 STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "emergent")
+GOOGLE_DRIVE_API_KEY = os.environ.get("GOOGLE_DRIVE_API_KEY")
 SMS_PROVIDER = os.environ.get("SMS_PROVIDER", "mock")
 # Preview convenience: return OTP codes in API responses so flows are testable
 # without inbox/SMS access. MUST be "false" in production.
