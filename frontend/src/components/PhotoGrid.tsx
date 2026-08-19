@@ -37,7 +37,7 @@ const GAP = spacing.sm;
 export function PhotoGrid({
   photos,
   showScore,
-  showCaption = true,
+  showCaption = false,
   contentPadding = spacing.lg,
   ListHeaderComponent,
   onToggleLike,
@@ -57,6 +57,7 @@ export function PhotoGrid({
 }) {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [containerW, setContainerW] = useState(Dimensions.get("window").width);
+  const [captionsOn, setCaptionsOn] = useState(showCaption);
 
   const numCols = containerW >= 1000 ? 4 : containerW >= 640 ? 3 : 2;
   const colW = Math.max(80, (containerW - contentPadding * 2) / numCols - GAP);
@@ -107,7 +108,7 @@ export function PhotoGrid({
             </Pressable>
           )}
         </Pressable>
-        {showCaption && (
+        {captionsOn && (
           <Text style={styles.caption} numberOfLines={1}>
             {caption(item, index)}
           </Text>
@@ -131,7 +132,33 @@ export function PhotoGrid({
         numColumns={numCols}
         keyExtractor={(item) => item.photo_id}
         showsVerticalScrollIndicator={false}
-        ListHeaderComponent={ListHeaderComponent}
+        ListHeaderComponent={
+          <View>
+            {ListHeaderComponent}
+            {photos.length > 0 && (
+              <View style={styles.toolbar}>
+                <Pressable
+                  testID="toggle-numbers"
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => {});
+                    setCaptionsOn((v) => !v);
+                  }}
+                  hitSlop={8}
+                  style={[styles.numBtn, captionsOn && styles.numBtnActive]}
+                >
+                  <Ionicons
+                    name={captionsOn ? "pricetags" : "pricetags-outline"}
+                    size={14}
+                    color={captionsOn ? colors.onBrand : colors.onSurfaceTertiary}
+                  />
+                  <Text style={[styles.numText, captionsOn && styles.numTextActive]}>
+                    {captionsOn ? "Numbers on" : "Numbers off"}
+                  </Text>
+                </Pressable>
+              </View>
+            )}
+          </View>
+        }
         contentContainerStyle={{ paddingHorizontal: contentPadding - GAP / 2, paddingBottom: spacing["3xl"] }}
         renderItem={renderItem}
         onEndReached={onEndReached}
@@ -247,6 +274,11 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceSecondary,
   },
   caption: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 4, paddingHorizontal: 2 },
+  toolbar: { flexDirection: "row", justifyContent: "flex-end", paddingHorizontal: GAP / 2, marginBottom: spacing.sm },
+  numBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.md, height: 32, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  numBtnActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  numText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.sm },
+  numTextActive: { color: colors.onBrand, fontWeight: "600" },
   scoreTag: { position: "absolute", top: spacing.sm, left: spacing.sm },
   heartBtn: {
     position: "absolute",
