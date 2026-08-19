@@ -224,6 +224,7 @@ export default function AdminEvent() {
   };
 
   const [syncing, setSyncing] = useState(false);
+  const [showNumbers, setShowNumbers] = useState(false);
   const syncDrive = async () => {
     setSyncing(true);
     try {
@@ -530,27 +531,42 @@ export default function AdminEvent() {
             {photos.length === 0 ? (
               <EmptyState icon="images-outline" title="No photos yet" subtitle="Upload event photos — faces are detected and indexed automatically in the background." />
             ) : (
-              <View style={styles.thumbGrid}>
-                {photos.map((p, i) => (
-                  <View key={p.photo_id} style={[styles.thumbCell, isDesktop && styles.thumbCellDesktop]}>
-                    <View style={styles.thumbImg} testID={`admin-photo-${p.photo_id}`}>
-                      <Image source={{ uri: imgUrl(p.thumb_url, p.thumb_path) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} cachePolicy="memory-disk" />
-                      {p.indexing_status && p.indexing_status !== "indexed" && (
-                        <View style={[styles.faceBadge, styles.pendingBadge]}>
-                          <Ionicons name={p.indexing_status === "failed" ? "alert" : "time-outline"} size={10} color={colors.onBrand} />
-                        </View>
-                      )}
-                      {p.face_count > 0 && (
-                        <View style={styles.faceBadge}>
-                          <Ionicons name="person" size={10} color={colors.onBrand} />
-                          <Text style={styles.faceBadgeText}>{p.face_count}</Text>
-                        </View>
+              <>
+                <View style={styles.gridToolbar}>
+                  <Pressable
+                    testID="admin-toggle-numbers"
+                    onPress={() => setShowNumbers((v) => !v)}
+                    hitSlop={8}
+                    style={[styles.numBtn, showNumbers && styles.numBtnActive]}
+                  >
+                    <Ionicons name={showNumbers ? "pricetags" : "pricetags-outline"} size={14} color={showNumbers ? colors.onBrand : colors.onSurfaceTertiary} />
+                    <Text style={[styles.numText, showNumbers && styles.numTextActive]}>{showNumbers ? "Numbers on" : "Numbers off"}</Text>
+                  </Pressable>
+                </View>
+                <View style={styles.thumbGrid}>
+                  {photos.map((p, i) => (
+                    <View key={p.photo_id} style={[styles.thumbCell, isDesktop && styles.thumbCellDesktop]}>
+                      <View style={styles.thumbImg} testID={`admin-photo-${p.photo_id}`}>
+                        <Image source={{ uri: imgUrl(p.thumb_url, p.thumb_path) }} style={StyleSheet.absoluteFill} contentFit="cover" transition={150} cachePolicy="memory-disk" />
+                        {p.indexing_status && p.indexing_status !== "indexed" && (
+                          <View style={[styles.faceBadge, styles.pendingBadge]}>
+                            <Ionicons name={p.indexing_status === "failed" ? "alert" : "time-outline"} size={10} color={colors.onBrand} />
+                          </View>
+                        )}
+                        {p.face_count > 0 && (
+                          <View style={styles.faceBadge}>
+                            <Ionicons name="person" size={10} color={colors.onBrand} />
+                            <Text style={styles.faceBadgeText}>{p.face_count}</Text>
+                          </View>
+                        )}
+                      </View>
+                      {showNumbers && (
+                        <Text style={styles.thumbCaption} numberOfLines={1}>{p.filename || `#${i + 1}`}</Text>
                       )}
                     </View>
-                    <Text style={styles.thumbCaption} numberOfLines={1}>{p.filename || `#${i + 1}`}</Text>
-                  </View>
-                ))}
-              </View>
+                  ))}
+                </View>
+              </>
             )}
             {photosHasMore && (
               <Button
@@ -900,6 +916,11 @@ const styles = StyleSheet.create({
   driveTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.lg },
   driveMeta: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 4 },
   driveNote: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: spacing.md, lineHeight: 18 },
+  gridToolbar: { flexDirection: "row", justifyContent: "flex-end", marginBottom: spacing.sm },
+  numBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.md, height: 32, borderRadius: radius.pill, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  numBtnActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  numText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.sm },
+  numTextActive: { color: colors.onBrand, fontWeight: "600" },
   thumbGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.lg },
   thumbCell: { width: "31.8%" },
   thumbCellDesktop: { width: "23%" },
