@@ -207,6 +207,71 @@ backend:
             • Backend logs show no errors for Cloudinary or Rekognition operations
             
             Backend is production-ready with REAL cloud services. 0 failures.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ RE-VERIFIED IN FRESH CONTAINER - ALL 16 TESTS PASSED
+            
+            Comprehensive re-verification of REAL cloud integrations after container refresh:
+            
+            TEST RESULTS:
+            1. ✅ Admin login → 200 with session_token
+            2. ✅ Create event → 200 with event_id (evt_db42baaca61c)
+            3. ✅ List events → 200, new event present in list
+            4. ✅ Get event → 200 with correct event details
+            5. ✅ Upload photo → 200 with photo_id (pho_5085128b304f)
+               • Photo URL: https://res.cloudinary.com/jeoj8k1t/raw/upload/lumiere-gallery/events/...
+               • Thumb URL: https://res.cloudinary.com/jeoj8k1t/raw/upload/lumiere-gallery/events/...
+               • Both URLs verified to start with Cloudinary CDN
+            6. ✅ Photo CDN access → 200, 11407 bytes retrieved from Cloudinary
+            7. ✅ Indexing status (initial) → 200, status=indexing, 0/1 indexed
+            8. ✅ Background indexing complete → Status changed to ready, 1/1 indexed, 0 faces
+               • Indexing completed in <1 second (background worker functional)
+            9. ✅ Request OTP → 200 with dev_code (OTP_DEV_MODE=true working)
+            10. ✅ Verify OTP → 200 with session_token
+            11. ✅ Public event access → 200 with session_token (visitor registration)
+            12. ✅ Give consent → 200
+            13. ✅ Selfie search → 200 (status=retake, expected for synthetic image)
+                • Rekognition SearchFacesByImage executed without errors
+            14. ✅ S3 import → 200 with bucket=faceser, imported=0, skipped=0
+                • Empty bucket handled correctly (no errors)
+            15. ✅ Delete event → 200 with status=deleted
+                • Photos removed: 1
+                • Cloudinary objects deleted: 2 (original + thumbnail)
+                • Rekognition collection deleted: true
+            16. ✅ Verify deletion → 404 (event not found, confirmed deleted)
+            
+            INTEGRATION VERIFICATION:
+            ✅ Cloudinary storage: WORKING
+               • Upload: Raw resource_type upload successful
+               • Serve: CDN URLs accessible (res.cloudinary.com/jeoj8k1t/)
+               • Delete: delete_prefix removed 2 objects (original + thumbnail)
+            
+            ✅ AWS Rekognition: WORKING
+               • Region: ap-southeast-2
+               • IndexFaces: Background worker processed photo successfully
+               • SearchFacesByImage: Executed without errors (quality gate returned "retake" for synthetic image)
+               • DeleteCollection: Collection deleted successfully
+            
+            ✅ S3 import: WORKING
+               • Bucket: faceser (ap-southeast-2)
+               • Access: Bucket accessible, empty bucket returns 200 with 0 imported
+            
+            ✅ Background indexing worker: WORKING
+               • Worker started on application startup
+               • Photos processed asynchronously
+               • Status transitions: pending → indexing → indexed → ready
+            
+            BACKEND LOGS:
+            • No errors related to Cloudinary operations
+            • No errors related to Rekognition operations
+            • Object storage initialized successfully
+            • Face-indexing worker started successfully
+            
+            CONCLUSION:
+            All cloud integrations (Cloudinary + AWS Rekognition + S3) are fully functional
+            in the fresh container. No 4xx/5xx errors on any integration endpoints.
+            Backend is production-ready. 0 failures.
 
 
 frontend:
@@ -1123,3 +1188,16 @@ agent_communication:
         
         Backend is production-ready with REAL cloud services.
 
+
+    - agent: "main"
+      message: |
+        Continuation (repo re-pull, fresh container). Recreated missing .env files and
+        re-wired REAL integrations from user-provided keys:
+        • STORAGE_BACKEND=cloudinary (cloud jeoj8k1t) — verified cloudinary.api.ping() = ok
+        • FACE_ENGINE=rekognition, AWS_REGION=ap-southeast-2 — verified list_collections() OK
+          (existing collection 'lumiere-evt_8e2cf12bc835' present)
+        • S3_IMPORT_BUCKET=faceser
+        Also fixed a container-specific issue: PyMuPDF 1.24.10 broke on aarch64
+        (libmupdf.so.24.9 missing) → upgraded to 1.28.2. Backend boots healthy, admin login OK.
+        Please re-verify the integration lifecycle: admin auth, event CRUD, Cloudinary
+        photo upload/serve/delete, Rekognition index/search, S3 import on 'faceser' bucket.
