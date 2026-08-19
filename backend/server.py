@@ -410,12 +410,13 @@ class GDriveEventCreate(BaseModel):
     drive_link: str
 
 
-async def _sync_gdrive_event(event: dict) -> dict:
+async def _sync_gdrive_event(event: dict, images: Optional[list] = None) -> dict:
     """Re-scan the Drive folder: add new images, re-index changed ones, remove
     deleted ones. Only metadata + web previews are used — no originals copied."""
     event_id = event["event_id"]
     folder_id = event["drive_folder_id"]
-    images = await run_in_threadpool(gdrive_service.list_folder_images, folder_id)
+    if images is None:
+        images = await run_in_threadpool(gdrive_service.list_folder_images, folder_id)
 
     existing = {
         p["drive_file_id"]: p
@@ -519,18 +520,21 @@ async def create_gdrive_event(body: GDriveEventCreate, admin: dict = Depends(req
     on Drive; we index web previews for face search."""
     if body.category not in CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Category must be one of {CATEGORIES}")
-    if not gdrive_service.is_configured():
-        raise HTTPException(status_code=400, detail="Google Drive is not configured on the server yet.")
     try:
         folder_id = gdrive_service.extract_folder_id(body.drive_link)
     except DriveError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    # Validate the folder is reachable up-front (nice error before we create anything).
+    # Validate the folder is reachable & has images up-front (clean error before we create anything).
     try:
-        await run_in_threadpool(gdrive_service.list_folder_images, folder_id)
+        probe = await run_in_threadpool(gdrive_service.list_folder_images, folder_id)
     except DriveError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    if not probe:
+        raise HTTPException(
+            status_code=400,
+            detail="No photos found in that folder. Make sure it's shared 'Anyone with the link → Viewer' and contains images.",
+        )
 
     event_id = f"evt_{uuid.uuid4().hex[:12]}"
     engine = get_face_engine()
@@ -556,7 +560,7 @@ async def create_gdrive_event(body: GDriveEventCreate, admin: dict = Depends(req
         "created_at": now_iso(),
     }
     await db.events.insert_one(event)
-    sync = await _sync_gdrive_event(event)
+    sync = await _sync_gdrive_event(event, images=probe)
     fresh = await get_event_or_404(event_id)
     return {**public_event(fresh), "sync": sync}
 

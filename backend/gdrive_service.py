@@ -10,6 +10,7 @@ across all of a studio's different client Drive accounts.
 """
 import os
 import re
+import html as _html
 import logging
 
 import httpx
@@ -50,9 +51,10 @@ def extract_folder_id(link: str) -> str:
     m = re.search(r"/d/([A-Za-z0-9_-]{10,})", s)
     if m:
         return m.group(1)
-    if re.fullmatch(r"[A-Za-z0-9_-]{10,}", s):
+    # A bare folder ID (Drive IDs are long, ~25-44 chars, no spaces).
+    if re.fullmatch(r"[A-Za-z0-9_-]{25,}", s):
         return s
-    raise DriveError("Could not find a Google Drive folder ID in that link")
+    raise DriveError("That doesn't look like a Google Drive folder link. Paste the folder's share link.")
 
 
 def _list_children(client: httpx.Client, folder_id: str, key: str) -> list[dict]:
@@ -90,10 +92,19 @@ def _list_children(client: httpx.Client, folder_id: str, key: str) -> list[dict]
 
 def list_folder_images(folder_id: str, max_folders: int = 2000) -> list[dict]:
     """Recursively list image files under a folder (breadth-first), preserving
-    the subfolder path. Returns metadata only — never file bytes."""
+    the subfolder path. Returns metadata only — never file bytes.
+
+    Uses the Drive API when GOOGLE_DRIVE_API_KEY is set (richer metadata:
+    md5/modifiedTime/dimensions). Otherwise falls back to reading the *public*
+    folder view, which needs no key for 'Anyone with the link → Viewer'
+    folders."""
+    if api_key():
+        return _list_via_api(folder_id, max_folders)
+    return _list_via_public(folder_id, max_folders)
+
+
+def _list_via_api(folder_id: str, max_folders: int = 2000) -> list[dict]:
     key = api_key()
-    if not key:
-        raise DriveError("GOOGLE_DRIVE_API_KEY is not configured on the server")
 
     images: list[dict] = []
     visited = 0
@@ -123,6 +134,116 @@ def list_folder_images(folder_id: str, max_folders: int = 2000) -> list[dict]:
                         "size": f.get("size"),
                         "width": w,
                         "height": h,
+                        "folder_path": path,
+                    })
+    return images
+
+
+IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic", ".heif", ".tif", ".tiff")
+PUBLIC_VIEW = "https://drive.google.com/embeddedfolderview?id={fid}#grid"
+_ACCESS_WALL_MARKERS = ("accounts.google.com", "servicelogin", "you need access", "request access")
+
+
+def _looks_like_image(name: str, mime: str) -> bool:
+    if mime.startswith("image/"):
+        return True
+    return (name or "").lower().endswith(IMAGE_EXTS)
+
+
+_ANCHOR_RE = re.compile(
+    r'<a href="(https://drive\.google\.com/[^"]+)"[^>]*>.*?'
+    r'<div class="flip-entry-title">(.*?)</div>',
+    re.DOTALL | re.IGNORECASE,
+)
+
+
+def _parse_public_entries(html_text: str) -> list[dict]:
+    """Parse an embeddedfolderview HTML page into entries {id,name,kind}.
+
+    Primary: anchor href tells file (/file/d/ID) vs folder (/folders/ID).
+    Fallback: older id="entry-ID" markers when anchors are absent."""
+    entries: list[dict] = []
+    seen: set[str] = set()
+
+    for href, title in _ANCHOR_RE.findall(html_text):
+        name = _html.unescape(re.sub(r"<[^>]+>", "", title)).strip()
+        fm = re.search(r"/file/d/([A-Za-z0-9_-]{10,})", href)
+        if fm:
+            fid, kind = fm.group(1), "file"
+        else:
+            dm = re.search(r"/folders/([A-Za-z0-9_-]{10,})", href) or re.search(
+                r"[?&]id=([A-Za-z0-9_-]{10,})", href
+            )
+            if not dm:
+                continue
+            fid, kind = dm.group(1), "folder"
+        if fid in seen:
+            continue
+        seen.add(fid)
+        entries.append({"id": fid, "name": name, "kind": kind})
+
+    if entries:
+        return entries
+
+    # Fallback parser (older markup): id="entry-<ID>" + type icon.
+    for part in html_text.split('id="entry-')[1:]:
+        end = part.find('"')
+        if end <= 0:
+            continue
+        fid = part[:end]
+        if not re.fullmatch(r"[A-Za-z0-9_-]{10,}", fid) or fid in seen:
+            continue
+        block = part[:4000]
+        tm = re.search(r"flip-entry-title[^>]*>([^<]*)<", block)
+        name = _html.unescape(tm.group(1)).strip() if tm else fid
+        is_folder = f"/type/{FOLDER_MIME}" in block
+        seen.add(fid)
+        entries.append({"id": fid, "name": name, "kind": "folder" if is_folder else "file"})
+    return entries
+
+
+def _list_via_public(folder_id: str, max_folders: int = 2000) -> list[dict]:
+    """Read a PUBLIC Drive folder with NO API key by parsing the embedded
+    folder view. Recurses into subfolders and preserves paths. Metadata is
+    limited (no md5/modifiedTime/dimensions)."""
+    images: list[dict] = []
+    visited: set[str] = set()
+    with httpx.Client(follow_redirects=True, timeout=30) as client:
+        queue: list[tuple[str, str]] = [(folder_id, "")]
+        folders_seen = 0
+        while queue and folders_seen < max_folders:
+            fid, path = queue.pop(0)
+            if fid in visited:
+                continue
+            visited.add(fid)
+            folders_seen += 1
+            try:
+                r = client.get(PUBLIC_VIEW.format(fid=fid))
+            except Exception as e:  # noqa: BLE001
+                raise DriveError(f"Could not reach Google Drive: {e}")
+            text = r.text or ""
+            entries = _parse_public_entries(text)
+            if not entries and fid == folder_id:
+                low = text.lower()
+                if any(mk in low for mk in _ACCESS_WALL_MARKERS):
+                    raise DriveError(
+                        "This folder isn't public. Share it as 'Anyone with the "
+                        "link → Viewer' and try again."
+                    )
+            for e in entries:
+                if e["kind"] == "folder":
+                    sub = f"{path}/{e['name']}".strip("/") if path else e["name"]
+                    queue.append((e["id"], sub))
+                elif _looks_like_image(e["name"], ""):
+                    images.append({
+                        "drive_file_id": e["id"],
+                        "name": e["name"],
+                        "mime_type": "image/jpeg",
+                        "modified_time": None,
+                        "md5_checksum": None,
+                        "size": None,
+                        "width": None,
+                        "height": None,
                         "folder_path": path,
                     })
     return images

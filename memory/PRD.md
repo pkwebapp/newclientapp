@@ -94,3 +94,9 @@ Implemented:
 3. Backend album_routes.py: access grants (POST/GET/DELETE /albums/{id}/access, collection album_access_grants), GET /albums/client/mine (client app), music upload/delete (Cloudinary, own /music prefix, survives PDF replace since pages render under /pages prefix), archive/unarchive (public 403 when archived, preview key bypasses), PATCH autoplay/autoplay_interval (clamped 1.5-8s), delete also erases grants.
 4. New admin screen app/admin/album/[id].tsx with Pages/Share/Access/Settings tabs; albums list cards now navigate to it; client home shows "Your Albums" section for granted albums.
 Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header on small screens; pre-existing RN-web shadow*/pointerEvents deprecation warnings.
+
+## Feature: Google Drive Galleries (added)
+- Admin creates a gallery by pasting a PUBLIC Google Drive folder link ("Anyone with the link → Viewer"). No API key required (reads Google's embeddedfolderview); GOOGLE_DRIVE_API_KEY optional for richer metadata.
+- Originals stay on Drive. App stores only metadata + serves web-sized previews via proxy GET /api/gdrive/thumb/{fileId}?w=. Face search (AWS Rekognition) runs on previews, mapped by Drive file id.
+- Endpoints: POST /api/events/gdrive, POST /api/events/{id}/sync (add/update/remove counts, idempotent). Events carry source="gdrive". Recurses subfolders and preserves folder_path.
+- Frontend: New Event screen source toggle (Upload / Google Drive) + link field; admin gallery shows "Sync now" panel; dashboard shows a "Drive" badge. Client masonry grid, face-scan, likes/proofing all reuse existing flows.
