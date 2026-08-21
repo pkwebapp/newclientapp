@@ -14,10 +14,11 @@ const ADMIN_NAV: NavItem[] = [
   { label: "Clients", icon: "people-outline", href: "/admin/clients" },
   { label: "New Event", icon: "add-circle-outline", href: "/admin/new-event" },
   { label: "Albums", icon: "book-outline", href: "/admin/albums" },
+  { label: "Settings", icon: "settings-outline", href: "/admin/settings" },
 ];
 
 const CLIENT_NAV: NavItem[] = [
-  { label: "My Galleries", icon: "images-outline", href: "/client" },
+  { label: "Your Memories", icon: "images-outline", href: "/client" },
 ];
 
 /**

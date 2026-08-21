@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from config import db
-from auth_utils import require_admin
+from auth_utils import require_admin, require_client
 
 crm_router = APIRouter(prefix="/api")
 
@@ -30,6 +30,59 @@ crm_router = APIRouter(prefix="/api")
 # ---------------------------------------------------------------------------
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+DEFAULT_STUDIO_WHATSAPP = "8888766739"
+
+
+def studio_profile_public(doc: dict | None) -> dict:
+    doc = doc or {}
+    return {
+        "name": doc.get("name") or "PIK Connect Studio",
+        "whatsapp": doc.get("whatsapp") or DEFAULT_STUDIO_WHATSAPP,
+        "phone": doc.get("phone") or DEFAULT_STUDIO_WHATSAPP,
+        "google_review_url": doc.get("google_review_url") or "",
+        "booking_email": doc.get("booking_email") or "",
+    }
+
+
+async def get_studio_profile(studio_id: str | None) -> dict:
+    doc = None
+    if studio_id:
+        doc = await db.studio_profiles.find_one({"studio_id": studio_id}, {"_id": 0})
+    return studio_profile_public(doc)
+
+
+def next_occurrence(datestr: str):
+    """Return (iso_next_date, days_until) for a recurring important date.
+
+    Accepts 'YYYY-MM-DD' or 'MM-DD'. Falls back gracefully on bad input.
+    """
+    try:
+        s = (datestr or "").strip()
+        if len(s) == 10:
+            _, mm, dd = s.split("-")
+        elif len(s) == 5:
+            mm, dd = s.split("-")
+        else:
+            return (datestr, None)
+        month, day = int(mm), int(dd)
+        today = datetime.now(timezone.utc).date()
+        year = today.year
+
+        def _mk(y):
+            d, m = day, month
+            try:
+                return datetime(y, m, d).date()
+            except ValueError:
+                return datetime(y, m, 28).date()  # e.g. Feb 29 -> Feb 28
+
+        occ = _mk(year)
+        if occ < today:
+            occ = _mk(year + 1)
+        return (occ.isoformat(), (occ - today).days)
+    except Exception:
+        return (datestr, None)
 
 
 CLIENT_TYPES = {"family", "individual", "corporate"}
@@ -443,3 +496,200 @@ async def detach_event(client_id: str, event_id: str, admin: dict = Depends(requ
         {"$unset": {"client_id": ""}},
     )
     return {"status": "detached", "event_id": event_id, "client_id": client_id}
+
+
+# ---------------------------------------------------------------------------
+# Studio profile (admin) — contact info used by client Quick Actions
+# ---------------------------------------------------------------------------
+class StudioProfileUpdate(BaseModel):
+    name: Optional[str] = None
+    whatsapp: Optional[str] = None
+    phone: Optional[str] = None
+    google_review_url: Optional[str] = None
+    booking_email: Optional[str] = None
+
+
+@crm_router.get("/studio/profile")
+async def get_my_studio_profile(admin: dict = Depends(require_admin)):
+    return await get_studio_profile(admin["user_id"])
+
+
+@crm_router.patch("/studio/profile")
+async def update_my_studio_profile(body: StudioProfileUpdate, admin: dict = Depends(require_admin)):
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    updates["studio_id"] = admin["user_id"]
+    updates["updated_at"] = now_iso()
+    await db.studio_profiles.update_one(
+        {"studio_id": admin["user_id"]}, {"$set": updates}, upsert=True
+    )
+    return await get_studio_profile(admin["user_id"])
+
+
+# ---------------------------------------------------------------------------
+# Client dashboard ("Your Memories") + Quick Actions
+# ---------------------------------------------------------------------------
+async def _client_grants(user: dict):
+    ors = []
+    if user.get("email"):
+        ors.append({"client_email": user["email"].lower()})
+    if user.get("phone"):
+        ors.append({"client_phone": user["phone"]})
+    if not ors:
+        return []
+    return await db.access_grants.find({"status": "active", "$or": ors}, {"_id": 0}).to_list(2000)
+
+
+async def _client_family_ids(user: dict) -> list[str]:
+    """CRM clients whose contacts match this signed-in client's email/phone."""
+    ors = []
+    if user.get("email"):
+        ors.append({"email": user["email"].lower()})
+        ors.append({"email": user["email"]})
+    if user.get("phone"):
+        ors.append({"phone": user["phone"]})
+    if not ors:
+        return []
+    contacts = await db.contacts.find({"$or": ors}, {"_id": 0, "client_id": 1}).to_list(2000)
+    return list({c["client_id"] for c in contacts})
+
+
+@crm_router.get("/me/dashboard")
+async def client_dashboard(user: dict = Depends(require_client)):
+    # ---- Memories: events shared with this client (active, non-archived) ----
+    grants = await _client_grants(user)
+    memories = []
+    studio_ids: list[str] = []
+    for g in grants:
+        event = await db.events.find_one({"event_id": g["event_id"]}, {"_id": 0})
+        if not event or event.get("status") == "archived":
+            continue
+        album = await db.client_albums.find_one(
+            {"event_id": g["event_id"], "client_user_id": user["user_id"]},
+            {"_id": 0, "photo_ids": 1},
+        )
+        date_str = event.get("date") or ""
+        year = None
+        if len(date_str) >= 4 and date_str[:4].isdigit():
+            year = date_str[:4]
+        elif event.get("created_at"):
+            year = str(event["created_at"])[:4]
+        if event.get("created_by"):
+            studio_ids.append(event["created_by"])
+        memories.append({
+            "event_id": event["event_id"],
+            "name": event.get("name"),
+            "date": event.get("date"),
+            "year": year,
+            "category": event.get("category"),
+            "photo_count": event.get("photo_count", 0),
+            "my_photos_count": len(album.get("photo_ids", [])) if album else 0,
+            "cover_path": event.get("cover_path"),
+            "photographer": event.get("photographer"),
+            "created_at": event.get("created_at"),
+        })
+    memories.sort(key=lambda m: (m.get("date") or m.get("created_at") or ""), reverse=True)
+
+    # ---- Upcoming important dates (from the client's CRM family records) ----
+    family_ids = await _client_family_ids(user)
+    upcoming = []
+    if family_ids:
+        dates = await db.important_dates.find(
+            {"client_id": {"$in": family_ids}}, {"_id": 0}
+        ).to_list(500)
+        for d in dates:
+            iso, days = next_occurrence(d.get("date", ""))
+            upcoming.append({
+                "date_id": d.get("date_id"),
+                "person_label": d.get("person_label"),
+                "occasion": d.get("occasion"),
+                "date": d.get("date"),
+                "next_date": iso,
+                "days_until": days,
+            })
+        upcoming = [u for u in upcoming if u["days_until"] is not None]
+        upcoming.sort(key=lambda u: u["days_until"])
+
+    # ---- Studio contact (for Quick Actions) ----
+    studio_id = None
+    if studio_ids:
+        # most frequent / most recent studio the client has events with
+        studio_id = studio_ids[0]
+    studio = await get_studio_profile(studio_id)
+
+    name = user.get("name") or "there"
+    first_name = name.split(" ")[0] if name else name
+    return {
+        "profile": {"name": name, "first_name": first_name},
+        "memories": memories,
+        "upcoming": upcoming[:6],
+        "studio": studio,
+    }
+
+
+class BookingRequestBody(BaseModel):
+    service_type: str = Field(min_length=1)
+    preferred_date: Optional[str] = None
+    location: Optional[str] = None
+    message: Optional[str] = None
+
+
+@crm_router.post("/me/booking-requests")
+async def create_booking_request(body: BookingRequestBody, user: dict = Depends(require_client)):
+    # Best-effort: attribute to the studio the client already has events with.
+    grants = await _client_grants(user)
+    studio_id = None
+    for g in grants:
+        ev = await db.events.find_one({"event_id": g["event_id"]}, {"_id": 0, "created_by": 1})
+        if ev and ev.get("created_by"):
+            studio_id = ev["created_by"]
+            break
+    doc = {
+        "request_id": _new_id("bkg"),
+        "client_user_id": user["user_id"],
+        "studio_id": studio_id,
+        "service_type": body.service_type.strip(),
+        "preferred_date": (body.preferred_date or "").strip() or None,
+        "location": (body.location or "").strip() or None,
+        "message": (body.message or "").strip() or None,
+        "contact_name": user.get("name"),
+        "contact_email": user.get("email"),
+        "contact_phone": user.get("phone"),
+        "status": "new",
+        "created_at": now_iso(),
+    }
+    await db.booking_requests.insert_one(doc)
+    return {"status": "ok", "request_id": doc["request_id"]}
+
+
+class ReviewBody(BaseModel):
+    rating: int = Field(ge=1, le=5)
+    text: Optional[str] = None
+    event_id: Optional[str] = None
+
+
+@crm_router.post("/me/reviews")
+async def create_review(body: ReviewBody, user: dict = Depends(require_client)):
+    studio_id = None
+    if body.event_id:
+        ev = await db.events.find_one({"event_id": body.event_id}, {"_id": 0, "created_by": 1})
+        if ev:
+            studio_id = ev.get("created_by")
+    if not studio_id:
+        grants = await _client_grants(user)
+        for g in grants:
+            ev = await db.events.find_one({"event_id": g["event_id"]}, {"_id": 0, "created_by": 1})
+            if ev and ev.get("created_by"):
+                studio_id = ev["created_by"]
+                break
+    doc = {
+        "review_id": _new_id("rev"),
+        "client_user_id": user["user_id"],
+        "studio_id": studio_id,
+        "event_id": body.event_id,
+        "rating": body.rating,
+        "text": (body.text or "").strip() or None,
+        "contact_name": user.get("name"),
+        "created_at": now_iso(),
+    }
+    await db.reviews.insert_one(doc)
+    return {"status": "ok", "review_id": doc["review_id"]}

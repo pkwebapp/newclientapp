@@ -110,6 +110,21 @@ export default function AdminDashboard() {
             <Ionicons name="chevron-forward" size={18} color={colors.muted} />
           </Pressable>
 
+          <Pressable
+            testID="admin-settings-card"
+            onPress={() => router.push("/admin/settings")}
+            style={styles.albumsCard}
+          >
+            <View style={styles.rowIcon}>
+              <Ionicons name="settings-outline" size={20} color={colors.brand} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>Studio Settings</Text>
+              <Text style={styles.rowSub}>WhatsApp, call number & review link for client Quick Actions</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+          </Pressable>
+
           {events.length === 0 ? (
             <EmptyState icon="add-circle-outline" title="Create your first event" subtitle="Set up a gallery, upload photos, and invite your clients." />
           ) : (

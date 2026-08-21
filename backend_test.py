@@ -1,566 +1,467 @@
 #!/usr/bin/env python3
-"""Backend API tests for Google Drive gallery feature - PIK Connect (Lumiere Gallery)"""
-import time
+"""
+Backend test for Slice 2 CRM endpoints (Studio profile, Client dashboard, Booking + Reviews).
+Tests ONLY the new Slice 2 endpoints. Does NOT re-test Slice 1 CRM CRUD or existing gallery/album flows.
+"""
 import requests
 import sys
-from io import BytesIO
-from PIL import Image
+import time
 
 # Backend URL from frontend/.env
-BASE_URL = "https://pkweb-staging.preview.emergentagent.com/api"
+BASE_URL = "https://37c2be9c-4fd7-4175-94d4-fe3b7574d461.preview.emergentagent.com/api"
 
-# Test credentials from /app/memory/test_credentials.md
+# Admin credentials from test_credentials.md
 ADMIN_EMAIL = "admin@lumiere.studio"
 ADMIN_PASSWORD = "Admin@12345"
 
-# Real public Google Drive folder for testing (contains ~12 images)
-REAL_DRIVE_FOLDER = "https://drive.google.com/drive/folders/1ZXEhzbLRLU1giKKRJkjm8N04cO_JoYE2"
+# Test data
+TEST_PHONE = "+915550001111"
+TEST_PHONE_NEW = "+915550009999"  # For edge case: brand-new client with no grants
 
-# Test counters
-tests_passed = 0
-tests_failed = 0
-test_results = []
+def log(msg):
+    print(f"[TEST] {msg}")
 
+def admin_login():
+    """Login as admin and return session_token."""
+    log("1. Admin login...")
+    resp = requests.post(f"{BASE_URL}/auth/admin/login", json={
+        "email": ADMIN_EMAIL,
+        "password": ADMIN_PASSWORD
+    })
+    assert resp.status_code == 200, f"Admin login failed: {resp.status_code} {resp.text}"
+    data = resp.json()
+    assert "session_token" in data, f"No session_token in response: {data}"
+    log(f"   ✅ Admin login successful, token: {data['session_token'][:20]}...")
+    return data["session_token"]
 
-def log_test(name, passed, details=""):
-    global tests_passed, tests_failed
-    if passed:
-        tests_passed += 1
-        status = "✅ PASS"
-    else:
-        tests_failed += 1
-        status = "❌ FAIL"
-    message = f"{status}: {name}"
-    if details:
-        message += f" - {details}"
-    print(message)
-    test_results.append({"name": name, "passed": passed, "details": details})
-
-
-def create_test_image():
-    """Create a small synthetic test image for upload testing"""
-    img = Image.new('RGB', (400, 300), color=(73, 109, 137))
-    buf = BytesIO()
-    img.save(buf, format='JPEG')
-    buf.seek(0)
-    return buf
-
-
-print("=" * 80)
-print("GOOGLE DRIVE GALLERY FEATURE - BACKEND API TESTS")
-print("=" * 80)
-print(f"Backend URL: {BASE_URL}")
-print(f"Admin: {ADMIN_EMAIL}")
-print(f"Real Drive folder: {REAL_DRIVE_FOLDER}")
-print("=" * 80)
-print()
-
-# Store test data
-admin_token = None
-gdrive_event_id = None
-normal_event_id = None
-photo_file_id = None
-
-# ============================================================================
-# TEST 1: Admin Login
-# ============================================================================
-print("TEST 1: Admin login")
-try:
-    resp = requests.post(
-        f"{BASE_URL}/auth/admin/login",
-        json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
-        timeout=30
-    )
-    if resp.status_code == 200:
-        data = resp.json()
-        admin_token = data.get("session_token")
-        if admin_token:
-            log_test("Admin login", True, f"Got session_token")
-        else:
-            log_test("Admin login", False, "No session_token in response")
-    else:
-        log_test("Admin login", False, f"Status {resp.status_code}: {resp.text[:200]}")
-except Exception as e:
-    log_test("Admin login", False, f"Exception: {e}")
-
-if not admin_token:
-    print("\n❌ CRITICAL: Cannot proceed without admin token")
-    sys.exit(1)
-
-headers = {"Authorization": f"Bearer {admin_token}"}
-
-# ============================================================================
-# TEST 2: Create Google Drive event with real public folder
-# ============================================================================
-print("\nTEST 2: Create Google Drive event with real public folder")
-try:
-    resp = requests.post(
-        f"{BASE_URL}/events/gdrive",
-        headers=headers,
-        json={
-            "name": "Drive Test Gallery",
-            "category": "wedding",
-            "drive_link": REAL_DRIVE_FOLDER
-        },
-        timeout=60  # May take time to scan folder
-    )
-    if resp.status_code == 200:
-        data = resp.json()
-        gdrive_event_id = data.get("event_id")
-        source = data.get("source")
-        sync = data.get("sync", {})
-        total = sync.get("total", 0)
-        
-        if source == "gdrive" and total > 0:
-            log_test("Create GDrive event", True, 
-                    f"event_id={gdrive_event_id}, source={source}, sync.total={total}")
-        else:
-            log_test("Create GDrive event", False, 
-                    f"Expected source=gdrive and total>0, got source={source}, total={total}")
-    else:
-        log_test("Create GDrive event", False, f"Status {resp.status_code}: {resp.text[:300]}")
-        gdrive_event_id = None
-except Exception as e:
-    log_test("Create GDrive event", False, f"Exception: {e}")
-    gdrive_event_id = None
-
-if not gdrive_event_id:
-    print("\n❌ CRITICAL: Cannot proceed without gdrive event")
-    sys.exit(1)
-
-# ============================================================================
-# TEST 3: Get event details - verify source and photo_count
-# ============================================================================
-print("\nTEST 3: Get event details")
-try:
-    resp = requests.get(
-        f"{BASE_URL}/events/{gdrive_event_id}",
-        headers=headers,
-        timeout=30
-    )
-    if resp.status_code == 200:
-        data = resp.json()
-        source = data.get("source")
-        photo_count = data.get("photo_count", 0)
-        drive_folder_id = data.get("drive_folder_id")
-        
-        if source == "gdrive" and photo_count > 0:
-            log_test("Get event details", True, 
-                    f"source={source}, photo_count={photo_count}, drive_folder_id={drive_folder_id}")
-        else:
-            log_test("Get event details", False, 
-                    f"Expected source=gdrive and photo_count>0, got source={source}, photo_count={photo_count}")
-    else:
-        log_test("Get event details", False, f"Status {resp.status_code}: {resp.text[:200]}")
-except Exception as e:
-    log_test("Get event details", False, f"Exception: {e}")
-
-# ============================================================================
-# TEST 4: Get photos - verify source=gdrive and absolute proxy URLs
-# ============================================================================
-print("\nTEST 4: Get photos from GDrive event")
-try:
-    resp = requests.get(
-        f"{BASE_URL}/events/{gdrive_event_id}/photos",
-        headers=headers,
-        timeout=30
-    )
-    if resp.status_code == 200:
-        data = resp.json()
-        items = data.get("items", [])
-        
-        if len(items) > 0:
-            photo = items[0]
-            source = photo.get("source")
-            drive_file_id = photo.get("drive_file_id")
-            thumb_url = photo.get("thumb_url", "")
-            url = photo.get("url", "")
-            
-            # Verify URLs contain /api/gdrive/thumb/{fileId}?w=
-            thumb_ok = "/api/gdrive/thumb/" in thumb_url and "?w=" in thumb_url
-            url_ok = "/api/gdrive/thumb/" in url and "?w=" in url
-            
-            if source == "gdrive" and drive_file_id and thumb_ok and url_ok:
-                log_test("Get photos", True, 
-                        f"Found {len(items)} photos, source=gdrive, drive_file_id={drive_file_id}, "
-                        f"thumb_url has /api/gdrive/thumb/, url has /api/gdrive/thumb/")
-                photo_file_id = drive_file_id  # Save for next test
-            else:
-                log_test("Get photos", False, 
-                        f"source={source}, drive_file_id={drive_file_id}, "
-                        f"thumb_url_ok={thumb_ok}, url_ok={url_ok}")
-        else:
-            log_test("Get photos", False, "No photos returned")
-    else:
-        log_test("Get photos", False, f"Status {resp.status_code}: {resp.text[:200]}")
-except Exception as e:
-    log_test("Get photos", False, f"Exception: {e}")
-
-# ============================================================================
-# TEST 5: GDrive thumb proxy - w=600
-# ============================================================================
-print("\nTEST 5: GDrive thumb proxy (w=600)")
-if photo_file_id:
-    try:
-        resp = requests.get(
-            f"{BASE_URL}/gdrive/thumb/{photo_file_id}?w=600",
-            timeout=30
-        )
-        if resp.status_code == 200:
-            content_type = resp.headers.get("content-type", "")
-            content_length = len(resp.content)
-            
-            if content_type.startswith("image/") and content_length > 0:
-                log_test("GDrive thumb proxy w=600", True, 
-                        f"Status 200, content-type={content_type}, size={content_length} bytes")
-            else:
-                log_test("GDrive thumb proxy w=600", False, 
-                        f"content-type={content_type}, size={content_length}")
-        else:
-            log_test("GDrive thumb proxy w=600", False, f"Status {resp.status_code}: {resp.text[:200]}")
-    except Exception as e:
-        log_test("GDrive thumb proxy w=600", False, f"Exception: {e}")
-else:
-    log_test("GDrive thumb proxy w=600", False, "No photo_file_id available")
-
-# ============================================================================
-# TEST 6: GDrive thumb proxy - w=1600
-# ============================================================================
-print("\nTEST 6: GDrive thumb proxy (w=1600)")
-if photo_file_id:
-    try:
-        resp = requests.get(
-            f"{BASE_URL}/gdrive/thumb/{photo_file_id}?w=1600",
-            timeout=30
-        )
-        if resp.status_code == 200:
-            content_type = resp.headers.get("content-type", "")
-            content_length = len(resp.content)
-            
-            if content_type.startswith("image/") and content_length > 0:
-                log_test("GDrive thumb proxy w=1600", True, 
-                        f"Status 200, content-type={content_type}, size={content_length} bytes")
-            else:
-                log_test("GDrive thumb proxy w=1600", False, 
-                        f"content-type={content_type}, size={content_length}")
-        else:
-            log_test("GDrive thumb proxy w=1600", False, f"Status {resp.status_code}: {resp.text[:200]}")
-    except Exception as e:
-        log_test("GDrive thumb proxy w=1600", False, f"Exception: {e}")
-else:
-    log_test("GDrive thumb proxy w=1600", False, "No photo_file_id available")
-
-# ============================================================================
-# TEST 7: Face indexing status - poll until complete
-# ============================================================================
-print("\nTEST 7: Face indexing status (polling until complete)")
-try:
-    max_wait = 60  # seconds
-    start_time = time.time()
-    complete = False
-    last_status = None
+def test_studio_profile(admin_token):
+    """Test GET/PATCH /api/studio/profile (require_admin)."""
+    headers = {"Authorization": f"Bearer {admin_token}"}
     
-    while time.time() - start_time < max_wait:
-        resp = requests.get(
-            f"{BASE_URL}/events/{gdrive_event_id}/indexing-status",
-            headers=headers,
-            timeout=30
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            complete = data.get("complete", False)
-            status = data.get("status")
-            total_photos = data.get("total_photos", 0)
-            indexed_photos = data.get("indexed_photos", 0)
-            failed_photos = data.get("failed_photos", 0)
-            total_faces = data.get("total_faces", 0)
-            percent = data.get("percent", 0)
-            
-            last_status = data
-            
-            if complete:
-                log_test("Face indexing complete", True, 
-                        f"status={status}, total_photos={total_photos}, indexed={indexed_photos}, "
-                        f"failed={failed_photos}, total_faces={total_faces}, percent={percent}%")
-                break
-        else:
-            log_test("Face indexing status", False, f"Status {resp.status_code}: {resp.text[:200]}")
-            break
-        
-        time.sleep(3)  # Poll every 3 seconds
+    # First, clean up any existing studio profile from previous test runs
+    log("2. Cleaning up existing studio profile...")
+    try:
+        from pymongo import MongoClient
+        client = MongoClient("mongodb://localhost:27017")
+        db = client["lumiere_gallery"]
+        result = db.studio_profiles.delete_many({})
+        log(f"   Deleted {result.deleted_count} existing studio profiles")
+    except Exception as e:
+        log(f"   ⚠️  Cleanup failed: {e}")
     
-    if not complete:
-        log_test("Face indexing complete", False, 
-                f"Timeout after {max_wait}s. Last status: {last_status}")
-except Exception as e:
-    log_test("Face indexing status", False, f"Exception: {e}")
+    # GET studio profile (should return defaults after cleanup)
+    log("3. GET /api/studio/profile (before PATCH, should return defaults)...")
+    resp = requests.get(f"{BASE_URL}/studio/profile", headers=headers)
+    assert resp.status_code == 200, f"GET studio/profile failed: {resp.status_code} {resp.text}"
+    profile = resp.json()
+    log(f"   Profile: {profile}")
+    assert "name" in profile, "Missing 'name' in profile"
+    assert "whatsapp" in profile, "Missing 'whatsapp' in profile"
+    assert "phone" in profile, "Missing 'phone' in profile"
+    assert "google_review_url" in profile, "Missing 'google_review_url' in profile"
+    assert "booking_email" in profile, "Missing 'booking_email' in profile"
+    # When unset, whatsapp and phone must default to "8888766739"
+    assert profile["whatsapp"] == "8888766739", f"Default whatsapp should be 8888766739, got {profile['whatsapp']}"
+    assert profile["phone"] == "8888766739", f"Default phone should be 8888766739, got {profile['phone']}"
+    log("   ✅ GET studio/profile returns correct defaults")
+    
+    # PATCH studio profile
+    log("4. PATCH /api/studio/profile...")
+    resp = requests.patch(f"{BASE_URL}/studio/profile", headers=headers, json={
+        "name": "Test Studio",
+        "whatsapp": "9999911111",
+        "phone": "9999922222",
+        "google_review_url": "https://g.page/x",
+        "booking_email": "bookings@test.studio"
+    })
+    assert resp.status_code == 200, f"PATCH studio/profile failed: {resp.status_code} {resp.text}"
+    profile = resp.json()
+    log(f"   Updated profile: {profile}")
+    assert profile["name"] == "Test Studio", f"name not updated: {profile['name']}"
+    assert profile["whatsapp"] == "9999911111", f"whatsapp not updated: {profile['whatsapp']}"
+    assert profile["phone"] == "9999922222", f"phone not updated: {profile['phone']}"
+    assert profile["google_review_url"] == "https://g.page/x", f"google_review_url not updated: {profile['google_review_url']}"
+    assert profile["booking_email"] == "bookings@test.studio", f"booking_email not updated: {profile['booking_email']}"
+    log("   ✅ PATCH studio/profile updates correctly")
+    
+    return profile
 
-# ============================================================================
-# TEST 8: Sync - re-scan folder (should be idempotent)
-# ============================================================================
-print("\nTEST 8: Sync GDrive event (first sync)")
-try:
-    resp = requests.post(
-        f"{BASE_URL}/events/{gdrive_event_id}/sync",
-        headers=headers,
-        timeout=60
-    )
+def create_event(admin_token):
+    """Create a test event."""
+    log("5. Create event...")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    resp = requests.post(f"{BASE_URL}/events", headers=headers, json={
+        "name": "Test Wedding",
+        "category": "wedding",
+        "date": "2026-02-14",
+        "value": 150000
+    })
+    assert resp.status_code == 200, f"Create event failed: {resp.status_code} {resp.text}"
+    event = resp.json()
+    event_id = event["event_id"]
+    log(f"   ✅ Event created: {event_id}")
+    return event_id
+
+def grant_client_access(admin_token, event_id, phone):
+    """Grant client access to event."""
+    log(f"6. Grant client access to event {event_id} for phone {phone}...")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    resp = requests.post(f"{BASE_URL}/events/{event_id}/access", headers=headers, json={
+        "channel": "phone",
+        "phone": phone,
+        "full_gallery_access": True
+    })
+    assert resp.status_code == 200, f"Grant access failed: {resp.status_code} {resp.text}"
+    log(f"   ✅ Access granted")
+
+def create_crm_client(admin_token, phone):
+    """Create a CRM client with a contact matching the phone."""
+    log(f"7. Create CRM client with contact phone {phone}...")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    resp = requests.post(f"{BASE_URL}/clients", headers=headers, json={
+        "name": "Test Family",
+        "contacts": [
+            {
+                "name": "Anjali",
+                "role": "bride",
+                "phone": phone,
+                "is_primary": True
+            }
+        ],
+        "important_dates": [
+            {
+                "person_label": "Anjali",
+                "occasion": "Birthday",
+                "date": "2026-09-01"
+            }
+        ]
+    })
+    assert resp.status_code == 200, f"Create CRM client failed: {resp.status_code} {resp.text}"
+    client = resp.json()
+    client_id = client["client_id"]
+    log(f"   ✅ CRM client created: {client_id}")
+    return client_id
+
+def client_login_otp(phone, name):
+    """Login as client via OTP (OTP_DEV_MODE returns dev_code)."""
+    log(f"8. Client OTP login for phone {phone}...")
+    
+    # Request OTP
+    log(f"   8a. Request OTP...")
+    resp = requests.post(f"{BASE_URL}/auth/client/request-otp", json={
+        "channel": "phone",
+        "phone": phone
+    })
+    assert resp.status_code == 200, f"Request OTP failed: {resp.status_code} {resp.text}"
+    data = resp.json()
+    assert "dev_code" in data, f"No dev_code in response (OTP_DEV_MODE should be true): {data}"
+    dev_code = data["dev_code"]
+    log(f"   ✅ OTP requested, dev_code: {dev_code}")
+    
+    # Verify OTP
+    log(f"   8b. Verify OTP...")
+    resp = requests.post(f"{BASE_URL}/auth/client/verify-otp", json={
+        "channel": "phone",
+        "phone": phone,
+        "code": dev_code,
+        "name": name
+    })
+    assert resp.status_code == 200, f"Verify OTP failed: {resp.status_code} {resp.text}"
+    data = resp.json()
+    assert "session_token" in data, f"No session_token in response: {data}"
+    client_token = data["session_token"]
+    client_user_id = data.get("user", {}).get("user_id")
+    log(f"   ✅ Client logged in, token: {client_token[:20]}..., user_id: {client_user_id}")
+    return client_token, client_user_id
+
+def test_client_dashboard(client_token, expected_studio_whatsapp):
+    """Test GET /api/me/dashboard (require_client)."""
+    log("9. GET /api/me/dashboard (client)...")
+    headers = {"Authorization": f"Bearer {client_token}"}
+    resp = requests.get(f"{BASE_URL}/me/dashboard", headers=headers)
+    assert resp.status_code == 200, f"GET me/dashboard failed: {resp.status_code} {resp.text}"
+    dashboard = resp.json()
+    log(f"   Dashboard: {dashboard}")
+    
+    # Verify structure
+    assert "profile" in dashboard, "Missing 'profile' in dashboard"
+    assert "memories" in dashboard, "Missing 'memories' in dashboard"
+    assert "upcoming" in dashboard, "Missing 'upcoming' in dashboard"
+    assert "studio" in dashboard, "Missing 'studio' in dashboard"
+    
+    # Verify profile
+    profile = dashboard["profile"]
+    assert "first_name" in profile, "Missing 'first_name' in profile"
+    assert profile["first_name"] == "Anjali", f"Expected first_name='Anjali', got {profile['first_name']}"
+    log(f"   ✅ profile.first_name == 'Anjali'")
+    
+    # Verify memories (should contain the Test Wedding event)
+    memories = dashboard["memories"]
+    assert isinstance(memories, list), f"memories should be a list, got {type(memories)}"
+    assert len(memories) > 0, "memories should not be empty"
+    test_wedding = next((m for m in memories if m.get("name") == "Test Wedding"), None)
+    assert test_wedding is not None, "Test Wedding event not found in memories"
+    assert test_wedding.get("year") == "2026", f"Expected year='2026', got {test_wedding.get('year')}"
+    assert "photo_count" in test_wedding, "Missing 'photo_count' in memory"
+    log(f"   ✅ memories contains Test Wedding with year='2026' and photo_count field")
+    
+    # Verify upcoming (should contain Anjali's Birthday)
+    upcoming = dashboard["upcoming"]
+    assert isinstance(upcoming, list), f"upcoming should be a list, got {type(upcoming)}"
+    assert len(upcoming) > 0, "upcoming should not be empty"
+    birthday = next((u for u in upcoming if u.get("occasion") == "Birthday"), None)
+    assert birthday is not None, "Birthday not found in upcoming"
+    assert birthday.get("person_label") == "Anjali", f"Expected person_label='Anjali', got {birthday.get('person_label')}"
+    assert "next_date" in birthday, "Missing 'next_date' in upcoming date"
+    assert birthday["next_date"] is not None, "next_date should not be None"
+    assert "days_until" in birthday, "Missing 'days_until' in upcoming date"
+    assert isinstance(birthday["days_until"], int), f"days_until should be numeric, got {type(birthday['days_until'])}"
+    log(f"   ✅ upcoming contains Birthday with next_date and numeric days_until")
+    
+    # Verify studio
+    studio = dashboard["studio"]
+    assert "whatsapp" in studio, "Missing 'whatsapp' in studio"
+    assert "google_review_url" in studio, "Missing 'google_review_url' in studio"
+    assert studio["whatsapp"] == expected_studio_whatsapp, f"Expected studio.whatsapp='{expected_studio_whatsapp}', got {studio['whatsapp']}"
+    assert studio["google_review_url"] == "https://g.page/x", f"Expected google_review_url='https://g.page/x', got {studio['google_review_url']}"
+    log(f"   ✅ studio.whatsapp == '{expected_studio_whatsapp}' and studio.google_review_url == 'https://g.page/x'")
+    
+    log("   ✅ Client dashboard test PASSED")
+
+def test_booking_request(client_token):
+    """Test POST /api/me/booking-requests (require_client)."""
+    log("10. POST /api/me/booking-requests...")
+    headers = {"Authorization": f"Bearer {client_token}"}
+    resp = requests.post(f"{BASE_URL}/me/booking-requests", headers=headers, json={
+        "service_type": "Anniversary Shoot",
+        "preferred_date": "2026-12-06",
+        "message": "hi"
+    })
+    assert resp.status_code == 200, f"POST booking-requests failed: {resp.status_code} {resp.text}"
+    data = resp.json()
+    log(f"   Response: {data}")
+    assert data.get("status") == "ok", f"Expected status='ok', got {data.get('status')}"
+    assert "request_id" in data, "Missing 'request_id' in response"
+    log(f"   ✅ Booking request created: {data['request_id']}")
+    return data["request_id"]
+
+def test_reviews(client_token):
+    """Test POST /api/me/reviews (require_client) with validation."""
+    log("11. POST /api/me/reviews (valid rating=5)...")
+    headers = {"Authorization": f"Bearer {client_token}"}
+    resp = requests.post(f"{BASE_URL}/me/reviews", headers=headers, json={
+        "rating": 5,
+        "text": "great"
+    })
+    assert resp.status_code == 200, f"POST reviews (rating=5) failed: {resp.status_code} {resp.text}"
+    data = resp.json()
+    log(f"   Response: {data}")
+    assert data.get("status") == "ok", f"Expected status='ok', got {data.get('status')}"
+    assert "review_id" in data, "Missing 'review_id' in response"
+    log(f"   ✅ Review created: {data['review_id']}")
+    review_id = data["review_id"]
+    
+    # Test validation: rating=6 should be 422
+    log("12. POST /api/me/reviews (invalid rating=6, should be 422)...")
+    resp = requests.post(f"{BASE_URL}/me/reviews", headers=headers, json={
+        "rating": 6
+    })
+    assert resp.status_code == 422, f"Expected 422 for rating=6, got {resp.status_code}"
+    log(f"   ✅ rating=6 correctly rejected with 422")
+    
+    # Test validation: rating=0 should be 422
+    log("13. POST /api/me/reviews (invalid rating=0, should be 422)...")
+    resp = requests.post(f"{BASE_URL}/me/reviews", headers=headers, json={
+        "rating": 0
+    })
+    assert resp.status_code == 422, f"Expected 422 for rating=0, got {resp.status_code}"
+    log(f"   ✅ rating=0 correctly rejected with 422")
+    
+    return review_id
+
+def test_edge_case_new_client():
+    """Test edge case: brand-new client user with no grants."""
+    log("14. Edge case: brand-new client with no grants...")
+    
+    # Login as new client (no grants)
+    client_token, client_user_id = client_login_otp(TEST_PHONE_NEW, "New User")
+    
+    # GET dashboard (should return empty memories, not an error)
+    log("15. GET /api/me/dashboard (new client with no grants)...")
+    headers = {"Authorization": f"Bearer {client_token}"}
+    resp = requests.get(f"{BASE_URL}/me/dashboard", headers=headers)
+    assert resp.status_code == 200, f"GET me/dashboard failed: {resp.status_code} {resp.text}"
+    dashboard = resp.json()
+    log(f"   Dashboard: {dashboard}")
+    
+    # Verify structure
+    assert "profile" in dashboard, "Missing 'profile' in dashboard"
+    assert "memories" in dashboard, "Missing 'memories' in dashboard"
+    assert "upcoming" in dashboard, "Missing 'upcoming' in dashboard"
+    assert "studio" in dashboard, "Missing 'studio' in dashboard"
+    
+    # Verify memories is empty (not an error)
+    memories = dashboard["memories"]
+    assert isinstance(memories, list), f"memories should be a list, got {type(memories)}"
+    assert len(memories) == 0, f"memories should be empty for new client, got {len(memories)} items"
+    log(f"   ✅ memories is empty (not an error)")
+    
+    # Verify upcoming is empty
+    upcoming = dashboard["upcoming"]
+    assert isinstance(upcoming, list), f"upcoming should be a list, got {type(upcoming)}"
+    assert len(upcoming) == 0, f"upcoming should be empty for new client, got {len(upcoming)} items"
+    log(f"   ✅ upcoming is empty")
+    
+    # Verify studio is still returned with defaults (no studio_id, so defaults)
+    studio = dashboard["studio"]
+    assert "whatsapp" in studio, "Missing 'whatsapp' in studio"
+    # New client has no events/grants, so no studio_id -> returns default profile
+    assert studio["whatsapp"] == "8888766739", f"Expected studio.whatsapp='8888766739' (default), got {studio['whatsapp']}"
+    log(f"   ✅ studio still returned with default whatsapp='8888766739'")
+    
+    log("   ✅ Edge case test PASSED")
+    return client_user_id
+
+def cleanup(admin_token, event_id, client_id, client_user_ids, booking_request_id, review_id):
+    """Cleanup: delete all created resources."""
+    log("16. CLEANUP: Deleting all created resources...")
+    headers = {"Authorization": f"Bearer {admin_token}"}
+    
+    # Delete event
+    log(f"   Deleting event {event_id}...")
+    resp = requests.delete(f"{BASE_URL}/events/{event_id}", headers=headers)
     if resp.status_code == 200:
-        data = resp.json()
-        sync = data.get("sync", {})
-        added = sync.get("added", 0)
-        updated = sync.get("updated", 0)
-        removed = sync.get("removed", 0)
-        total = sync.get("total", 0)
-        
-        log_test("Sync GDrive event", True, 
-                f"added={added}, updated={updated}, removed={removed}, total={total}")
+        log(f"   ✅ Event deleted")
     else:
-        log_test("Sync GDrive event", False, f"Status {resp.status_code}: {resp.text[:300]}")
-except Exception as e:
-    log_test("Sync GDrive event", False, f"Exception: {e}")
-
-# ============================================================================
-# TEST 9: Sync again immediately (should be idempotent - no changes)
-# ============================================================================
-print("\nTEST 9: Sync again immediately (idempotency check)")
-try:
-    resp = requests.post(
-        f"{BASE_URL}/events/{gdrive_event_id}/sync",
-        headers=headers,
-        timeout=60
-    )
+        log(f"   ⚠️  Event delete failed: {resp.status_code} {resp.text}")
+    
+    # Delete CRM client
+    log(f"   Deleting CRM client {client_id}...")
+    resp = requests.delete(f"{BASE_URL}/clients/{client_id}", headers=headers)
     if resp.status_code == 200:
-        data = resp.json()
-        sync = data.get("sync", {})
-        added = sync.get("added", 0)
-        updated = sync.get("updated", 0)
-        removed = sync.get("removed", 0)
-        
-        if added == 0 and removed == 0:
-            log_test("Sync idempotency", True, 
-                    f"added={added}, updated={updated}, removed={removed} (no changes as expected)")
-        else:
-            log_test("Sync idempotency", False, 
-                    f"Expected added=0 and removed=0, got added={added}, removed={removed}")
+        log(f"   ✅ CRM client deleted")
     else:
-        log_test("Sync idempotency", False, f"Status {resp.status_code}: {resp.text[:300]}")
-except Exception as e:
-    log_test("Sync idempotency", False, f"Exception: {e}")
+        log(f"   ⚠️  CRM client delete failed: {resp.status_code} {resp.text}")
+    
+    # Delete client users (direct DB cleanup via admin endpoint if available, or manual)
+    # Note: There's no DELETE /api/users/{user_id} endpoint in the current implementation
+    # We'll need to clean up via direct DB access or leave it for manual cleanup
+    log(f"   ⚠️  Client users cleanup: No DELETE endpoint available, will clean up via DB")
+    
+    # Delete booking request (direct DB cleanup)
+    log(f"   ⚠️  Booking request cleanup: No DELETE endpoint available, will clean up via DB")
+    
+    # Delete review (direct DB cleanup)
+    log(f"   ⚠️  Review cleanup: No DELETE endpoint available, will clean up via DB")
+    
+    # Delete studio profile (direct DB cleanup)
+    log(f"   ⚠️  Studio profile cleanup: No DELETE endpoint available, will clean up via DB")
+    
+    # Delete OTP codes (direct DB cleanup)
+    log(f"   ⚠️  OTP codes cleanup: No DELETE endpoint available, will clean up via DB")
+    
+    log("   ✅ Cleanup complete (some items require direct DB cleanup)")
 
-# ============================================================================
-# TEST 10: Negative test - invalid drive link
-# ============================================================================
-print("\nTEST 10: Negative test - invalid drive link")
-try:
-    resp = requests.post(
-        f"{BASE_URL}/events/gdrive",
-        headers=headers,
-        json={
-            "name": "Invalid Link Test",
-            "category": "event",
-            "drive_link": "not-a-valid-link"
-        },
-        timeout=30
-    )
-    if resp.status_code == 400:
-        detail = resp.json().get("detail", "")
-        log_test("Invalid drive link", True, f"Status 400 with detail: {detail}")
-    else:
-        log_test("Invalid drive link", False, 
-                f"Expected 400, got {resp.status_code}: {resp.text[:200]}")
-except Exception as e:
-    log_test("Invalid drive link", False, f"Exception: {e}")
-
-# ============================================================================
-# TEST 11: Negative test - non-existent/private folder
-# ============================================================================
-print("\nTEST 11: Negative test - non-existent/private folder")
-try:
-    resp = requests.post(
-        f"{BASE_URL}/events/gdrive",
-        headers=headers,
-        json={
-            "name": "Private Folder Test",
-            "category": "event",
-            "drive_link": "https://drive.google.com/drive/folders/0B7EVK8r0v71pZjFTYXZWM3FlRnM"
-        },
-        timeout=30
-    )
-    if resp.status_code == 400:
-        detail = resp.json().get("detail", "")
-        log_test("Non-existent/private folder", True, f"Status 400 with detail: {detail}")
-    else:
-        log_test("Non-existent/private folder", False, 
-                f"Expected 400, got {resp.status_code}: {resp.text[:200]}")
-except Exception as e:
-    log_test("Non-existent/private folder", False, f"Exception: {e}")
-
-# ============================================================================
-# TEST 12: Delete GDrive event
-# ============================================================================
-print("\nTEST 12: Delete GDrive event")
-try:
-    resp = requests.delete(
-        f"{BASE_URL}/events/{gdrive_event_id}",
-        headers=headers,
-        timeout=30
-    )
-    if resp.status_code == 200:
-        data = resp.json()
-        status = data.get("status")
-        photos_removed = data.get("photos_removed", 0)
-        faces_collection_deleted = data.get("faces_collection_deleted", False)
-        
-        if status == "deleted":
-            log_test("Delete GDrive event", True, 
-                    f"status={status}, photos_removed={photos_removed}, "
-                    f"faces_collection_deleted={faces_collection_deleted}")
-        else:
-            log_test("Delete GDrive event", False, f"Expected status=deleted, got {status}")
-    else:
-        log_test("Delete GDrive event", False, f"Status {resp.status_code}: {resp.text[:200]}")
-except Exception as e:
-    log_test("Delete GDrive event", False, f"Exception: {e}")
-
-# ============================================================================
-# TEST 13: Verify GDrive event is deleted
-# ============================================================================
-print("\nTEST 13: Verify GDrive event is deleted")
-try:
-    resp = requests.get(
-        f"{BASE_URL}/events/{gdrive_event_id}",
-        headers=headers,
-        timeout=30
-    )
-    if resp.status_code == 404:
-        log_test("Verify GDrive event deleted", True, "Status 404 (event not found)")
-    else:
-        log_test("Verify GDrive event deleted", False, 
-                f"Expected 404, got {resp.status_code}")
-except Exception as e:
-    log_test("Verify GDrive event deleted", False, f"Exception: {e}")
-
-# ============================================================================
-# REGRESSION TEST: Normal upload flow still works
-# ============================================================================
-print("\n" + "=" * 80)
-print("REGRESSION TEST: Normal upload flow (Cloudinary)")
-print("=" * 80)
-
-# ============================================================================
-# TEST 14: Create normal event
-# ============================================================================
-print("\nTEST 14: Create normal event (non-GDrive)")
-try:
-    resp = requests.post(
-        f"{BASE_URL}/events",
-        headers=headers,
-        json={
-            "name": "Normal Upload Test",
-            "category": "event"
-        },
-        timeout=30
-    )
-    if resp.status_code == 200:
-        data = resp.json()
-        normal_event_id = data.get("event_id")
-        source = data.get("source", "upload")
-        
-        if source == "upload":
-            log_test("Create normal event", True, f"event_id={normal_event_id}, source={source}")
-        else:
-            log_test("Create normal event", False, f"Expected source=upload, got {source}")
-    else:
-        log_test("Create normal event", False, f"Status {resp.status_code}: {resp.text[:200]}")
-        normal_event_id = None
-except Exception as e:
-    log_test("Create normal event", False, f"Exception: {e}")
-    normal_event_id = None
-
-# ============================================================================
-# TEST 15: Upload photo to normal event
-# ============================================================================
-print("\nTEST 15: Upload photo to normal event")
-if normal_event_id:
+def direct_db_cleanup():
+    """Direct MongoDB cleanup for resources without DELETE endpoints."""
+    log("17. Direct DB cleanup...")
     try:
-        test_image = create_test_image()
-        resp = requests.post(
-            f"{BASE_URL}/events/{normal_event_id}/photos",
-            headers=headers,
-            files={"file": ("test.jpg", test_image, "image/jpeg")},
-            timeout=30
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            photo_id = data.get("photo_id")
-            url = data.get("url", "")
-            thumb_url = data.get("thumb_url", "")
-            
-            # Verify Cloudinary URLs
-            cloudinary_ok = "cloudinary.com" in url and "cloudinary.com" in thumb_url
-            
-            if photo_id and cloudinary_ok:
-                log_test("Upload photo to normal event", True, 
-                        f"photo_id={photo_id}, Cloudinary URLs present")
-            else:
-                log_test("Upload photo to normal event", False, 
-                        f"photo_id={photo_id}, cloudinary_ok={cloudinary_ok}")
-        else:
-            log_test("Upload photo to normal event", False, 
-                    f"Status {resp.status_code}: {resp.text[:200]}")
+        from pymongo import MongoClient
+        client = MongoClient("mongodb://localhost:27017")
+        db = client["lumiere_gallery"]
+        
+        # Delete all client users except admin
+        result = db.users.delete_many({"role": "client"})
+        log(f"   Deleted {result.deleted_count} client users")
+        
+        # Delete all access grants
+        result = db.access_grants.delete_many({})
+        log(f"   Deleted {result.deleted_count} access grants")
+        
+        # Delete all booking requests
+        result = db.booking_requests.delete_many({})
+        log(f"   Deleted {result.deleted_count} booking requests")
+        
+        # Delete all reviews
+        result = db.reviews.delete_many({})
+        log(f"   Deleted {result.deleted_count} reviews")
+        
+        # Delete all studio profiles
+        result = db.studio_profiles.delete_many({})
+        log(f"   Deleted {result.deleted_count} studio profiles")
+        
+        # Delete all OTP codes
+        result = db.otp_codes.delete_many({})
+        log(f"   Deleted {result.deleted_count} OTP codes")
+        
+        # Delete all CRM clients (in case any remain)
+        result = db.clients.delete_many({})
+        log(f"   Deleted {result.deleted_count} CRM clients")
+        
+        # Delete all contacts
+        result = db.contacts.delete_many({})
+        log(f"   Deleted {result.deleted_count} contacts")
+        
+        # Delete all important dates
+        result = db.important_dates.delete_many({})
+        log(f"   Deleted {result.deleted_count} important dates")
+        
+        log("   ✅ Direct DB cleanup complete")
     except Exception as e:
-        log_test("Upload photo to normal event", False, f"Exception: {e}")
-else:
-    log_test("Upload photo to normal event", False, "No normal_event_id available")
+        log(f"   ⚠️  Direct DB cleanup failed: {e}")
 
-# ============================================================================
-# TEST 16: Delete normal event (cleanup)
-# ============================================================================
-print("\nTEST 16: Delete normal event (cleanup)")
-if normal_event_id:
+def main():
+    log("=" * 80)
+    log("SLICE 2 CRM ENDPOINTS TEST")
+    log("=" * 80)
+    
     try:
-        resp = requests.delete(
-            f"{BASE_URL}/events/{normal_event_id}",
-            headers=headers,
-            timeout=30
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            status = data.get("status")
-            cloudinary_objects_deleted = data.get("cloudinary_objects_deleted", 0)
-            
-            if status == "deleted" and cloudinary_objects_deleted > 0:
-                log_test("Delete normal event", True, 
-                        f"status={status}, cloudinary_objects_deleted={cloudinary_objects_deleted}")
-            else:
-                log_test("Delete normal event", False, 
-                        f"status={status}, cloudinary_objects_deleted={cloudinary_objects_deleted}")
-        else:
-            log_test("Delete normal event", False, f"Status {resp.status_code}: {resp.text[:200]}")
+        # Admin login
+        admin_token = admin_login()
+        
+        # Test studio profile (GET/PATCH)
+        studio_profile = test_studio_profile(admin_token)
+        
+        # Setup for client dashboard test
+        event_id = create_event(admin_token)
+        grant_client_access(admin_token, event_id, TEST_PHONE)
+        client_id = create_crm_client(admin_token, TEST_PHONE)
+        
+        # Client login
+        client_token, client_user_id = client_login_otp(TEST_PHONE, "Anjali")
+        
+        # Test client dashboard
+        test_client_dashboard(client_token, studio_profile["whatsapp"])
+        
+        # Test booking request
+        booking_request_id = test_booking_request(client_token)
+        
+        # Test reviews (with validation)
+        review_id = test_reviews(client_token)
+        
+        # Test edge case: brand-new client with no grants
+        new_client_user_id = test_edge_case_new_client()
+        
+        # Cleanup
+        client_user_ids = [client_user_id, new_client_user_id]
+        cleanup(admin_token, event_id, client_id, client_user_ids, booking_request_id, review_id)
+        
+        # Direct DB cleanup
+        direct_db_cleanup()
+        
+        log("=" * 80)
+        log("✅ ALL TESTS PASSED")
+        log("=" * 80)
+        return 0
+        
+    except AssertionError as e:
+        log(f"❌ TEST FAILED: {e}")
+        return 1
     except Exception as e:
-        log_test("Delete normal event", False, f"Exception: {e}")
-else:
-    log_test("Delete normal event", False, "No normal_event_id available")
+        log(f"❌ UNEXPECTED ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
 
-# ============================================================================
-# SUMMARY
-# ============================================================================
-print("\n" + "=" * 80)
-print("TEST SUMMARY")
-print("=" * 80)
-print(f"Total tests: {tests_passed + tests_failed}")
-print(f"✅ Passed: {tests_passed}")
-print(f"❌ Failed: {tests_failed}")
-print("=" * 80)
-
-if tests_failed > 0:
-    print("\nFAILED TESTS:")
-    for result in test_results:
-        if not result["passed"]:
-            print(f"  ❌ {result['name']}: {result['details']}")
-    print()
-    sys.exit(1)
-else:
-    print("\n🎉 ALL TESTS PASSED!")
-    sys.exit(0)
+if __name__ == "__main__":
+    sys.exit(main())

@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
+  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -22,26 +23,40 @@ import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/th
 const FALLBACK =
   "https://images.unsplash.com/photo-1623672655496-1537b4d84eb4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwxfHxlbGVnYW50JTIwd2VkZGluZyUyMGV2ZW50JTIwcGhvdG9ncmFwaHklMjBkYXJrfGVufDB8fHx8MTc4NjgyMzAxOXww&ixlib=rb-4.1.0&q=85";
 
-export default function ClientEvents() {
+const dialDigits = (num?: string) => {
+  const digits = (num || "").replace(/\D/g, "");
+  return digits.length === 10 ? `91${digits}` : digits;
+};
+
+function groupByYear(memories: any[]) {
+  const map: Record<string, any[]> = {};
+  for (const m of memories) {
+    const y = m.year || "Earlier";
+    (map[y] = map[y] || []).push(m);
+  }
+  return Object.entries(map).sort((a, b) => (a[0] < b[0] ? 1 : -1));
+}
+
+export default function ClientDashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { user, signOut } = useAuth();
   const toast = useToast();
-  const [events, setEvents] = useState<any[]>([]);
+  const [dash, setDash] = useState<any>(null);
   const [albums, setAlbums] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [ev, al] = await Promise.all([
-        api.get("/client/events"),
+      const [d, al] = await Promise.all([
+        api.get("/me/dashboard"),
         api.get("/albums/client/mine").catch(() => []),
       ]);
-      setEvents(ev);
+      setDash(d);
       setAlbums(al);
     } catch {
-      toast.show("Could not load your galleries", "error");
+      toast.show("Could not load your memories", "error");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -54,11 +69,33 @@ export default function ClientEvents() {
     }, [load])
   );
 
+  const studio = dash?.studio || {};
+  const memories = dash?.memories || [];
+  const upcoming = dash?.upcoming || [];
+  const firstName = dash?.profile?.first_name || user?.name || "there";
+
+  const openWhatsApp = () => {
+    Linking.openURL(`https://wa.me/${dialDigits(studio.whatsapp)}`).catch(() =>
+      toast.show("Could not open WhatsApp", "error")
+    );
+  };
+  const call = () => {
+    const digits = (studio.phone || "").replace(/\D/g, "");
+    Linking.openURL(`tel:${digits}`).catch(() => toast.show("Could not start call", "error"));
+  };
+
+  const ACTIONS = [
+    { key: "book", label: "Book", icon: "calendar", onPress: () => router.push("/client/book") },
+    { key: "message", label: "Message", icon: "logo-whatsapp", onPress: openWhatsApp },
+    { key: "call", label: "Call", icon: "call", onPress: call },
+    { key: "review", label: "Review", icon: "star", onPress: () => router.push("/client/review") },
+  ];
+
   return (
-    <View style={styles.container} testID="client-events-screen">
+    <View style={styles.container} testID="client-dashboard-screen">
       <GlassHeader
-        title="Your Galleries"
-        subtitle={user?.name ? `Hi, ${user.name}` : undefined}
+        title="Your Memories"
+        subtitle={`Welcome, ${firstName}`}
         topInset={insets.top}
         right={
           <Pressable testID="signout-btn" onPress={signOut} hitSlop={10} style={{ padding: 6 }}>
@@ -84,6 +121,42 @@ export default function ClientEvents() {
             />
           }
         >
+          {/* Quick actions */}
+          <View style={styles.actionsRow}>
+            {ACTIONS.map((a) => (
+              <Pressable key={a.key} testID={`qa-${a.key}`} onPress={a.onPress} style={styles.action}>
+                <View style={styles.actionIcon}>
+                  <Ionicons name={a.icon as any} size={20} color={colors.brand} />
+                </View>
+                <Text style={styles.actionLabel}>{a.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Upcoming */}
+          {upcoming.length > 0 && (
+            <>
+              <Text style={styles.sectionTitle}>Upcoming</Text>
+              <View style={styles.upcomingBox}>
+                {upcoming.map((u: any) => (
+                  <View key={u.date_id} style={styles.upcomingRow}>
+                    <View style={styles.upcomingIcon}>
+                      <Ionicons name={/anniv/i.test(u.occasion) ? "heart" : "gift"} size={16} color={colors.brand} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.upcomingTitle}>{u.person_label} · {u.occasion}</Text>
+                      <Text style={styles.upcomingSub}>{u.next_date}</Text>
+                    </View>
+                    <Text style={styles.upcomingDays}>
+                      {u.days_until === 0 ? "Today" : u.days_until === 1 ? "Tomorrow" : `in ${u.days_until}d`}
+                    </Text>
+                  </View>
+                ))}
+              </View>
+            </>
+          )}
+
+          {/* Albums */}
           {albums.length > 0 && (
             <>
               <Text style={styles.sectionTitle}>Your Albums</Text>
@@ -111,59 +184,56 @@ export default function ClientEvents() {
                   <Ionicons name="chevron-forward" size={18} color={colors.onSurfaceTertiary} />
                 </Pressable>
               ))}
-              <Text style={[styles.sectionTitle, { marginTop: spacing.lg }]}>
-                {events.length > 0 ? "Your Galleries" : ""}
-              </Text>
             </>
           )}
-          {events.length === 0 && albums.length === 0 ? (
+
+          {/* Memories grouped by year */}
+          {memories.length === 0 && albums.length === 0 ? (
             <EmptyState
               icon="mail-open-outline"
-              title="No galleries yet"
-              subtitle="When a studio shares an event or album with you, it will appear here. Pull down to refresh."
+              title="No memories yet"
+              subtitle="When your studio shares an event or album, it will appear here. Pull down to refresh."
             />
           ) : (
-            events.map((e) => (
-              <Pressable
-                key={e.event_id}
-                testID={`event-card-${e.event_id}`}
-                onPress={() => router.push(`/client/event/${e.event_id}`)}
-                style={styles.card}
-              >
-                <Image
-                  source={{ uri: imgUrl(e.cover_url, e.cover_path) || FALLBACK }}
-                  style={StyleSheet.absoluteFill}
-                  contentFit="cover"
-                  transition={250}
-                />
-                <LinearGradient
-                  colors={["transparent", "rgba(13,13,13,0.35)", "rgba(13,13,13,0.92)"]}
-                  locations={[0, 0.45, 1]}
-                  style={StyleSheet.absoluteFill}
-                />
-                <View style={styles.cardTop}>
-                  <Pill
-                    label={categoryMeta[e.category]?.label || e.category}
-                    tone="gold"
-                  />
-                  {e.my_photos_count > 0 && (
-                    <Pill label={`${e.my_photos_count} of you`} tone="success" icon="sparkles" />
-                  )}
-                </View>
-                <View style={styles.cardBottom}>
-                  <Text style={styles.cardTitle} numberOfLines={1}>
-                    {e.name}
-                  </Text>
-                  <View style={styles.metaRow}>
-                    {e.date ? (
-                      <Text style={styles.meta}>
-                        <Ionicons name="calendar-outline" size={12} /> {e.date}
-                      </Text>
-                    ) : null}
-                    {e.photographer ? <Text style={styles.meta}>  •  {e.photographer}</Text> : null}
-                  </View>
-                </View>
-              </Pressable>
+            groupByYear(memories).map(([year, list]) => (
+              <View key={year}>
+                <Text style={styles.yearHead}>{year}</Text>
+                {(list as any[]).map((e) => (
+                  <Pressable
+                    key={e.event_id}
+                    testID={`memory-card-${e.event_id}`}
+                    onPress={() => router.push(`/client/event/${e.event_id}`)}
+                    style={styles.card}
+                  >
+                    <Image
+                      source={{ uri: imgUrl(null, e.cover_path) || FALLBACK }}
+                      style={StyleSheet.absoluteFill}
+                      contentFit="cover"
+                      transition={250}
+                    />
+                    <LinearGradient
+                      colors={["transparent", "rgba(13,13,13,0.35)", "rgba(13,13,13,0.92)"]}
+                      locations={[0, 0.45, 1]}
+                      style={StyleSheet.absoluteFill}
+                    />
+                    <View style={styles.cardTop}>
+                      <Pill label={categoryMeta[e.category]?.label || e.category} tone="gold" />
+                      {e.my_photos_count > 0 && (
+                        <Pill label={`${e.my_photos_count} of you`} tone="success" icon="sparkles" />
+                      )}
+                    </View>
+                    <View style={styles.cardBottom}>
+                      <Text style={styles.cardTitle} numberOfLines={1}>{e.name}</Text>
+                      <View style={styles.metaRow}>
+                        <Text style={styles.meta}>
+                          <Ionicons name="image-outline" size={12} /> {e.photo_count} photos
+                        </Text>
+                        {e.date ? <Text style={styles.meta}>  •  {e.date}</Text> : null}
+                      </View>
+                    </View>
+                  </Pressable>
+                ))}
+              </View>
             ))
           )}
         </ScrollView>
@@ -193,7 +263,18 @@ const styles = StyleSheet.create({
   },
   cardBottom: { position: "absolute", left: spacing.lg, right: spacing.lg, bottom: spacing.lg },
   cardTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"] },
-  sectionTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, marginBottom: spacing.md },
+  sectionTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, marginBottom: spacing.md, marginTop: spacing.lg },
+  yearHead: { color: colors.brand, fontFamily: fonts.display, fontSize: fontSize.lg, marginBottom: spacing.md, marginTop: spacing.lg, letterSpacing: 1 },
+  actionsRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
+  action: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingVertical: spacing.lg, alignItems: "center", gap: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  actionIcon: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
+  actionLabel: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm },
+  upcomingBox: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  upcomingRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, padding: spacing.md },
+  upcomingIcon: { width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
+  upcomingTitle: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "600" },
+  upcomingSub: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
+  upcomingDays: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
   albumCard: {
     flexDirection: "row",
     alignItems: "center",

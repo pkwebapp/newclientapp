@@ -1691,3 +1691,162 @@ agent_communication:
         
         All endpoints return correct status codes, proper response structures, and accurate data.
         No issues found. Backend is production-ready.
+
+#====================================================================================================
+# CRM Slice 2 — Client Dashboard + Quick Actions + Studio Profile (added by main agent)
+#====================================================================================================
+backend:
+  - task: "Client dashboard (Your Memories + Upcoming)"
+    implemented: true
+    working: true
+    file: "backend/crm_routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "GET /api/me/dashboard (require_client). Returns profile{name,first_name}, memories[] (events the client has active access to via access_grants, non-archived, with photo_count/my_photos_count/year), upcoming[] (important dates from CRM contacts matching the client's email/phone -> family important_dates, with next_date + days_until, sorted asc), and studio{name,whatsapp,phone,google_review_url,booking_email}. Smoke-tested OK."
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ PASS - Client dashboard endpoint fully functional.
+            
+            Tested comprehensive end-to-end flow:
+            • Setup: Created event (Test Wedding, 2026-02-14, value=150000), granted client access (phone +915550001111, full_gallery_access=true), created CRM client with contact (Anjali, bride, phone +915550001111) and important date (Birthday, 2026-09-01)
+            • Client login via OTP (OTP_DEV_MODE returns dev_code in response) ✓
+            • GET /api/me/dashboard → 200 with complete structure ✓
+            
+            VERIFIED RESPONSE STRUCTURE:
+            • profile.first_name == "Anjali" ✓
+            • memories[] contains Test Wedding event:
+              - year == "2026" ✓
+              - photo_count field present ✓
+              - my_photos_count field present ✓
+            • upcoming[] contains Birthday:
+              - person_label == "Anjali" ✓
+              - occasion == "Birthday" ✓
+              - next_date present (2026-09-01) ✓
+              - days_until is numeric (11 days) ✓
+            • studio.whatsapp == "9999911111" (matches PATCH value) ✓
+            • studio.google_review_url == "https://g.page/x" ✓
+            
+            EDGE CASE TESTED:
+            • Brand-new client with NO grants → memories=[], upcoming=[], studio returned with defaults (whatsapp=8888766739) ✓
+            • No errors, correct empty arrays ✓
+            
+            All fields present and correct. Dashboard aggregates data from events, CRM contacts, and studio profile correctly.
+  - task: "Client booking request + review endpoints"
+    implemented: true
+    working: true
+    file: "backend/crm_routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "POST /api/me/booking-requests (service_type required, optional preferred_date/location/message) -> stores booking_requests doc attributed to the studio the client has events with. POST /api/me/reviews (rating 1-5 required, optional text/event_id) -> stores reviews doc. Both require_client. rating out of 1-5 must 422."
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ PASS - Booking request and review endpoints fully functional.
+            
+            BOOKING REQUEST TESTS:
+            • POST /api/me/booking-requests with {service_type:"Anniversary Shoot", preferred_date:"2026-12-06", message:"hi"} → 200 ✓
+            • Response: {status:"ok", request_id:"bkg_..."} ✓
+            
+            REVIEW TESTS:
+            • POST /api/me/reviews with {rating:5, text:"great"} → 200 ✓
+            • Response: {status:"ok", review_id:"rev_..."} ✓
+            
+            VALIDATION TESTS:
+            • POST /api/me/reviews with {rating:6} → 422 (correctly rejected, rating must be 1-5) ✓
+            • POST /api/me/reviews with {rating:0} → 422 (correctly rejected, rating must be 1-5) ✓
+            
+            All endpoints return correct status codes and response structures. Pydantic validation working correctly (Field(ge=1, le=5)).
+  - task: "Studio profile GET/PATCH (admin)"
+    implemented: true
+    working: true
+    file: "backend/crm_routes.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "GET /api/studio/profile (require_admin) returns profile with defaults (whatsapp defaults to 8888766739). PATCH /api/studio/profile upserts name/whatsapp/phone/google_review_url/booking_email. Multi-tenant: profile scoped by studio_id."
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ PASS - Studio profile endpoints fully functional.
+            
+            GET /api/studio/profile (require_admin):
+            • Returns profile with all required fields: name, whatsapp, phone, google_review_url, booking_email ✓
+            • When unset, whatsapp defaults to "8888766739" ✓
+            • When unset, phone defaults to "8888766739" ✓
+            • Empty strings for google_review_url and booking_email when unset ✓
+            
+            PATCH /api/studio/profile (require_admin):
+            • Upserts profile with {name:"Test Studio", whatsapp:"9999911111", phone:"9999922222", google_review_url:"https://g.page/x", booking_email:"bookings@test.studio"} → 200 ✓
+            • Returns updated profile with all fields correctly set ✓
+            • Subsequent GET returns updated values ✓
+            
+            Multi-tenant scoping verified: profile scoped by studio_id (admin.user_id). All endpoints return correct status codes and response structures.
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: |
+        Test ONLY the new Slice 2 endpoints in backend/crm_routes.py. Do NOT re-test Slice 1 CRM
+        CRUD (already passed) or existing gallery/album flows.
+        Admin login: admin@lumiere.studio / Admin@12345.
+        Setup for the dashboard test (as admin): (1) PATCH /api/studio/profile to set whatsapp/phone/
+        google_review_url; (2) create an event via POST /api/events with a date + value; (3) grant a
+        client access via POST /api/events/{eid}/access {channel:"phone", phone:"+91<num>",
+        full_gallery_access:true}; (4) create a CRM client via POST /api/clients with a contact whose
+        phone == that same phone, and an important_date. Then as the CLIENT: request+verify OTP for
+        that phone (OTP_DEV_MODE returns dev_code in the response) to get a client token.
+        Verify: GET /api/me/dashboard returns the event under memories (correct year), the important
+        date under upcoming (with next_date + numeric days_until), and studio.whatsapp matching what
+        you set (defaults to 8888766739 if unset). POST /api/me/booking-requests returns {status:ok};
+        POST /api/me/reviews with rating 5 returns ok, and rating 6 or 0 must 422. Confirm a client
+        with NO grants gets empty memories (not an error). IMPORTANT: clean up EVERYTHING you create
+        (events, clients, the client user + access grants, booking_requests, reviews, studio_profiles,
+        otp_codes, and any extra admin) so the DB is left with only the seeded admin and empty CRM
+        collections.
+    - agent: "testing"
+      message: |
+        ✅ SLICE 2 CRM ENDPOINTS TESTING COMPLETE - ALL 3 TASKS PASSED
+        
+        Tested ONLY the new Slice 2 CRM endpoints as requested. Did NOT re-test Slice 1 CRM CRUD or existing gallery/album/gdrive flows.
+        
+        TEST SUMMARY:
+        1. ✅ Studio profile GET/PATCH (admin) - PASS
+           • GET returns correct defaults (whatsapp/phone = "8888766739")
+           • PATCH upserts all fields correctly
+           • Multi-tenant scoping working (studio_id = admin.user_id)
+        
+        2. ✅ Client dashboard (Your Memories + Upcoming) - PASS
+           • Returns profile.first_name correctly
+           • memories[] contains events with year, photo_count fields
+           • upcoming[] contains important dates with next_date, numeric days_until
+           • studio info matches PATCH values (whatsapp="9999911111", google_review_url="https://g.page/x")
+           • Edge case: brand-new client with no grants → empty memories/upcoming (not an error) ✓
+        
+        3. ✅ Booking + Reviews - PASS
+           • POST /api/me/booking-requests → {status:"ok", request_id} ✓
+           • POST /api/me/reviews (rating=5) → {status:"ok", review_id} ✓
+           • Validation: rating=6 → 422 ✓
+           • Validation: rating=0 → 422 ✓
+        
+        CLEANUP COMPLETE:
+        • Deleted all created resources (events, CRM clients, client users, access grants, booking requests, reviews, studio profiles, OTP codes)
+        • Database left with only seeded admin (admin@lumiere.studio) and empty CRM collections
+        
+        All endpoints return correct status codes (200, 422) and proper response structures. No issues found. Backend is production-ready.
