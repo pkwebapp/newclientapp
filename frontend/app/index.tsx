@@ -5,7 +5,7 @@ import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-n
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { H1, H2, H3, P, A, UL, LI, Section, Footer } from "@expo/html-elements";
+import { H1, H2, H3, P, A, Section, Footer } from "@expo/html-elements";
 
 import { Button } from "@/src/components/ui";
 import { useAuth } from "@/src/context/AuthContext";
@@ -23,33 +23,15 @@ const KEYWORDS =
   "PIK Connect, PK Photography, wedding photographer Mumbai, event photographer Goa, pre-wedding photography Goa, corporate photography Mumbai, event photo gallery, find my photos selfie, photo delivery app, destination wedding photographer";
 
 const STEPS = [
-  { icon: "camera", title: "Take a selfie", text: "Open your event link and snap a quick selfie — no login or app download needed." },
-  { icon: "sparkles", title: "We find your face", text: "PIK Connect uses face recognition to instantly match you across the entire event gallery." },
-  { icon: "download", title: "View & download", text: "Get every photo of you in full resolution, ready to save and share with family." },
-];
-
-const SERVICES = [
-  "Wedding photography & videography in Mumbai & Goa",
-  "Pre-wedding & destination weddings across Goa",
-  "Corporate & event photography and videography",
-  "Portraits, headshots & editorial portfolios",
-  "Product, fashion & brand photography",
-  "Drone / aerial photography and live streaming",
+  { icon: "camera", text: "Open your event link & take a quick selfie" },
+  { icon: "sparkles", text: "We match your face across the gallery" },
+  { icon: "download", text: "View & download your photos in full quality" },
 ];
 
 const FAQS = [
-  { q: "How do I find my photos on PIK Connect?", a: "Open the gallery link shared by PK Photography, take a selfie, and PIK Connect instantly surfaces every photo of you from the event using face recognition." },
-  { q: "Is my photo gallery private and secure?", a: "Yes. Every gallery is a private, secure link. Only people with the link can access it, and your selfie is used solely to match your photos." },
-  { q: "Which cities does PK Photography cover?", a: "We are based in Andheri West, Mumbai and in Morjim, Goa, and shoot weddings and events across Mumbai, Goa and pan-India destination locations." },
-  { q: "How soon do I get my event gallery?", a: "Highlights are shared quickly and the full edited gallery is delivered on the timeline agreed before your shoot — ready to view, download and share." },
-  { q: "How do I book a wedding or event shoot?", a: "Tap “Studio sign in” to reach us, message us on WhatsApp at +91 88887 66739, or email prabhakar@pkphotography.in to plan your shoot." },
-];
-
-const STATS = [
-  { value: "12+", label: "Years of craft" },
-  { value: "380+", label: "Google reviews" },
-  { value: "4.9★", label: "Average rating" },
-  { value: "98%", label: "Repeat & referral" },
+  { q: "How do I find my photos?", a: "Open the gallery link from PK Photography, take a selfie, and PIK Connect surfaces every photo of you instantly." },
+  { q: "Is my gallery private?", a: "Yes — every gallery is a private, secure link, and your selfie is used only to match your photos." },
+  { q: "Which cities do you cover?", a: "Studios in Andheri West, Mumbai and Morjim, Goa — plus destination and pan-India shoots." },
 ];
 
 export default function Home() {
@@ -76,136 +58,92 @@ export default function Home() {
         <meta property="og:description" content={DESC} />
         <meta property="og:url" content={`${SITE}/`} />
         <meta property="og:image" content={OG_IMAGE} />
-        <meta property="og:site_name" content="PIK Connect" />
         <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content={TITLE} />
         <meta name="twitter:description" content={DESC} />
         <meta name="twitter:image" content={OG_IMAGE} />
       </Head>
 
-      <ScrollView style={styles.page} contentContainerStyle={styles.pageContent}>
+      <ScrollView style={styles.page} showsVerticalScrollIndicator={false}>
         {/* ---------------- HERO ---------------- */}
-        <View style={[styles.hero, { minHeight: Math.max(540, height * 0.82) }]}>
+        <View style={[styles.hero, { minHeight: Math.max(500, height * 0.74) }]}>
           <Image source={{ uri: HERO }} style={StyleSheet.absoluteFill} contentFit="cover" />
           <LinearGradient
-            colors={["rgba(14,13,12,0.25)", "rgba(14,13,12,0.75)", "rgba(14,13,12,0.99)"]}
+            colors={["rgba(14,13,12,0.25)", "rgba(14,13,12,0.78)", "rgba(14,13,12,0.99)"]}
             locations={[0, 0.55, 1]}
             style={StyleSheet.absoluteFill}
           />
           <View style={[styles.heroInner, isWide && styles.heroInnerWide]}>
             <View style={styles.logoRow}>
-              <Ionicons name="aperture-outline" size={26} color={colors.brand} />
+              <Ionicons name="aperture-outline" size={24} color={colors.brand} />
               <Text style={styles.logo}>PIK CONNECT</Text>
             </View>
-            <View style={[styles.heroCopy, isWide && { maxWidth: 620 }]}>
+            <View style={[styles.heroCopy, isWide && { maxWidth: 600 }]}>
               <H1 style={[styles.h1, isWide && styles.h1Wide]}>Your event photos, found in an instant.</H1>
               <P style={styles.heroSub}>
-                Take a selfie and PIK Connect surfaces every photo of you from your PK Photography event
-                gallery — wedding & event photography across Mumbai and Goa.
+                Take a selfie and instantly get every photo of you from your PK Photography event gallery.
               </P>
-              <View style={[styles.ctaRow, isWide && { maxWidth: 420 }]}>
+              <View style={[styles.ctaRow, isWide && { maxWidth: 400 }]}>
                 <Button testID="continue-client-btn" title="Find my photos" icon="sparkles" onPress={() => router.push("/client-login")} />
                 <Button testID="continue-admin-btn" title="Studio sign in" variant="ghost" icon="briefcase-outline" onPress={() => router.push("/admin-login")} />
               </View>
+              <Text style={styles.trust}>12+ years · 4.9★ · 380+ Google reviews · Mumbai & Goa</Text>
             </View>
           </View>
         </View>
 
         <View style={styles.container}>
           {/* ---------------- HOW IT WORKS ---------------- */}
-          <Section style={styles.section}>
-            <Text style={styles.kicker}>How it works</Text>
-            <H2 style={styles.h2}>Find your photos in three steps.</H2>
-            <View style={[styles.grid, isWide && styles.grid3]}>
+          <Section style={styles.block}>
+            <H2 style={styles.h2}>How it works</H2>
+            <View style={styles.steps}>
               {STEPS.map((s, i) => (
-                <View key={s.title} style={[styles.card, isWide && styles.cardThird]}>
-                  <View style={styles.cardIcon}>
-                    <Ionicons name={s.icon as any} size={22} color={colors.brand} />
+                <View key={i} style={styles.step}>
+                  <View style={styles.stepIcon}>
+                    <Ionicons name={s.icon as any} size={18} color={colors.brand} />
                   </View>
-                  <H3 style={styles.h3}>{`${i + 1}. ${s.title}`}</H3>
-                  <P style={styles.body}>{s.text}</P>
+                  <P style={styles.stepText}>{s.text}</P>
                 </View>
               ))}
             </View>
           </Section>
 
-          {/* ---------------- ABOUT ---------------- */}
-          <Section style={styles.section}>
-            <Text style={styles.kicker}>What is PIK Connect</Text>
-            <H2 style={styles.h2}>Private photo galleries for PK Photography clients.</H2>
-            <P style={styles.body}>
-              PIK Connect is the official client gallery and photo-delivery platform of PK Photography. Instead of
-              scrolling through thousands of images, guests simply take a selfie and receive every photo of
-              themselves in seconds. Couples and companies get one secure link to view, download and share their
-              full wedding or event gallery in high resolution — anywhere, on any device.
-            </P>
-          </Section>
-
-          {/* ---------------- SERVICES ---------------- */}
-          <Section style={styles.section}>
-            <Text style={styles.kicker}>Mumbai · Goa · Pan India</Text>
-            <H2 style={styles.h2}>Photography & videography services.</H2>
-            <P style={styles.body}>
-              For over 12 years, PK Photography has created natural, cinematic visuals for couples, families and
-              brands — trusted by 380+ five-star-rated clients across Mumbai and Goa.
-            </P>
-            <UL style={styles.list}>
-              {SERVICES.map((s) => (
-                <LI key={s} style={styles.li}>{s}</LI>
-              ))}
-            </UL>
-          </Section>
-
-          {/* ---------------- STATS ---------------- */}
-          <View style={styles.statsRow}>
-            {STATS.map((s) => (
-              <View key={s.label} style={styles.stat}>
-                <Text style={styles.statValue}>{s.value}</Text>
-                <Text style={styles.statLabel}>{s.label}</Text>
-              </View>
-            ))}
-          </View>
-
           {/* ---------------- FAQ ---------------- */}
-          <Section style={styles.section}>
-            <Text style={styles.kicker}>FAQ</Text>
-            <H2 style={styles.h2}>Questions, answered.</H2>
+          <Section style={styles.block}>
+            <H2 style={styles.h2}>Questions, answered</H2>
             {FAQS.map((f) => (
               <View key={f.q} style={styles.faqItem}>
                 <H3 style={styles.faqQ}>{f.q}</H3>
-                <P style={styles.body}>{f.a}</P>
+                <P style={styles.faqA}>{f.a}</P>
               </View>
             ))}
           </Section>
 
           {/* ---------------- FOOTER / NAP ---------------- */}
           <Footer style={styles.footer}>
-            <H2 style={styles.footerBrand}>PK Photography</H2>
-            <P style={styles.body}>
-              Wedding, pre-wedding, event, corporate, portrait, drone photography & videography in Mumbai & Goa.
+            <Text style={styles.footerBrand}>PK Photography</Text>
+            <P style={styles.footerTagline}>
+              Wedding, pre-wedding, event, corporate, portrait & drone photography and videography in Mumbai & Goa.
             </P>
             <View style={[styles.studios, isWide && styles.studiosWide]}>
               <View style={styles.studio}>
-                <H3 style={styles.h3}>Mumbai Studio</H3>
-                <P style={styles.addr}>
-                  C1302, Evershine Cosmic, Opp. Infiniti Mall, Veera Desai Industrial Estate, Andheri West,
-                  Mumbai, Maharashtra 400053
-                </P>
+                <Text style={styles.studioName}>Mumbai</Text>
+                <P style={styles.addr}>C1302, Evershine Cosmic, Opp. Infiniti Mall, Andheri West, Mumbai 400053</P>
                 <A href="tel:+918888766739" style={styles.link}>+91 88887 66739</A>
               </View>
               <View style={styles.studio}>
-                <H3 style={styles.h3}>Goa Studio</H3>
+                <Text style={styles.studioName}>Goa</Text>
                 <P style={styles.addr}>House No. 1053 A, Madhlavaddo, Morjim, Goa 403512</P>
                 <A href="tel:+918188881165" style={styles.link}>+91 81888 81165</A>
               </View>
             </View>
             <View style={styles.footerLinks}>
-              <A href="mailto:prabhakar@pkphotography.in" style={styles.link}>prabhakar@pkphotography.in</A>
+              <A href="mailto:prabhakar@pkphotography.in" style={styles.link}>Email</A>
               <A href="https://wa.me/918888766739" style={styles.link}>WhatsApp</A>
-              <A href="https://g.page/r/CVhvUcwRhP2GEAE/review" style={styles.link}>Google Reviews</A>
+              <A href="https://g.page/r/CVhvUcwRhP2GEAE/review" style={styles.link}>Reviews</A>
               <A href="https://www.pkphotography.in" style={styles.link}>pkphotography.in</A>
             </View>
-            <P style={styles.copy}>© 2026 PK Photography · Powered by PIK Connect · Updated August 2026</P>
+            <Text style={styles.copy}>© 2026 PK Photography · Powered by PIK Connect</Text>
           </Footer>
         </View>
       </ScrollView>
@@ -215,49 +153,40 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.surface },
-  pageContent: { paddingBottom: 0 },
   hero: { justifyContent: "flex-end" },
-  heroInner: { padding: spacing.xl, paddingBottom: spacing["3xl"], gap: spacing.xl },
+  heroInner: { padding: spacing.xl, paddingBottom: spacing["2xl"], gap: spacing.xl },
   heroInnerWide: { maxWidth: 1120, width: "100%", alignSelf: "center", paddingHorizontal: spacing["3xl"] },
   logoRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
-  logo: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, letterSpacing: 4, fontWeight: "600" },
+  logo: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.sm, letterSpacing: 4, fontWeight: "600" },
   heroCopy: { gap: spacing.md },
   h1: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.hero, lineHeight: 46, margin: 0 },
-  h1Wide: { fontSize: 60, lineHeight: 66 },
-  heroSub: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.lg, lineHeight: 26, marginTop: spacing.sm, maxWidth: 460 },
-  ctaRow: { gap: spacing.md, marginTop: spacing.lg },
+  h1Wide: { fontSize: 58, lineHeight: 64 },
+  heroSub: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.lg, lineHeight: 25, marginTop: spacing.xs, maxWidth: 380 },
+  ctaRow: { gap: spacing.md, marginTop: spacing.md },
+  trust: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: spacing.sm },
 
-  container: { width: "100%", maxWidth: 1120, alignSelf: "center", paddingHorizontal: spacing.xl },
-  section: { paddingVertical: spacing["3xl"], borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-  kicker: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, letterSpacing: 2, textTransform: "uppercase", marginBottom: spacing.sm },
-  h2: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"], lineHeight: 36, margin: 0, marginBottom: spacing.lg },
-  h3: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, margin: 0, marginBottom: spacing.xs },
-  body: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.lg, lineHeight: 26, margin: 0, maxWidth: 760 },
+  container: { width: "100%", maxWidth: 760, alignSelf: "center", paddingHorizontal: spacing.xl },
+  block: { paddingVertical: spacing.xl, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  h2: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, margin: 0, marginBottom: spacing.lg },
 
-  grid: { gap: spacing.md },
-  grid3: { flexDirection: "row" },
-  card: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.xl, gap: spacing.sm },
-  cardThird: { flex: 1 },
-  cardIcon: { width: 46, height: 46, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center", marginBottom: spacing.sm },
+  steps: { gap: spacing.md },
+  step: { flexDirection: "row", alignItems: "center", gap: spacing.md },
+  stepIcon: { width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
+  stepText: { flex: 1, color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 22, margin: 0 },
 
-  list: { marginTop: spacing.md, gap: spacing.sm },
-  li: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.lg, lineHeight: 26 },
+  faqItem: { marginBottom: spacing.lg },
+  faqQ: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.base, margin: 0, marginBottom: 4 },
+  faqA: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 21, margin: 0 },
 
-  statsRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, paddingVertical: spacing["2xl"] },
-  stat: { flexGrow: 1, minWidth: 140, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, paddingVertical: spacing.xl, alignItems: "center" },
-  statValue: { color: colors.brand, fontFamily: fonts.display, fontSize: fontSize["2xl"] },
-  statLabel: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 4 },
-
-  faqItem: { marginBottom: spacing.xl },
-  faqQ: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.lg, margin: 0, marginBottom: spacing.xs },
-
-  footer: { paddingVertical: spacing["3xl"], borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, gap: spacing.md },
-  footerBrand: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, margin: 0 },
-  studios: { gap: spacing.xl, marginTop: spacing.md },
+  footer: { paddingVertical: spacing.xl, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, gap: spacing.sm },
+  footerBrand: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.lg },
+  footerTagline: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 20, margin: 0, marginBottom: spacing.sm, maxWidth: 520 },
+  studios: { gap: spacing.lg, marginTop: spacing.xs },
   studiosWide: { flexDirection: "row" },
-  studio: { flex: 1, gap: 4 },
-  addr: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 22, margin: 0, maxWidth: 360 },
+  studio: { flex: 1, gap: 3 },
+  studioName: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, letterSpacing: 1, textTransform: "uppercase" },
+  addr: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 19, margin: 0, maxWidth: 320 },
   footerLinks: { flexDirection: "row", flexWrap: "wrap", gap: spacing.lg, marginTop: spacing.md },
-  link: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base, textDecorationLine: "none" },
-  copy: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: spacing.lg },
+  link: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, textDecorationLine: "none" },
+  copy: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.xs, marginTop: spacing.md },
 });
