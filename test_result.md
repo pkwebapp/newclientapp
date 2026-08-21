@@ -275,6 +275,99 @@ backend:
 
 
 frontend:
+  - task: "Landing page premium redesign + footer social buttons fix (index.tsx)"
+    implemented: true
+    working: true
+    file: "app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Redesigned the landing page (app/index.tsx) for a premium, fully-responsive look on
+            mobile + web:
+            - Hero: bold serif headline (700 weight, 46px mobile / 68px web), full-bleed
+              ImageBackground (switched from expo-image absoluteFill for reliable web rendering)
+              + refined gradient. Logo pinned top, copy pinned bottom.
+            - CTAs: full-width stacked on mobile; content-width side-by-side on web.
+            - "How it works": upgraded flat rows to cards (icon badge + 01/02/03 number + serif
+              title + description); stacked on mobile, 3 columns on web.
+            - Unified all sections into a centered maxWidth:1160 container (fixes prior disjointed
+              desktop layout).
+            USER-REPORTED BUG FIX (footer social buttons looked "weird" — filled dark blobs):
+            - Restyled social buttons to clean OUTLINED circular buttons (44x44, transparent fill,
+              1px borderStrong ring) matching the reference site.
+            - Moved the social button row to AFTER the address lines (was above, in a footerTop row).
+            - Removed the standalone "PK Photography" brand heading from the footer (copyright line
+              "© 2026 PK Photography · PIK Connect" retained).
+            VERIFY: Landing at "/" — (1) footer social buttons are 4 outlined circular icon buttons
+            (mail, whatsapp, star, globe) sitting BELOW the Mumbai/Goa address lines; (2) no large
+            "PK Photography" heading appears in the footer; (3) hero headline is bold serif; (4)
+            "How it works" shows 3 cards. Test on both a narrow (~390px) mobile viewport and a wide
+            (~1440px) desktop viewport.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL TESTS PASSED - Landing page redesign + footer bug fix fully verified on both mobile and desktop.
+            
+            Tested route "/" (public NO-AUTH landing page) on mobile (390px) and desktop (1440px) viewports.
+            
+            PRIMARY (USER-REPORTED FOOTER BUG) - ✅ FIXED:
+            1. ✅ 4 social icon buttons present: mail, WhatsApp, star, globe
+            2. ✅ Buttons are OUTLINED CIRCULAR (not filled dark blobs):
+               • Dimensions: 44px × 44px (perfect circles)
+               • Border: 1px solid border (borderRadius: 999px)
+               • Background: transparent (rgba(0,0,0,0))
+               • Visual confirmation: Clean outlined rings with icons, NOT filled blobs
+            3. ✅ Social buttons appear BELOW the two address lines:
+               • Mumbai address line appears first
+               • Goa address line appears second
+               • Social button row appears third (correct DOM order verified)
+            4. ✅ NO large "PK Photography" heading in footer:
+               • Only small copyright line "© 2026 PK Photography · PIK Connect" present
+               • No standalone brand heading found (count: 0)
+            
+            SECONDARY (REDESIGN VERIFICATION) - ✅ ALL PASSED:
+            5. ✅ Hero section complete:
+               • Bold serif headline: "Your event photos, found in an instant."
+               • Subtitle: "Take a selfie and instantly get every photo of you..."
+               • Two CTAs: "Find my photos" (solid orange) + "Studio sign in" (outlined)
+               • Trust line: "12+ years · 4.9 · 380+ Google reviews · Mumbai & Goa"
+            
+            6. ✅ "How it works" section:
+               • 3 cards present: "Snap a selfie" (01), "We match you" (02), "Download in HD" (03)
+               • Each card has icon badge, number, title, and description
+            
+            7. ✅ Desktop layout (1440px) - RESPONSIVE DESIGN WORKING:
+               • Hero CTAs side-by-side: Y diff 0px, X diff 236px (horizontal layout confirmed)
+               • "How it works" cards in 3-COLUMN ROW: flexDirection: row, gap: 16px
+               • Content centered: maxWidth: 1160px, alignSelf: center (no huge empty gaps)
+               • CTAs are content-width, NOT stretched across full screen
+            
+            8. ✅ Mobile layout (390px) - RESPONSIVE DESIGN WORKING:
+               • Hero CTAs stacked vertically: Y diff 64px (proper stacking)
+               • "How it works" cards stacked vertically
+               • All content properly responsive
+            
+            TECHNICAL:
+            • No console errors detected
+            • No network errors detected
+            • Page loads successfully on both viewports
+            • External hero image and icon fonts load correctly from CDNs
+            
+            SCREENSHOTS CAPTURED:
+            • mobile-footer-detail.png: Shows outlined circular social buttons below address lines
+            • desktop-footer-detail.png: Shows outlined circular social buttons below address lines
+            • desktop-how-it-works-section.png: Shows 3-column card layout with side-by-side CTAs
+            
+            The user-reported footer bug is completely FIXED. Social buttons are now clean outlined
+            circular buttons (not filled dark blobs), positioned correctly below address lines, with
+            no large "PK Photography" heading. The entire landing page redesign is production-ready
+            and fully responsive across mobile and desktop viewports. 0 failures.
+
+
   - task: "Fix refresh race: 'Not authenticated' + missing photos on browser refresh"
     implemented: true
     working: true
@@ -905,6 +998,45 @@ test_plan:
   test_priority: "high_first"
 
 agent_communication:
+    - agent: "main"
+      message: |
+        FRONTEND UI TEST NEEDED (landing page redesign + reported footer bug fix), route "/".
+        This is a NO-AUTH public landing page. Please verify on BOTH a narrow mobile viewport
+        (~390px wide) AND a wide desktop viewport (~1440px wide):
+        1) FOOTER (the reported bug): the 4 social buttons (mail, whatsapp, star, globe) must be
+           OUTLINED circular buttons (thin ring, transparent fill) — NOT filled dark blobs — and
+           they must appear BELOW the two address lines (Mumbai / Goa). Confirm there is NO large
+           "PK Photography" heading in the footer (the small "© 2026 PK Photography · PIK Connect"
+           copyright line is expected to remain).
+        2) HERO: bold serif headline "Your event photos, found in an instant." + subtitle +
+           two CTAs ("Find my photos" primary, "Studio sign in" ghost) + trust line.
+        3) "How it works": three cards (Snap a selfie / We match you / Download in HD).
+        4) DESKTOP specifics: CTAs side-by-side (not full-width stretched), step cards a 3-column
+           row, content centered (no huge empty gap / disjointed columns).
+        Report any layout breakage, overlaps, or console errors. NOTE: external images/icon fonts
+        load from CDNs — if the test browser lacks network they may appear blank; still verify
+        layout/positions and the absence of the "PK Photography" heading.
+    - agent: "testing"
+      message: |
+        ✅ LANDING PAGE TESTING COMPLETE - All tests PASSED, footer bug FIXED.
+        
+        Comprehensive testing completed on route "/" for both mobile (390px) and desktop (1440px) viewports.
+        
+        PRIMARY FOOTER BUG (user-reported) - ✅ COMPLETELY FIXED:
+        • 4 social buttons (mail, WhatsApp, star, globe) are OUTLINED CIRCULAR buttons (44px circles, 1px border, transparent background)
+        • Social buttons positioned BELOW address lines (correct DOM order)
+        • NO large "PK Photography" heading (only small copyright line)
+        • Visual confirmation via screenshots: buttons are clean outlined rings, NOT filled dark blobs
+        
+        SECONDARY REDESIGN VERIFICATION - ✅ ALL PASSED:
+        • Hero: Bold serif headline, subtitle, 2 CTAs, trust line all present
+        • "How it works": 3 cards with icons, numbers, titles, descriptions
+        • Desktop (1440px): CTAs side-by-side, 3-column card layout, centered content (maxWidth: 1160px)
+        • Mobile (390px): CTAs stacked, cards stacked, fully responsive
+        • No console errors, no network errors
+        
+        The landing page redesign is production-ready and fully responsive. The user-reported footer
+        bug is completely resolved. 0 failures.
     - agent: "main"
       message: |
         NEW MODULE FOR TESTING: Album Flipbook (backend only for now). All routes under /api/albums.

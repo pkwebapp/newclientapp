@@ -142,25 +142,22 @@ export default function Home() {
 
           {/* ---------------- FOOTER / NAP ---------------- */}
           <Footer style={styles.footer}>
-            <View style={styles.footerTop}>
-              <Text style={styles.footerBrand}>PK Photography</Text>
-              <View style={styles.social}>
-                <A href="mailto:prabhakar@pkphotography.in" style={styles.socialBtn}>
-                  <Ionicons name="mail-outline" size={17} color={colors.onSurfaceTertiary} />
-                </A>
-                <A href="https://wa.me/918888766739" style={styles.socialBtn}>
-                  <Ionicons name="logo-whatsapp" size={17} color={colors.onSurfaceTertiary} />
-                </A>
-                <A href="https://g.page/r/CVhvUcwRhP2GEAE/review" style={styles.socialBtn}>
-                  <Ionicons name="star-outline" size={17} color={colors.onSurfaceTertiary} />
-                </A>
-                <A href="https://www.pkphotography.in" style={styles.socialBtn}>
-                  <Ionicons name="globe-outline" size={17} color={colors.onSurfaceTertiary} />
-                </A>
-              </View>
-            </View>
             <P style={styles.addr}>Mumbai · C1302, Evershine Cosmic, Andheri West 400053 · +91 88887 66739</P>
             <P style={styles.addr}>Goa · House No. 1053 A, Morjim 403512 · +91 81888 81165</P>
+            <View style={styles.social}>
+              <A href="mailto:prabhakar@pkphotography.in" style={styles.socialBtn}>
+                <Ionicons name="mail-outline" size={18} color={colors.onSurfaceSecondary} />
+              </A>
+              <A href="https://wa.me/918888766739" style={styles.socialBtn}>
+                <Ionicons name="logo-whatsapp" size={18} color={colors.onSurfaceSecondary} />
+              </A>
+              <A href="https://g.page/r/CVhvUcwRhP2GEAE/review" style={styles.socialBtn}>
+                <Ionicons name="star-outline" size={18} color={colors.onSurfaceSecondary} />
+              </A>
+              <A href="https://www.pkphotography.in" style={styles.socialBtn}>
+                <Ionicons name="globe-outline" size={18} color={colors.onSurfaceSecondary} />
+              </A>
+            </View>
             <Text style={styles.copy}>© 2026 PK Photography · PIK Connect</Text>
           </Footer>
         </View>
@@ -214,10 +211,8 @@ const styles = StyleSheet.create({
 
   // ---- Footer ----
   footer: { paddingVertical: spacing["2xl"], borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, gap: spacing.xs },
-  footerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
-  footerBrand: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, fontWeight: "700" },
-  social: { flexDirection: "row", gap: spacing.sm },
-  socialBtn: { width: 40, height: 40, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary, textDecorationLine: "none" },
+  social: { flexDirection: "row", gap: spacing.md, marginTop: spacing.lg },
+  socialBtn: { width: 44, height: 44, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: "transparent", borderWidth: 1, borderColor: colors.borderStrong, textDecorationLine: "none" },
   addr: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 20, margin: 0 },
-  copy: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.xs, marginTop: spacing.md },
+  copy: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.xs, marginTop: spacing.lg },
 });
