@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -17,51 +17,39 @@ import { api } from "@/src/api/client";
 import { EmptyState, Pill, GlassHeader, useToast } from "@/src/components/ui";
 import { HeaderMenuButton } from "@/src/components/MobileShell";
 import { useResponsive } from "@/src/hooks/use-responsive";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
-const STATUS_FILTERS = [
+const FILTERS = [
   { key: "", label: "All" },
-  { key: "active", label: "Active" },
-  { key: "lead", label: "Leads" },
-  { key: "past", label: "Past" },
+  { key: "ready", label: "Ready" },
+  { key: "processing", label: "Processing" },
+  { key: "archived", label: "Archived" },
 ];
 
-const TYPE_ICON: Record<string, any> = {
-  family: "people",
-  individual: "person",
-  corporate: "business",
-};
+const statusTone = (s: string) => (s === "ready" ? "success" : s === "empty" ? "neutral" : "warning");
 
-const statusTone = (s: string) =>
-  s === "active" ? "success" : s === "lead" ? "gold" : "neutral";
-
-export default function ClientsScreen() {
+export default function GalleriesScreen() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const toast = useToast();
   const { isDesktop } = useResponsive();
 
-  const [clients, setClients] = useState<any[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
   const [q, setQ] = useState("");
-  const [status, setStatus] = useState("");
+  const [filter, setFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const debounce = useRef<any>(null);
 
   const load = useCallback(async () => {
     try {
-      const params = new URLSearchParams();
-      if (q.trim()) params.append("q", q.trim());
-      if (status) params.append("status", status);
-      const qs = params.toString();
-      setClients(await api.get(`/clients${qs ? `?${qs}` : ""}`));
+      setEvents(await api.get("/events"));
     } catch {
-      toast.show("Could not load clients", "error");
+      toast.show("Could not load galleries", "error");
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [q, status, toast]);
+  }, [toast]);
 
   useFocusEffect(
     useCallback(() => {
@@ -69,31 +57,35 @@ export default function ClientsScreen() {
     }, [load])
   );
 
-  // Debounced reload on search text change.
-  useEffect(() => {
-    clearTimeout(debounce.current);
-    debounce.current = setTimeout(() => load(), 300);
-    return () => clearTimeout(debounce.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, status]);
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return events.filter((e) => {
+      if (needle && !(e.name || "").toLowerCase().includes(needle)) return false;
+      if (filter === "archived") return e.status === "archived";
+      if (e.status === "archived") return filter === "";
+      if (filter === "ready") return e.indexing_status === "ready";
+      if (filter === "processing") return e.indexing_status !== "ready" && e.indexing_status !== "empty";
+      return true;
+    });
+  }, [events, q, filter]);
 
   return (
-    <View style={styles.container} testID="admin-clients-screen">
+    <View style={styles.container} testID="admin-galleries-screen">
       <GlassHeader
-        title="Clients"
-        subtitle="Your client & family relationships"
-        left={<HeaderMenuButton />}
+        title="Client Galleries"
+        subtitle={`${events.length} ${events.length === 1 ? "event" : "events"}`}
         topInset={insets.top}
+        left={<HeaderMenuButton />}
       />
 
       <View style={styles.controls}>
         <View style={styles.searchBox}>
           <Ionicons name="search" size={18} color={colors.muted} />
           <TextInput
-            testID="client-search-input"
+            testID="gallery-search-input"
             value={q}
             onChangeText={setQ}
-            placeholder="Search name, phone, email…"
+            placeholder="Search galleries by name…"
             placeholderTextColor={colors.muted}
             style={styles.searchInput}
             autoCapitalize="none"
@@ -105,14 +97,14 @@ export default function ClientsScreen() {
           ) : null}
         </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterRow}>
-          {STATUS_FILTERS.map((f) => (
+          {FILTERS.map((f) => (
             <Pressable
               key={f.key || "all"}
-              testID={`client-filter-${f.label}`}
-              onPress={() => setStatus(f.key)}
-              style={[styles.filterChip, status === f.key && styles.filterChipActive]}
+              testID={`gallery-filter-${f.label}`}
+              onPress={() => setFilter(f.key)}
+              style={[styles.filterChip, filter === f.key && styles.filterChipActive]}
             >
-              <Text style={[styles.filterText, status === f.key && styles.filterTextActive]}>{f.label}</Text>
+              <Text style={[styles.filterText, filter === f.key && styles.filterTextActive]}>{f.label}</Text>
             </Pressable>
           ))}
         </ScrollView>
@@ -129,56 +121,49 @@ export default function ClientsScreen() {
             <RefreshControl tintColor={colors.brand} refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />
           }
         >
-          {clients.length === 0 ? (
+          {filtered.length === 0 ? (
             <EmptyState
-              icon="people-outline"
-              title={q || status ? "No matching clients" : "No clients yet"}
-              subtitle={q || status ? "Try a different search or filter." : "Add a client/family to start building lasting relationships."}
+              icon={q || filter ? "search-outline" : "add-circle-outline"}
+              title={q || filter ? "No matching galleries" : "Create your first gallery"}
+              subtitle={q || filter ? "Try a different search or filter." : "Set up an event gallery, upload photos, and invite your clients."}
             />
           ) : (
             <View style={isDesktop ? styles.gridWrap : undefined}>
-              {clients.map((c) => {
-                const primary = c.contacts && c.contacts[0];
-                return (
-                  <Pressable
-                    key={c.client_id}
-                    testID={`client-card-${c.client_id}`}
-                    onPress={() => router.push(`/admin/client/${c.client_id}`)}
-                    style={[styles.row, isDesktop && styles.rowDesktop]}
-                  >
-                    <View style={styles.rowIcon}>
-                      <Ionicons name={TYPE_ICON[c.type] || "people"} size={20} color={colors.brand} />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.rowTitle} numberOfLines={1}>{c.name}</Text>
-                      <Text style={styles.rowSub} numberOfLines={1}>
-                        {primary ? `${primary.name}${primary.phone ? ` · ${primary.phone}` : ""}` : "No contacts yet"}
-                      </Text>
-                      <View style={styles.metaRow}>
-                        <Text style={styles.meta}>{c.stats?.event_count || 0} events</Text>
-                        <Text style={styles.metaDot}>•</Text>
-                        <Text style={styles.meta}>{c.stats?.contact_count || 0} contacts</Text>
-                      </View>
-                    </View>
-                    <View style={{ alignItems: "flex-end", gap: 6 }}>
-                      <Pill label={c.status} tone={statusTone(c.status) as any} />
-                      <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-                    </View>
-                  </Pressable>
-                );
-              })}
+              {filtered.map((e) => (
+                <Pressable
+                  key={e.event_id}
+                  testID={`admin-event-${e.event_id}`}
+                  onPress={() => router.push(`/admin/event/${e.event_id}`)}
+                  style={[styles.row, isDesktop && styles.rowDesktop]}
+                >
+                  <View style={styles.rowIcon}>
+                    <Ionicons name={(categoryMeta[e.category]?.icon as any) || "star"} size={20} color={colors.brand} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.rowTitle} numberOfLines={1}>{e.name}</Text>
+                    <Text style={styles.rowSub}>
+                      {categoryMeta[e.category]?.label} · {e.photo_count} photos · {e.similarity_threshold}% threshold
+                    </Text>
+                  </View>
+                  <View style={{ alignItems: "flex-end", gap: 6 }}>
+                    {e.source === "gdrive" && <Pill label="Drive" tone="neutral" icon="logo-google" />}
+                    {e.status === "archived" ? (
+                      <Pill label="Archived" tone="warning" />
+                    ) : (
+                      <Pill label={e.indexing_status} tone={statusTone(e.indexing_status) as any} />
+                    )}
+                    <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+                  </View>
+                </Pressable>
+              ))}
             </View>
           )}
         </ScrollView>
       )}
 
-      <Pressable
-        testID="new-client-fab"
-        onPress={() => router.push("/admin/new-client")}
-        style={[styles.fab, { bottom: spacing.lg }]}
-      >
-        <Ionicons name="person-add" size={22} color={colors.onBrand} />
-        <Text style={styles.fabText}>New Client</Text>
+      <Pressable testID="new-event-fab" onPress={() => router.push("/admin/new-event")} style={[styles.fab, { bottom: spacing.lg }]}>
+        <Ionicons name="add" size={26} color={colors.onBrand} />
+        <Text style={styles.fabText}>New Event</Text>
       </Pressable>
     </View>
   );
@@ -227,10 +212,7 @@ const styles = StyleSheet.create({
   },
   rowIcon: { width: 42, height: 42, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
   rowTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl },
-  rowSub: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
-  metaRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 4 },
-  meta: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm },
-  metaDot: { color: colors.muted, fontSize: fontSize.sm },
+  rowSub: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
   fab: {
     position: "absolute",
     right: spacing.lg,

@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -8,6 +8,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { Image } from "expo-image";
@@ -17,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, EmptyState, Pill, useToast } from "@/src/components/ui";
+import { HeaderMenuButton } from "@/src/components/MobileShell";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
@@ -45,6 +47,7 @@ export default function AlbumsScreen() {
   const { isDesktop } = useResponsive();
 
   const [albums, setAlbums] = useState<Album[]>([]);
+  const [q, setQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -67,6 +70,16 @@ export default function AlbumsScreen() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return albums;
+    return albums.filter((a) =>
+      [a.title, a.client_name, a.event_name]
+        .filter(Boolean)
+        .some((v) => (v as string).toLowerCase().includes(needle))
+    );
+  }, [albums, q]);
+
   const create = async () => {
     if (!title.trim()) { toast.show("Give the album a title", "error"); return; }
     setCreating(true);
@@ -88,20 +101,44 @@ export default function AlbumsScreen() {
 
   return (
     <View style={styles.container} testID="admin-albums-screen">
-      <GlassHeader title="Albums" subtitle="Premium PDF flipbooks" onBack={() => router.back()} topInset={insets.top} />
+      <GlassHeader title="Albums" subtitle="Premium PDF flipbooks" left={<HeaderMenuButton />} topInset={insets.top} />
+
+      <View style={styles.controls}>
+        <View style={styles.searchBox}>
+          <Ionicons name="search" size={18} color={colors.muted} />
+          <TextInput
+            testID="album-search-input"
+            value={q}
+            onChangeText={setQ}
+            placeholder="Search albums by title, client…"
+            placeholderTextColor={colors.muted}
+            style={styles.searchInput}
+            autoCapitalize="none"
+          />
+          {q ? (
+            <Pressable onPress={() => setQ("")} hitSlop={8}>
+              <Ionicons name="close-circle" size={18} color={colors.muted} />
+            </Pressable>
+          ) : null}
+        </View>
+      </View>
 
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 96 }}
+          contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing["3xl"] + 72 }}
           refreshControl={<RefreshControl tintColor={colors.brand} refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />}
         >
-          {albums.length === 0 ? (
-            <EmptyState icon="book-outline" title="No albums yet" subtitle="Create an album, upload a designed PDF, and share a realistic 3D flipbook with your clients." />
+          {filtered.length === 0 ? (
+            <EmptyState
+              icon={q ? "search-outline" : "book-outline"}
+              title={q ? "No matching albums" : "No albums yet"}
+              subtitle={q ? "Try a different search." : "Create an album, upload a designed PDF, and share a realistic 3D flipbook with your clients."}
+            />
           ) : (
             <View style={isDesktop ? styles.grid : undefined}>
-              {albums.map((a) => (
+              {filtered.map((a) => (
                 <Pressable
                   key={a.album_id}
                   style={[styles.card, isDesktop && styles.cardDesktop]}
@@ -144,7 +181,7 @@ export default function AlbumsScreen() {
         </ScrollView>
       )}
 
-      <Pressable testID="new-album-fab" onPress={() => setShowCreate(true)} style={[styles.fab, { bottom: insets.bottom + spacing.lg }]}>
+      <Pressable testID="new-album-fab" onPress={() => setShowCreate(true)} style={[styles.fab, { bottom: spacing.lg }]}>
         <Ionicons name="add" size={26} color={colors.onBrand} />
         <Text style={styles.fabText}>New Album</Text>
       </Pressable>
@@ -168,6 +205,19 @@ export default function AlbumsScreen() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
+  controls: { paddingHorizontal: spacing.lg, paddingTop: spacing.md },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    backgroundColor: colors.surfaceSecondary,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.md,
+    height: 46,
+  },
+  searchInput: { flex: 1, color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   card: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.md, overflow: "hidden" },

@@ -59,7 +59,7 @@ export default function StudioSettings() {
 
   return (
     <View style={styles.container} testID="studio-settings-screen">
-      <GlassHeader title="Studio Settings" onBack={() => router.push("/admin")} topInset={insets.top} />
+      <GlassHeader title="Studio Settings" onBack={() => router.back()} topInset={insets.top} />
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
       ) : (

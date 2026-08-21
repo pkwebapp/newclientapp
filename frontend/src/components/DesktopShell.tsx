@@ -10,11 +10,10 @@ import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 type NavItem = { label: string; icon: keyof typeof Ionicons.glyphMap; href: string };
 
 const ADMIN_NAV: NavItem[] = [
-  { label: "Dashboard", icon: "grid-outline", href: "/admin" },
+  { label: "Home", icon: "home-outline", href: "/admin" },
+  { label: "Client Galleries", icon: "images-outline", href: "/admin/galleries" },
   { label: "Clients", icon: "people-outline", href: "/admin/clients" },
-  { label: "New Event", icon: "add-circle-outline", href: "/admin/new-event" },
   { label: "Albums", icon: "book-outline", href: "/admin/albums" },
-  { label: "Settings", icon: "settings-outline", href: "/admin/settings" },
 ];
 
 const CLIENT_NAV: NavItem[] = [
@@ -40,8 +39,10 @@ export function DesktopShell({
   const nav = role === "admin" ? ADMIN_NAV : CLIENT_NAV;
 
   const isActive = (href: string) => {
-    if (href === "/admin") return pathname === "/admin" || pathname.startsWith("/admin/event");
+    if (href === "/admin") return pathname === "/admin";
+    if (href === "/admin/galleries") return pathname.startsWith("/admin/galleries") || pathname.startsWith("/admin/event");
     if (href === "/admin/clients") return pathname === "/admin/clients" || pathname.startsWith("/admin/client");
+    if (href === "/admin/albums") return pathname.startsWith("/admin/album");
     if (href === "/client") return pathname === "/client" || pathname.startsWith("/client/");
     return pathname === href;
   };
@@ -74,6 +75,12 @@ export function DesktopShell({
         </View>
 
         <View style={styles.sidebarFooter}>
+          {role === "admin" ? (
+            <Pressable testID="nav-settings" onPress={() => router.push("/admin/settings" as any)} style={[styles.navItem, isActive("/admin/settings") && styles.navItemActive]}>
+              <Ionicons name="settings-outline" size={20} color={isActive("/admin/settings") ? colors.onBrand : colors.onSurfaceTertiary} />
+              <Text style={[styles.navText, isActive("/admin/settings") && styles.navTextActive]}>Settings</Text>
+            </Pressable>
+          ) : null}
           <Pressable testID="nav-home" onPress={() => router.push("/login")} style={styles.navItem}>
             <Ionicons name="home-outline" size={20} color={colors.onSurfaceTertiary} />
             <Text style={styles.navText}>Home</Text>

@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 import { useAuth } from "@/src/context/AuthContext";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { DesktopShell } from "@/src/components/DesktopShell";
+import { MobileShell } from "@/src/components/MobileShell";
 import { colors, fonts, fontSize } from "@/src/theme";
 
 /**
@@ -35,7 +36,7 @@ export default function AdminLayout() {
   const stack = <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />;
 
   if (isDesktop) return <DesktopShell role="admin">{stack}</DesktopShell>;
-  return stack;
+  return <MobileShell role="admin">{stack}</MobileShell>;
 }
 
 const styles = StyleSheet.create({

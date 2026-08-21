@@ -14,25 +14,30 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
-import { EmptyState, Pill, GlassHeader, useToast } from "@/src/components/ui";
-import { useResponsive } from "@/src/hooks/use-responsive";
+import { EmptyState, Button, GlassHeader, useToast } from "@/src/components/ui";
+import { HeaderMenuButton } from "@/src/components/MobileShell";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
 export default function AdminDashboard() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const toast = useToast();
-  const { isDesktop } = useResponsive();
   const [events, setEvents] = useState<any[]>([]);
+  const [clientCount, setClientCount] = useState<number>(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      setEvents(await api.get("/events"));
+      const [ev, cl] = await Promise.all([
+        api.get("/events"),
+        api.get("/clients").catch(() => []),
+      ]);
+      setEvents(ev);
+      setClientCount(Array.isArray(cl) ? cl.length : 0);
     } catch {
-      toast.show("Could not load events", "error");
+      toast.show("Could not load your studio", "error");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -45,7 +50,15 @@ export default function AdminDashboard() {
     }, [load])
   );
 
-  const statusTone = (s: string) => (s === "ready" ? "success" : s === "empty" ? "neutral" : "warning");
+  const totalPhotos = events.reduce((a, e) => a + (e.photo_count || 0), 0);
+  const recent = events.slice(0, 5);
+
+  const QUICK: { key: string; label: string; icon: any; onPress: () => void }[] = [
+    { key: "gallery", label: "New Gallery", icon: "add-circle", onPress: () => router.push("/admin/new-event") },
+    { key: "client", label: "Add Client", icon: "person-add", onPress: () => router.push("/admin/new-client") },
+    { key: "album", label: "New Album", icon: "book", onPress: () => router.push("/admin/albums") },
+    { key: "settings", label: "Settings", icon: "settings", onPress: () => router.push("/admin/settings") },
+  ];
 
   return (
     <View style={styles.container} testID="admin-dashboard-screen">
@@ -53,16 +66,7 @@ export default function AdminDashboard() {
         title="Studio Console"
         subtitle={user?.email}
         topInset={insets.top}
-        left={
-          <Pressable testID="admin-home-btn" onPress={() => router.push("/login")} hitSlop={10} style={{ padding: 6 }}>
-            <Ionicons name="home-outline" size={22} color={colors.onSurfaceTertiary} />
-          </Pressable>
-        }
-        right={
-          <Pressable testID="admin-signout-btn" onPress={signOut} hitSlop={10} style={{ padding: 6 }}>
-            <Ionicons name="log-out-outline" size={22} color={colors.onSurfaceTertiary} />
-          </Pressable>
-        }
+        left={<HeaderMenuButton />}
       />
       {loading ? (
         <View style={styles.center}>
@@ -70,101 +74,69 @@ export default function AdminDashboard() {
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 96 }}
+          contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing["3xl"] }}
           refreshControl={
             <RefreshControl tintColor={colors.brand} refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />
           }
         >
           <View style={styles.statsRow}>
-            <Stat label="Events" value={events.length} icon="albums-outline" />
-            <Stat label="Photos" value={events.reduce((a, e) => a + (e.photo_count || 0), 0)} icon="image-outline" />
+            <Stat label="Galleries" value={events.length} icon="images-outline" />
+            <Stat label="Photos" value={totalPhotos} icon="image-outline" />
+            <Stat label="Clients" value={clientCount} icon="people-outline" />
           </View>
 
-          <Pressable
-            testID="admin-clients-card"
-            onPress={() => router.push("/admin/clients")}
-            style={styles.albumsCard}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="people-outline" size={20} color={colors.brand} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>Clients</Text>
-              <Text style={styles.rowSub}>Families, contacts, important dates & lifetime relationships</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-          </Pressable>
+          <Text style={styles.sectionTitle}>Quick actions</Text>
+          <View style={styles.quickGrid}>
+            {QUICK.map((a) => (
+              <Pressable key={a.key} testID={`quick-${a.key}`} onPress={a.onPress} style={styles.quickCard}>
+                <View style={styles.quickIcon}>
+                  <Ionicons name={a.icon} size={22} color={colors.brand} />
+                </View>
+                <Text style={styles.quickLabel}>{a.label}</Text>
+              </Pressable>
+            ))}
+          </View>
 
-          <Pressable
-            testID="admin-albums-card"
-            onPress={() => router.push("/admin/albums")}
-            style={styles.albumsCard}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="book-outline" size={20} color={colors.brand} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>Album Flipbooks</Text>
-              <Text style={styles.rowSub}>Upload a designed PDF album and share a premium 3D viewer</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-          </Pressable>
+          <View style={styles.sectionHead}>
+            <Text style={styles.sectionTitle}>Recent galleries</Text>
+            {events.length > 0 ? (
+              <Pressable testID="view-all-galleries" onPress={() => router.push("/admin/galleries")} hitSlop={8} style={styles.viewAll}>
+                <Text style={styles.viewAllText}>View all</Text>
+                <Ionicons name="chevron-forward" size={14} color={colors.brand} />
+              </Pressable>
+            ) : null}
+          </View>
 
-          <Pressable
-            testID="admin-settings-card"
-            onPress={() => router.push("/admin/settings")}
-            style={styles.albumsCard}
-          >
-            <View style={styles.rowIcon}>
-              <Ionicons name="settings-outline" size={20} color={colors.brand} />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.rowTitle}>Studio Settings</Text>
-              <Text style={styles.rowSub}>WhatsApp, call number & review link for client Quick Actions</Text>
-            </View>
-            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-          </Pressable>
-
-          {events.length === 0 ? (
-            <EmptyState icon="add-circle-outline" title="Create your first event" subtitle="Set up a gallery, upload photos, and invite your clients." />
+          {recent.length === 0 ? (
+            <EmptyState
+              icon="add-circle-outline"
+              title="Create your first gallery"
+              subtitle="Set up an event gallery, upload photos, and invite your clients."
+              action={<Button testID="empty-new-gallery" title="New gallery" icon="add" onPress={() => router.push("/admin/new-event")} />}
+            />
           ) : (
-            <View style={isDesktop ? styles.gridWrap : undefined}>
-              {events.map((e) => (
-                <Pressable
-                  key={e.event_id}
-                  testID={`admin-event-${e.event_id}`}
-                  onPress={() => router.push(`/admin/event/${e.event_id}`)}
-                  style={[styles.row, isDesktop && styles.rowDesktop]}
-                >
-                  <View style={styles.rowIcon}>
-                    <Ionicons name={(categoryMeta[e.category]?.icon as any) || "star"} size={20} color={colors.brand} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.rowTitle} numberOfLines={1}>{e.name}</Text>
-                    <Text style={styles.rowSub}>
-                      {categoryMeta[e.category]?.label} · {e.photo_count} photos · {e.similarity_threshold}% threshold
-                    </Text>
-                  </View>
-                  <View style={{ alignItems: "flex-end", gap: 6 }}>
-                    {e.source === "gdrive" && <Pill label="Drive" tone="neutral" icon="logo-google" />}
-                    {e.status === "archived" ? (
-                      <Pill label="Archived" tone="warning" />
-                    ) : (
-                      <Pill label={e.indexing_status} tone={statusTone(e.indexing_status) as any} />
-                    )}
-                    <Ionicons name="chevron-forward" size={18} color={colors.muted} />
-                  </View>
-                </Pressable>
-              ))}
-            </View>
+            recent.map((e) => (
+              <Pressable
+                key={e.event_id}
+                testID={`admin-event-${e.event_id}`}
+                onPress={() => router.push(`/admin/event/${e.event_id}`)}
+                style={styles.row}
+              >
+                <View style={styles.rowIcon}>
+                  <Ionicons name={(categoryMeta[e.category]?.icon as any) || "star"} size={20} color={colors.brand} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.rowTitle} numberOfLines={1}>{e.name}</Text>
+                  <Text style={styles.rowSub} numberOfLines={1}>
+                    {categoryMeta[e.category]?.label} · {e.photo_count} photos
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+              </Pressable>
+            ))
           )}
         </ScrollView>
       )}
-
-      <Pressable testID="new-event-fab" onPress={() => router.push("/admin/new-event")} style={[styles.fab, { bottom: insets.bottom + spacing.lg }]}>
-        <Ionicons name="add" size={26} color={colors.onBrand} />
-        <Text style={styles.fabText}>New Event</Text>
-      </Pressable>
     </View>
   );
 }
@@ -182,23 +154,28 @@ function Stat({ label, value, icon }: { label: string; value: number; icon: any 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
-  statsRow: { flexDirection: "row", gap: spacing.md, marginBottom: spacing.lg },
-  albumsCard: {
+  statsRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.xl },
+  stat: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, alignItems: "flex-start", borderWidth: 1, borderColor: colors.border },
+  statValue: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"], marginTop: spacing.sm },
+  statLabel: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm },
+  sectionTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, marginBottom: spacing.md },
+  sectionHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xl },
+  viewAll: { flexDirection: "row", alignItems: "center", gap: 2, marginBottom: spacing.md },
+  viewAllText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "600" },
+  quickGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm },
+  quickCard: {
+    width: "48.5%",
     flexDirection: "row",
     alignItems: "center",
     gap: spacing.md,
     backgroundColor: colors.surfaceSecondary,
     borderRadius: radius.md,
     padding: spacing.lg,
-    marginBottom: spacing.lg,
     borderWidth: 1,
     borderColor: colors.brandTertiary,
   },
-  gridWrap: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
-  rowDesktop: { width: "48.5%" },
-  stat: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, alignItems: "flex-start" },
-  statValue: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"], marginTop: spacing.sm },
-  statLabel: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm },
+  quickIcon: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
+  quickLabel: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "600", flexShrink: 1 },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -211,21 +188,4 @@ const styles = StyleSheet.create({
   rowIcon: { width: 42, height: 42, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
   rowTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl },
   rowSub: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
-  fab: {
-    position: "absolute",
-    right: spacing.lg,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    backgroundColor: colors.brand,
-    paddingHorizontal: spacing.xl,
-    height: 52,
-    borderRadius: radius.pill,
-    elevation: 6,
-    shadowColor: "#000",
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 4 },
-  },
-  fabText: { color: colors.onBrand, fontFamily: fonts.text, fontSize: fontSize.lg, fontWeight: "600" },
 });
