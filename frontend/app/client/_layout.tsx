@@ -20,7 +20,7 @@ export default function ClientLayout() {
   if (loading) {
     return (
       <View style={styles.container} testID="client-auth-loading">
-        <Text style={styles.brand}>PK Photography</Text>
+        <Text style={styles.brand}>PIK Connect</Text>
         <ActivityIndicator color={colors.brand} style={{ marginTop: 16 }} />
       </View>
     );

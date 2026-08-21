@@ -176,7 +176,7 @@ function Drawer({
             <Ionicons name="aperture" size={22} color={colors.brand} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.brand}>PK PHOTOGRAPHY</Text>
+            <Text style={styles.brand}>PIK CONNECT</Text>
             <Text style={styles.roleTag}>{role === "admin" ? "Studio Console" : "Client Gallery"}</Text>
           </View>
         </View>

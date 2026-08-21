@@ -38,7 +38,7 @@ DEFAULT_STUDIO_WHATSAPP = "8888766739"
 def studio_profile_public(doc: dict | None) -> dict:
     doc = doc or {}
     return {
-        "name": doc.get("name") or "PIK Connect Studio",
+        "name": doc.get("name") or "PK Photography",
         "whatsapp": doc.get("whatsapp") or DEFAULT_STUDIO_WHATSAPP,
         "phone": doc.get("phone") or DEFAULT_STUDIO_WHATSAPP,
         "google_review_url": doc.get("google_review_url") or "",

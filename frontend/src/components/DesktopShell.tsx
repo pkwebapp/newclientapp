@@ -53,7 +53,7 @@ export function DesktopShell({
       <View style={styles.sidebar}>
         <View style={styles.brandRow}>
           <Ionicons name="aperture-outline" size={24} color={colors.brand} />
-          <Text style={styles.brand}>PK PHOTOGRAPHY</Text>
+          <Text style={styles.brand}>PIK CONNECT</Text>
         </View>
         <Text style={styles.roleTag}>{role === "admin" ? "Studio Console" : "Client Gallery"}</Text>
 
