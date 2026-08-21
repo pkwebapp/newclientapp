@@ -7,7 +7,7 @@ import os
 import sys
 
 # Backend URL from environment
-BACKEND_URL = "https://pkweb-staging.preview.emergentagent.com/api"
+BACKEND_URL = "https://newclient-ui.preview.emergentagent.com/api"
 
 # Admin credentials
 ADMIN_EMAIL = "admin@lumiere.studio"
