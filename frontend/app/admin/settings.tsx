@@ -68,7 +68,7 @@ export default function StudioSettings() {
             <Ionicons name="information-circle-outline" size={16} color={colors.muted} />
             <Text style={styles.infoText}>These details power the client Quick Actions — Message (WhatsApp), Call, and the Google review link.</Text>
           </View>
-          <TextField testID="studio-name" label="Studio name" value={name} onChangeText={setName} placeholder="PIK Connect Studio" />
+          <TextField testID="studio-name" label="Studio name" value={name} onChangeText={setName} placeholder="PK Photography" />
           <TextField testID="studio-whatsapp" label="WhatsApp number" value={whatsapp} onChangeText={setWhatsapp} placeholder="8888766739" keyboardType="phone-pad" />
           <TextField testID="studio-phone" label="Call number" value={phone} onChangeText={setPhone} placeholder="8888766739" keyboardType="phone-pad" />
           <TextField testID="studio-review-url" label="Google review link" value={reviewUrl} onChangeText={setReviewUrl} placeholder="https://g.page/r/…" autoCapitalize="none" />

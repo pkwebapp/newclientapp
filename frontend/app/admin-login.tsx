@@ -80,7 +80,7 @@ export default function AdminLogin() {
               label="Studio name"
               value={name}
               onChangeText={setName}
-              placeholder="Lumiere Studio"
+              placeholder="PK Photography"
             />
           )}
           <TextField

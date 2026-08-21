@@ -154,7 +154,7 @@ export default function SharedGallery() {
   if (phase === "loading") {
     return (
       <View style={styles.center} testID="share-loading">
-        <Text style={styles.brand}>PIK CONNECT</Text>
+        <Text style={styles.brand}>PK PHOTOGRAPHY</Text>
         <ActivityIndicator color={colors.brand} style={{ marginTop: spacing.lg }} />
       </View>
     );
@@ -192,7 +192,7 @@ export default function SharedGallery() {
         >
           <View style={styles.logoRow}>
             <Ionicons name="aperture-outline" size={24} color={colors.brand} />
-            <Text style={styles.logo}>PIK CONNECT</Text>
+            <Text style={styles.logo}>PK PHOTOGRAPHY</Text>
           </View>
 
           <View style={styles.gateCard}>
@@ -262,7 +262,7 @@ export default function SharedGallery() {
       <View style={[styles.galleryTop, { paddingTop: insets.top + spacing.sm }]}>
         <View style={styles.logoRow}>
           <Ionicons name="aperture-outline" size={20} color={colors.brand} />
-          <Text style={styles.logoSm}>PIK CONNECT</Text>
+          <Text style={styles.logoSm}>PK PHOTOGRAPHY</Text>
         </View>
         <Pressable testID="share-exit-btn" onPress={exit} style={styles.exitBtn} hitSlop={8}>
           <Ionicons name="log-out-outline" size={16} color={colors.onSurfaceTertiary} />

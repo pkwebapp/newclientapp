@@ -176,7 +176,7 @@ function Drawer({
             <Ionicons name="aperture" size={22} color={colors.brand} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={styles.brand}>PIK CONNECT</Text>
+            <Text style={styles.brand}>PK PHOTOGRAPHY</Text>
             <Text style={styles.roleTag}>{role === "admin" ? "Studio Console" : "Client Gallery"}</Text>
           </View>
         </View>
@@ -245,7 +245,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.borderStrong,
-    backgroundColor: "rgba(13,13,13,0.82)",
+    backgroundColor: "rgba(14,13,12,0.82)",
     overflow: "hidden",
   },
   tabItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 3, minHeight: 48, paddingVertical: 4 },
