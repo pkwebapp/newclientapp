@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI()
 api_router = APIRouter(prefix="/api")
 
-CATEGORIES = ["wedding", "corporate", "school", "studio", "nightlife", "event"]
+CATEGORIES = ["portrait", "wedding", "event"]
 
 
 # ---------------------------------------------------------------------------

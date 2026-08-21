@@ -9,7 +9,7 @@ import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
-const CATEGORIES = ["wedding", "corporate", "school", "studio", "nightlife", "event"];
+const CATEGORIES = ["portrait", "wedding", "event"];
 
 export default function NewEvent() {
   const router = useRouter();
@@ -19,7 +19,7 @@ export default function NewEvent() {
   const [name, setName] = useState("");
   const [date, setDate] = useState("");
   const [photographer, setPhotographer] = useState("");
-  const [category, setCategory] = useState("wedding");
+  const [category, setCategory] = useState("portrait");
   const [mode, setMode] = useState<"upload" | "gdrive">("upload");
   const [driveLink, setDriveLink] = useState("");
   const [loading, setLoading] = useState(false);

@@ -38,10 +38,11 @@ export const fonts = {
 };
 
 export const categoryMeta: Record<string, { label: string; icon: string }> = {
+  portrait: { label: "Portrait", icon: "person" },
   wedding: { label: "Wedding", icon: "heart" },
+  event: { label: "Events", icon: "star" },
   corporate: { label: "Corporate", icon: "briefcase" },
   school: { label: "School", icon: "school" },
   studio: { label: "Studio", icon: "camera" },
   nightlife: { label: "Nightlife", icon: "moon" },
-  event: { label: "Event", icon: "star" },
 };
