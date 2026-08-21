@@ -13,7 +13,7 @@ from io import BytesIO
 from PIL import Image, ImageDraw
 
 # Backend URL
-BACKEND_URL = "https://newclient-dev.preview.emergentagent.com/api"
+BACKEND_URL = "https://pkweb-staging.preview.emergentagent.com/api"
 
 # Admin credentials
 ADMIN_EMAIL = "admin@lumiere.studio"

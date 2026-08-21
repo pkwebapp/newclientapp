@@ -7,7 +7,7 @@ from io import BytesIO
 from PIL import Image
 
 # Backend URL from frontend/.env
-BASE_URL = "https://81a87a21-4359-4696-8115-b7e2de54b0f2.preview.emergentagent.com/api"
+BASE_URL = "https://pkweb-staging.preview.emergentagent.com/api"
 
 # Test credentials from /app/memory/test_credentials.md
 ADMIN_EMAIL = "admin@lumiere.studio"
