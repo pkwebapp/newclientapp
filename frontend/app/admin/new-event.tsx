@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -22,7 +22,14 @@ export default function NewEvent() {
   const [category, setCategory] = useState("portrait");
   const [mode, setMode] = useState<"upload" | "gdrive">("upload");
   const [driveLink, setDriveLink] = useState("");
+  const [value, setValue] = useState("");
+  const [clients, setClients] = useState<any[]>([]);
+  const [clientId, setClientId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    api.get("/clients").then(setClients).catch(() => {});
+  }, []);
 
   const create = async () => {
     if (!name.trim()) {
@@ -43,6 +50,8 @@ export default function NewEvent() {
           photographer: photographer.trim() || undefined,
           category,
           drive_link: driveLink.trim(),
+          value: value.trim() ? Number(value.trim()) : undefined,
+          client_id: clientId || undefined,
         });
         const n = res?.sync?.total ?? 0;
         toast.show(`Gallery created — ${n} photo${n === 1 ? "" : "s"} found`, "success");
@@ -52,6 +61,8 @@ export default function NewEvent() {
           date: date.trim() || undefined,
           photographer: photographer.trim() || undefined,
           category,
+          value: value.trim() ? Number(value.trim()) : undefined,
+          client_id: clientId || undefined,
         });
         toast.show("Event created", "success");
       }
@@ -112,7 +123,28 @@ export default function NewEvent() {
           <TextField testID="event-name-input" label="Event name" value={name} onChangeText={setName} placeholder="Sharma Wedding" />
           <TextField testID="event-date-input" label="Date" value={date} onChangeText={setDate} placeholder="2026-05-01" autoCapitalize="none" />
           <TextField testID="event-photographer-input" label="Photographer" value={photographer} onChangeText={setPhotographer} placeholder="Ravi Kapoor" />
-          <Button testID="create-event-btn" title={mode === "gdrive" ? "Create Drive gallery" : "Create event"} loading={loading} onPress={create} />
+          <TextField testID="event-value-input" label="Booking value (₹)" value={value} onChangeText={setValue} placeholder="120000" keyboardType="numeric" />
+
+          <Text style={styles.label}>Attach to client (optional)</Text>
+          {clients.length === 0 ? (
+            <Text style={styles.hint}>No clients yet. Create one from the Clients tab to link events and track lifetime value.</Text>
+          ) : (
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chipWrap}>
+              <Pressable testID="client-none" onPress={() => setClientId(null)} style={[styles.chip, !clientId && styles.chipActive]}>
+                <Text style={[styles.chipText, !clientId && styles.chipTextActive]}>None</Text>
+              </Pressable>
+              {clients.map((c) => (
+                <Pressable key={c.client_id} testID={`client-pick-${c.client_id}`} onPress={() => setClientId(c.client_id)} style={[styles.chip, clientId === c.client_id && styles.chipActive]}>
+                  <Ionicons name="people" size={13} color={clientId === c.client_id ? colors.onBrand : colors.onSurfaceTertiary} />
+                  <Text style={[styles.chipText, clientId === c.client_id && styles.chipTextActive]}>{c.name}</Text>
+                </Pressable>
+              ))}
+            </ScrollView>
+          )}
+
+          <View style={{ marginTop: spacing.xl }}>
+            <Button testID="create-event-btn" title={mode === "gdrive" ? "Create Drive gallery" : "Create event"} loading={loading} onPress={create} />
+          </View>
         </View>
       </KeyboardAwareScrollView>
     </View>

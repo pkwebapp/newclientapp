@@ -1478,3 +1478,216 @@ agent_communication:
         
         Backend is production-ready. 0 failures.
 
+
+#====================================================================================================
+# CRM / Client-Relationship Layer — Slice 1 (added by main agent)
+#====================================================================================================
+backend:
+  - task: "CRM Clients CRUD (client/family accounts)"
+    implemented: true
+    working: true
+    file: "backend/crm_routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "New /api/clients endpoints: POST create (with optional inline contacts + important_dates), GET list (supports q search across client name + contact name/phone/email, status filter, tag filter, returns stats + primary contact), GET {id} full profile (contacts, important_dates, linked events, stats incl lifetime_value), PATCH update, DELETE (cascades contacts/dates, unlinks events). Scoped by studio_id==admin.user_id. Smoke-tested via curl end-to-end successfully."
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL TESTS PASSED - CRM Clients CRUD fully functional.
+            
+            Tested comprehensive client lifecycle:
+            • POST /api/clients with inline contacts + important_dates → 200 with full profile including stats
+            • Response includes contacts (2), important_dates (2), stats (contact_count, event_count, date_count, lifetime_value)
+            • Invalid type validation → 400 (tested "invalid_type")
+            • Invalid status validation → 400 (tested "invalid_status")
+            • GET /api/clients → 200 with list including stats + primary contact preview
+            • Free-text search (q=) works across client name, contact name, phone, email
+            • Status filter (status=active) → returns only active clients
+            • Tag filter (tag=wedding) → returns clients with matching tag
+            • GET /api/clients/{id} → 200 with full profile including all stats
+            • Stats object has all required fields: contact_count, event_count, date_count, lifetime_value
+            • PATCH /api/clients/{id} → 200 with updated data
+            • Invalid type in update → 400
+            • Invalid status in update → 400
+            • DELETE /api/clients/{id} → 200 with status=deleted
+            • Delete cascades contacts and important_dates
+            • Delete unlinks events (events still exist, client_id removed)
+            • 404 for unknown client_id
+            
+            All endpoints return correct status codes and data structures.
+  - task: "CRM Contacts sub-resource"
+    implemented: true
+    working: true
+    file: "backend/crm_routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "POST/PATCH/DELETE /api/clients/{client_id}/contacts[/{contact_id}]. is_primary is exclusive (setting one clears others). Role is free text (bride/groom/father/billing/etc)."
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL TESTS PASSED - CRM Contacts sub-resource fully functional.
+            
+            Tested comprehensive contact operations:
+            • POST /api/clients/{client_id}/contacts → 200 with contact_id
+            • Contact fields: name, role, phone, email, is_primary
+            • is_primary exclusivity verified: setting one contact as primary clears others
+            • Only one contact has is_primary=true at any time
+            • PATCH /api/clients/{client_id}/contacts/{contact_id} → 200 with updated contact
+            • DELETE /api/clients/{client_id}/contacts/{contact_id} → 200 with status=deleted
+            • Contact count in client stats updates correctly after add/delete
+            • 404 for unknown contact_id
+            
+            All endpoints return correct status codes and data structures.
+  - task: "CRM Important Dates sub-resource"
+    implemented: true
+    working: true
+    file: "backend/crm_routes.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "POST/PATCH/DELETE /api/clients/{client_id}/important-dates[/{date_id}]. Fields: person_label, occasion, date (YYYY-MM-DD or MM-DD), recurring, notes."
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL TESTS PASSED - CRM Important Dates sub-resource fully functional.
+            
+            Tested comprehensive important date operations:
+            • POST /api/clients/{client_id}/important-dates → 200 with date_id
+            • Date fields: person_label, occasion, date (YYYY-MM-DD or MM-DD), recurring, notes
+            • Supports both full dates (2024-06-15) and recurring dates (03-20)
+            • PATCH /api/clients/{client_id}/important-dates/{date_id} → 200 with updated date
+            • DELETE /api/clients/{client_id}/important-dates/{date_id} → 200 with status=deleted
+            • Date count in client stats updates correctly after add/delete
+            • 404 for unknown date_id
+            
+            All endpoints return correct status codes and data structures.
+  - task: "Event<->Client linkage + value/lifetime-value"
+    implemented: true
+    working: true
+    file: "backend/crm_routes.py, backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: "EventCreate/EventUpdate now accept optional client_id + value. public_event returns both. POST/DELETE /api/clients/{cid}/events/{eid}/attach to link/unlink. Client profile lifetime_value = sum of linked events' value. Deleting a client unlinks (does not delete) its events."
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL TESTS PASSED - Event<->Client linkage fully functional.
+            
+            Tested comprehensive event linkage operations:
+            • POST /api/events with client_id + value → 200 with event including client_id and value
+            • Event appears in client profile events array
+            • Client lifetime_value = sum of linked events' value (120000 for one event)
+            • POST /api/clients/{cid}/events/{eid}/attach → 200 with status=attached
+            • Lifetime_value updates correctly after attach (120000 + 50000 = 170000)
+            • Event count in client stats updates correctly
+            • DELETE /api/clients/{cid}/events/{eid}/attach → 200 with status=detached
+            • Lifetime_value updates correctly after detach (back to 120000)
+            • Event still exists after detach (verified via GET /api/events)
+            • DELETE /api/clients/{id} unlinks events but does not delete them
+            • Events have client_id=null after client deletion
+            • 404 for unknown event_id
+            
+            Multi-tenant isolation verified:
+            • Registered second admin account
+            • Second admin cannot see first admin's clients (GET /api/clients returns empty)
+            • Second admin cannot GET first admin's client → 404
+            • Second admin cannot PATCH first admin's client → 404
+            • Second admin cannot DELETE first admin's client → 404
+            • All CRM operations properly scoped by studio_id
+            
+            All endpoints return correct status codes and data structures.
+            Database cleanup verified - all test data removed.
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: |
+        Please test ONLY the new CRM layer (backend/crm_routes.py + event linkage in server.py).
+        Admin login: admin@lumiere.studio / Admin@12345 (get session_token, send as Bearer).
+        Cover: create client (with inline contacts + important_dates), list (with q search by
+        contact name/phone/email, status & tag filters), get full profile (verify stats:
+        contact_count, event_count, date_count, lifetime_value), patch client (name/status/type/
+        tags/notes + invalid type/status -> 400), delete client (cascades contacts/dates, unlinks
+        events). Contacts: add/update/delete, verify is_primary is exclusive. Important dates:
+        add/update/delete. Event linkage: create an event with client_id+value, attach/detach via
+        /clients/{cid}/events/{eid}/attach, confirm lifetime_value reflects event value and events
+        appear in profile. Multi-tenant: a client created by one admin must not be visible to another.
+        Do NOT re-test existing gallery/album/gdrive flows. Clean up any data you create.
+    - agent: "testing"
+      message: |
+        ✅ CRM BACKEND TESTING COMPLETE - ALL 60 TESTS PASSED (100% success rate)
+        
+        Comprehensive test coverage of all CRM endpoints:
+        
+        1. CLIENT CRUD (✅ 20 tests):
+           • Create with inline contacts + important_dates
+           • List with stats + primary contact preview
+           • Free-text search (q=) across client name, contact name/phone/email
+           • Status filter (status=active)
+           • Tag filter (tag=wedding)
+           • Get full profile with all stats
+           • Update client (name, status, type, tags, notes)
+           • Invalid type/status validation (400)
+           • Delete with cascade + event unlinking
+           • 404 for unknown client
+        
+        2. CONTACTS SUB-RESOURCE (✅ 8 tests):
+           • Add contact
+           • is_primary exclusivity (only one primary at a time)
+           • Update contact
+           • Delete contact
+           • Contact count updates correctly
+           • 404 for unknown contact
+        
+        3. IMPORTANT DATES SUB-RESOURCE (✅ 6 tests):
+           • Add important date (supports YYYY-MM-DD and MM-DD formats)
+           • Update important date
+           • Delete important date
+           • Date count updates correctly
+           • 404 for unknown date
+        
+        4. EVENT LINKAGE + LIFETIME VALUE (✅ 10 tests):
+           • Create event with client_id + value
+           • Event appears in client profile
+           • Lifetime_value calculation (sum of linked events)
+           • Attach event to client
+           • Lifetime_value updates after attach
+           • Detach event from client
+           • Lifetime_value updates after detach
+           • Event still exists after detach
+           • Client deletion unlinks events (does not delete)
+        
+        5. MULTI-TENANT ISOLATION (✅ 6 tests):
+           • Register second admin
+           • Second admin cannot see first admin's clients
+           • Second admin cannot GET first admin's client (404)
+           • Second admin cannot PATCH first admin's client (404)
+           • Second admin cannot DELETE first admin's client (404)
+           • All operations properly scoped by studio_id
+        
+        6. CLEANUP (✅ 10 tests):
+           • All test data cleaned up
+           • Database verified empty (0 clients, 0 events)
+        
+        All endpoints return correct status codes, proper response structures, and accurate data.
+        No issues found. Backend is production-ready.

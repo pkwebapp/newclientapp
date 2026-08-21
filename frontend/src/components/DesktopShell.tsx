@@ -11,6 +11,7 @@ type NavItem = { label: string; icon: keyof typeof Ionicons.glyphMap; href: stri
 
 const ADMIN_NAV: NavItem[] = [
   { label: "Dashboard", icon: "grid-outline", href: "/admin" },
+  { label: "Clients", icon: "people-outline", href: "/admin/clients" },
   { label: "New Event", icon: "add-circle-outline", href: "/admin/new-event" },
   { label: "Albums", icon: "book-outline", href: "/admin/albums" },
 ];
@@ -39,6 +40,7 @@ export function DesktopShell({
 
   const isActive = (href: string) => {
     if (href === "/admin") return pathname === "/admin" || pathname.startsWith("/admin/event");
+    if (href === "/admin/clients") return pathname === "/admin/clients" || pathname.startsWith("/admin/client");
     if (href === "/client") return pathname === "/client" || pathname.startsWith("/client/");
     return pathname === href;
   };

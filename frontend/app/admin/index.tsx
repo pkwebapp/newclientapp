@@ -81,6 +81,21 @@ export default function AdminDashboard() {
           </View>
 
           <Pressable
+            testID="admin-clients-card"
+            onPress={() => router.push("/admin/clients")}
+            style={styles.albumsCard}
+          >
+            <View style={styles.rowIcon}>
+              <Ionicons name="people-outline" size={20} color={colors.brand} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.rowTitle}>Clients</Text>
+              <Text style={styles.rowSub}>Families, contacts, important dates & lifetime relationships</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+          </Pressable>
+
+          <Pressable
             testID="admin-albums-card"
             onPress={() => router.push("/admin/albums")}
             style={styles.albumsCard}

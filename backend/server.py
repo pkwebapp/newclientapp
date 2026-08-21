@@ -127,6 +127,8 @@ def public_event(event: dict) -> dict:
         "drive_folder_id": event.get("drive_folder_id"),
         "drive_folder_link": event.get("drive_folder_link"),
         "last_synced_at": event.get("last_synced_at"),
+        "client_id": event.get("client_id"),
+        "value": event.get("value", 0) or 0,
         "created_at": event.get("created_at"),
     }
 
@@ -356,6 +358,8 @@ class EventCreate(BaseModel):
     category: str = "event"
     photographer: Optional[str] = None
     similarity_threshold: Optional[float] = None
+    client_id: Optional[str] = None  # optional link to a CRM client/family
+    value: Optional[float] = None    # booking value (for lifetime-value stats)
 
 
 class EventUpdate(BaseModel):
@@ -365,6 +369,8 @@ class EventUpdate(BaseModel):
     photographer: Optional[str] = None
     similarity_threshold: Optional[float] = None
     share_enabled: Optional[bool] = None
+    client_id: Optional[str] = None
+    value: Optional[float] = None
 
 
 class AccessGrantCreate(BaseModel):
@@ -394,6 +400,8 @@ async def create_event(body: EventCreate, admin: dict = Depends(require_admin)):
         "photo_count": 0,
         "cover_path": None,
         "share_enabled": True,
+        "client_id": body.client_id,
+        "value": body.value or 0,
         "created_by": admin["user_id"],
         "created_at": now_iso(),
     }
@@ -1882,6 +1890,10 @@ app.include_router(api_router)
 from album_routes import album_router  # noqa: E402
 app.include_router(album_router)
 
+# CRM / Client-Relationship layer — /api/clients + contacts + important-dates.
+from crm_routes import crm_router  # noqa: E402
+app.include_router(crm_router)
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -1908,6 +1920,14 @@ async def on_startup():
         await db.client_albums.create_index([("event_id", 1), ("client_user_id", 1)], unique=True)
         await db.photo_likes.create_index([("event_id", 1), ("client_user_id", 1), ("photo_id", 1)], unique=True)
         await db.photo_likes.create_index([("event_id", 1), ("client_user_id", 1)])
+        # CRM layer
+        await db.clients.create_index("client_id", unique=True)
+        await db.clients.create_index("studio_id")
+        await db.contacts.create_index("contact_id", unique=True)
+        await db.contacts.create_index("client_id")
+        await db.important_dates.create_index("date_id", unique=True)
+        await db.important_dates.create_index("client_id")
+        await db.events.create_index("client_id", sparse=True)
     except Exception as e:
         logger.error(f"Index creation issue: {e}")
 
