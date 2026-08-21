@@ -110,6 +110,109 @@ user_problem_statement: |
   Feature request: Add a Home button on the Studio Console (admin dashboard) header.
 
 backend:
+  - task: "Fix backend completely down (missing deps + missing .env) after fresh repo clone"
+    implemented: true
+    working: true
+    file: "backend/requirements.txt, backend/.env, frontend/.env"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            ROOT CAUSE (app analysis): backend was crash-looping and NOT serving on :8001 in this
+            fresh container. Two problems:
+            1) Python deps not installed. `pip install -r requirements.txt` aborted due to a
+               dependency-resolution conflict from unused `emergentintegrations==0.2.0` + its pinned
+               custom-wheel `litellm` URL. Neither is imported anywhere in the backend, so I removed
+               both lines from requirements.txt and the install succeeded (qrcode/boto3/cloudinary/
+               PyMuPDF/etc now present).
+            2) Both backend/.env AND frontend/.env were MISSING (gitignored, so not in the cloned
+               repo) → config.py raised KeyError('MONGO_URL'). Recreated:
+               • backend/.env: MONGO_URL=mongodb://localhost:27017, DB_NAME=lumiere_gallery,
+                 STORAGE_BACKEND=emergent (+ EMERGENT_LLM_KEY universal key), FACE_ENGINE=mock,
+                 OTP_DEV_MODE=true, SMS_PROVIDER=mock, admin seed, PUBLIC_BASE_URL/APP_URL=preview URL.
+               • frontend/.env: EXPO_PUBLIC_BACKEND_URL + packager proxy/hostname = preview URL.
+            NOTE: The previously-used Cloudinary + AWS Rekognition + email secrets were NOT in the
+            repo (correctly gitignored) and are unrecoverable. App now runs on EMERGENT object storage
+            + MOCK face engine so it boots and core flows work; cloud storage + real face-search need
+            the user to re-provide those keys.
+            After fixes: backend boots clean — GET /api/ -> 200 {"status":"ok"}, "Object storage
+            initialized", "Seeded admin admin@lumiere.studio", "Face-indexing worker started".
+            Frontend GET / -> 200.
+            PLEASE TEST core backend end-to-end with EMERGENT storage + MOCK face engine (admin
+            admin@lumiere.studio / Admin@12345): admin login; create event; upload a photo (must
+            store to Emergent object storage & return a served URL, status reaches ready via mock
+            indexing); list photos; client request-otp (dev_code) -> verify-otp; public event access
+            (name+phone) -> token can list photos; delete event cleans up. Report any 4xx/5xx.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL 13 TESTS PASSED - Backend recovery fully successful with EMERGENT storage + MOCK face engine.
+            
+            Tested comprehensive end-to-end flow as requested:
+            
+            CORE FLOW TESTS (All PASS):
+            1. ✅ GET /api/ (health check) → 200 {"service":"Lumiere Gallery API", "status":"ok"}
+            2. ✅ POST /api/auth/admin/login → 200 with session_token
+               • Admin: admin@lumiere.studio / Admin@12345 ✓
+            
+            3. ✅ POST /api/events (create event) → 200 with event_id
+               • Event: "QA Recovery" created successfully
+            
+            4. ✅ POST /api/events/{event_id}/photos (upload photo) → 200 with photo_id
+               • Photo uploaded: pho_05ce52e7e341
+               • Storage path: lumiere-gallery/events/evt_130e35f280cc/pho_05ce52e7e341.jpg
+               • Thumb path: lumiere-gallery/events/evt_130e35f280cc/pho_05ce52e7e341_thumb.jpg
+               • Note: url/thumb_url are None (expected for Emergent storage - uses /api/files proxy)
+            
+            5. ✅ EMERGENT STORAGE SERVING VALIDATED:
+               • GET /api/files/{storage_path} (with admin token) → 200
+               • Retrieved: 825 bytes, content-type: image/jpeg ✓
+               • Emergent object storage upload + serve working correctly ✓
+            
+            6. ✅ GET /api/events/{event_id}/indexing-status (poll until complete) → 200
+               • Status: ready, indexed: 1/1, faces: 2, complete: true
+               • Mock face engine working correctly (background indexing completed) ✓
+            
+            7. ✅ GET /api/events/{event_id}/photos (list photos) → 200
+               • 1 photo listed successfully
+            
+            8. ✅ CLIENT OTP FLOW:
+               • 8a. POST /api/auth/client/request-otp {"channel":"phone", "phone":"+919000000001"} → 200
+                 with dev_code (OTP_DEV_MODE=true working) ✓
+               • 8b. POST /api/auth/client/verify-otp {"channel":"phone", "phone":"+919000000001", "code":"..."} → 200
+                 with client session_token ✓
+            
+            9. ✅ PUBLIC ACCESS FLOW:
+               • 9a. POST /api/public/events/{event_id}/access {"name":"QA Guest", "phone":"+919000000002"} → 200
+                 with public session_token ✓
+               • 9b. GET /api/client/events/{event_id}/photos (with public token) → 200
+                 with 1 photo accessible ✓
+            
+            10. ✅ DELETE /api/events/{event_id} (cleanup) → 200
+                • Response: {status:"deleted", event_id, photos_removed:1, cloudinary_objects_deleted:0, 
+                  faces_collection_deleted:true}
+                • Cleanup successful ✓
+            
+            11. ✅ GET /api/events/{event_id} (verify deletion) → 404
+                • Event correctly deleted ✓
+            
+            BACKEND STATUS:
+            ✅ Backend running on 0.0.0.0:8001 (reachable at preview URL/api)
+            ✅ STORAGE_BACKEND=emergent - Emergent object storage fully functional (upload + serve via /api/files)
+            ✅ FACE_ENGINE=mock - Mock face engine working (background indexing completes successfully)
+            ✅ OTP_DEV_MODE=true - OTP flow working with dev_code in response
+            ✅ Admin credentials working: admin@lumiere.studio / Admin@12345
+            ✅ MongoDB connection working (mongodb://localhost:27017)
+            ✅ Background face-indexing worker started and processing photos
+            
+            NO 4xx/5xx ERRORS DETECTED. All endpoints return correct status codes and proper response structures.
+            
+            Backend recovery is complete and production-ready on the emergent+mock path. 0 failures.
+
+
   - task: "Switch to Cloudinary storage + AWS Rekognition face engine + S3 import (faceser)"
     implemented: true
     working: true
@@ -998,6 +1101,41 @@ test_plan:
   test_priority: "high_first"
 
 agent_communication:
+    - agent: "main"
+      message: |
+        BACKEND RECOVERY TEST NEEDED. The backend was completely down in this fresh container
+        (missing python deps + missing backend/.env). Fixed by removing unused
+        emergentintegrations/litellm from requirements.txt, installing deps, and recreating
+        backend/.env (STORAGE_BACKEND=emergent + EMERGENT_LLM_KEY, FACE_ENGINE=mock,
+        MONGO_URL=mongodb://localhost:27017, DB_NAME=lumiere_gallery, OTP_DEV_MODE=true) and
+        frontend/.env (EXPO_PUBLIC_BACKEND_URL=preview URL). Backend now returns GET /api/ -> 200.
+        Verify core end-to-end with EMERGENT object storage + MOCK face engine, admin
+        admin@lumiere.studio / Admin@12345: admin login; create event; upload small JPEG (served
+        URL returns bytes; indexing reaches ready, 0 faces ok on mock); list photos; client
+        request-otp (dev_code) + verify-otp; public event access (name+phone) token lists photos;
+        delete event cleanup. Report any 4xx/5xx. Cloudinary/Rekognition intentionally NOT
+        configured now (secrets not in repo) — validating emergent+mock path only.
+    - agent: "testing"
+      message: |
+        ✅ BACKEND RECOVERY VERIFICATION COMPLETE - ALL 13 TESTS PASSED
+        
+        Comprehensive end-to-end testing confirms the backend is fully functional with EMERGENT storage + MOCK face engine.
+        
+        TESTED & VERIFIED:
+        • Health check (/api/) → 200 OK
+        • Admin authentication (admin@lumiere.studio / Admin@12345) → Working
+        • Event creation → Working
+        • Photo upload → Working (stored to Emergent object storage)
+        • Emergent storage serving via /api/files/{path} → Working (825 bytes retrieved, image/jpeg)
+        • Background face indexing (mock engine) → Working (completes successfully, 2 faces detected)
+        • Photo listing → Working
+        • Client OTP flow (request + verify with channel="phone") → Working (dev_code returned)
+        • Public access flow (name+phone registration) → Working
+        • Event deletion & cleanup → Working
+        
+        NO 4xx/5xx ERRORS. All endpoints return correct status codes and proper response structures.
+        
+        Backend is production-ready on the emergent+mock path. The main agent can now summarize and finish.
     - agent: "main"
       message: |
         FRONTEND UI TEST NEEDED (landing page redesign + reported footer bug fix), route "/".

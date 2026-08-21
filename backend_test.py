@@ -1,467 +1,300 @@
 #!/usr/bin/env python3
 """
-Backend test for Slice 2 CRM endpoints (Studio profile, Client dashboard, Booking + Reviews).
-Tests ONLY the new Slice 2 endpoints. Does NOT re-test Slice 1 CRM CRUD or existing gallery/album flows.
+Backend Recovery Test - PIK Connect / Lumiere Gallery
+Tests the recovered backend with EMERGENT storage + MOCK face engine
 """
+
 import requests
-import sys
 import time
+import io
+from PIL import Image
 
-# Backend URL from frontend/.env
-BASE_URL = "https://design-showcase-1848.preview.emergentagent.com/api"
+# Base URL from frontend/.env
+BASE_URL = "https://ee967415-f047-4a40-8d67-74f8dbe106f0.preview.emergentagent.com/api"
 
-# Admin credentials from test_credentials.md
+# Admin credentials
 ADMIN_EMAIL = "admin@lumiere.studio"
 ADMIN_PASSWORD = "Admin@12345"
 
-# Test data
-TEST_PHONE = "+915550001111"
-TEST_PHONE_NEW = "+915550009999"  # For edge case: brand-new client with no grants
+# Test results
+results = []
 
-def log(msg):
-    print(f"[TEST] {msg}")
+def log_test(step, status, details=""):
+    """Log test result"""
+    symbol = "✅" if status == "PASS" else "❌"
+    results.append({"step": step, "status": status, "details": details})
+    print(f"{symbol} Step {step}: {status}")
+    if details:
+        print(f"   {details}")
 
-def admin_login():
-    """Login as admin and return session_token."""
-    log("1. Admin login...")
-    resp = requests.post(f"{BASE_URL}/auth/admin/login", json={
-        "email": ADMIN_EMAIL,
-        "password": ADMIN_PASSWORD
-    })
-    assert resp.status_code == 200, f"Admin login failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert "session_token" in data, f"No session_token in response: {data}"
-    log(f"   ✅ Admin login successful, token: {data['session_token'][:20]}...")
-    return data["session_token"]
+def create_test_image():
+    """Create a small test JPEG image"""
+    img = Image.new('RGB', (100, 100), color='red')
+    buf = io.BytesIO()
+    img.save(buf, format='JPEG')
+    buf.seek(0)
+    return buf
 
-def test_studio_profile(admin_token):
-    """Test GET/PATCH /api/studio/profile (require_admin)."""
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    
-    # First, clean up any existing studio profile from previous test runs
-    log("2. Cleaning up existing studio profile...")
-    try:
-        from pymongo import MongoClient
-        client = MongoClient("mongodb://localhost:27017")
-        db = client["lumiere_gallery"]
-        result = db.studio_profiles.delete_many({})
-        log(f"   Deleted {result.deleted_count} existing studio profiles")
-    except Exception as e:
-        log(f"   ⚠️  Cleanup failed: {e}")
-    
-    # GET studio profile (should return defaults after cleanup)
-    log("3. GET /api/studio/profile (before PATCH, should return defaults)...")
-    resp = requests.get(f"{BASE_URL}/studio/profile", headers=headers)
-    assert resp.status_code == 200, f"GET studio/profile failed: {resp.status_code} {resp.text}"
-    profile = resp.json()
-    log(f"   Profile: {profile}")
-    assert "name" in profile, "Missing 'name' in profile"
-    assert "whatsapp" in profile, "Missing 'whatsapp' in profile"
-    assert "phone" in profile, "Missing 'phone' in profile"
-    assert "google_review_url" in profile, "Missing 'google_review_url' in profile"
-    assert "booking_email" in profile, "Missing 'booking_email' in profile"
-    # When unset, whatsapp and phone must default to "8888766739"
-    assert profile["whatsapp"] == "8888766739", f"Default whatsapp should be 8888766739, got {profile['whatsapp']}"
-    assert profile["phone"] == "8888766739", f"Default phone should be 8888766739, got {profile['phone']}"
-    log("   ✅ GET studio/profile returns correct defaults")
-    
-    # PATCH studio profile
-    log("4. PATCH /api/studio/profile...")
-    resp = requests.patch(f"{BASE_URL}/studio/profile", headers=headers, json={
-        "name": "Test Studio",
-        "whatsapp": "9999911111",
-        "phone": "9999922222",
-        "google_review_url": "https://g.page/x",
-        "booking_email": "bookings@test.studio"
-    })
-    assert resp.status_code == 200, f"PATCH studio/profile failed: {resp.status_code} {resp.text}"
-    profile = resp.json()
-    log(f"   Updated profile: {profile}")
-    assert profile["name"] == "Test Studio", f"name not updated: {profile['name']}"
-    assert profile["whatsapp"] == "9999911111", f"whatsapp not updated: {profile['whatsapp']}"
-    assert profile["phone"] == "9999922222", f"phone not updated: {profile['phone']}"
-    assert profile["google_review_url"] == "https://g.page/x", f"google_review_url not updated: {profile['google_review_url']}"
-    assert profile["booking_email"] == "bookings@test.studio", f"booking_email not updated: {profile['booking_email']}"
-    log("   ✅ PATCH studio/profile updates correctly")
-    
-    return profile
+# Test execution
+print("=" * 80)
+print("BACKEND RECOVERY TEST - PIK Connect / Lumiere Gallery")
+print("Testing: EMERGENT storage + MOCK face engine")
+print("=" * 80)
+print()
 
-def create_event(admin_token):
-    """Create a test event."""
-    log("5. Create event...")
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    resp = requests.post(f"{BASE_URL}/events", headers=headers, json={
-        "name": "Test Wedding",
-        "category": "wedding",
-        "date": "2026-02-14",
-        "value": 150000
-    })
-    assert resp.status_code == 200, f"Create event failed: {resp.status_code} {resp.text}"
-    event = resp.json()
-    event_id = event["event_id"]
-    log(f"   ✅ Event created: {event_id}")
-    return event_id
-
-def grant_client_access(admin_token, event_id, phone):
-    """Grant client access to event."""
-    log(f"6. Grant client access to event {event_id} for phone {phone}...")
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    resp = requests.post(f"{BASE_URL}/events/{event_id}/access", headers=headers, json={
-        "channel": "phone",
-        "phone": phone,
-        "full_gallery_access": True
-    })
-    assert resp.status_code == 200, f"Grant access failed: {resp.status_code} {resp.text}"
-    log(f"   ✅ Access granted")
-
-def create_crm_client(admin_token, phone):
-    """Create a CRM client with a contact matching the phone."""
-    log(f"7. Create CRM client with contact phone {phone}...")
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    resp = requests.post(f"{BASE_URL}/clients", headers=headers, json={
-        "name": "Test Family",
-        "contacts": [
-            {
-                "name": "Anjali",
-                "role": "bride",
-                "phone": phone,
-                "is_primary": True
-            }
-        ],
-        "important_dates": [
-            {
-                "person_label": "Anjali",
-                "occasion": "Birthday",
-                "date": "2026-09-01"
-            }
-        ]
-    })
-    assert resp.status_code == 200, f"Create CRM client failed: {resp.status_code} {resp.text}"
-    client = resp.json()
-    client_id = client["client_id"]
-    log(f"   ✅ CRM client created: {client_id}")
-    return client_id
-
-def client_login_otp(phone, name):
-    """Login as client via OTP (OTP_DEV_MODE returns dev_code)."""
-    log(f"8. Client OTP login for phone {phone}...")
-    
-    # Request OTP
-    log(f"   8a. Request OTP...")
-    resp = requests.post(f"{BASE_URL}/auth/client/request-otp", json={
-        "channel": "phone",
-        "phone": phone
-    })
-    assert resp.status_code == 200, f"Request OTP failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert "dev_code" in data, f"No dev_code in response (OTP_DEV_MODE should be true): {data}"
-    dev_code = data["dev_code"]
-    log(f"   ✅ OTP requested, dev_code: {dev_code}")
-    
-    # Verify OTP
-    log(f"   8b. Verify OTP...")
-    resp = requests.post(f"{BASE_URL}/auth/client/verify-otp", json={
-        "channel": "phone",
-        "phone": phone,
-        "code": dev_code,
-        "name": name
-    })
-    assert resp.status_code == 200, f"Verify OTP failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert "session_token" in data, f"No session_token in response: {data}"
-    client_token = data["session_token"]
-    client_user_id = data.get("user", {}).get("user_id")
-    log(f"   ✅ Client logged in, token: {client_token[:20]}..., user_id: {client_user_id}")
-    return client_token, client_user_id
-
-def test_client_dashboard(client_token, expected_studio_whatsapp):
-    """Test GET /api/me/dashboard (require_client)."""
-    log("9. GET /api/me/dashboard (client)...")
-    headers = {"Authorization": f"Bearer {client_token}"}
-    resp = requests.get(f"{BASE_URL}/me/dashboard", headers=headers)
-    assert resp.status_code == 200, f"GET me/dashboard failed: {resp.status_code} {resp.text}"
-    dashboard = resp.json()
-    log(f"   Dashboard: {dashboard}")
-    
-    # Verify structure
-    assert "profile" in dashboard, "Missing 'profile' in dashboard"
-    assert "memories" in dashboard, "Missing 'memories' in dashboard"
-    assert "upcoming" in dashboard, "Missing 'upcoming' in dashboard"
-    assert "studio" in dashboard, "Missing 'studio' in dashboard"
-    
-    # Verify profile
-    profile = dashboard["profile"]
-    assert "first_name" in profile, "Missing 'first_name' in profile"
-    assert profile["first_name"] == "Anjali", f"Expected first_name='Anjali', got {profile['first_name']}"
-    log(f"   ✅ profile.first_name == 'Anjali'")
-    
-    # Verify memories (should contain the Test Wedding event)
-    memories = dashboard["memories"]
-    assert isinstance(memories, list), f"memories should be a list, got {type(memories)}"
-    assert len(memories) > 0, "memories should not be empty"
-    test_wedding = next((m for m in memories if m.get("name") == "Test Wedding"), None)
-    assert test_wedding is not None, "Test Wedding event not found in memories"
-    assert test_wedding.get("year") == "2026", f"Expected year='2026', got {test_wedding.get('year')}"
-    assert "photo_count" in test_wedding, "Missing 'photo_count' in memory"
-    log(f"   ✅ memories contains Test Wedding with year='2026' and photo_count field")
-    
-    # Verify upcoming (should contain Anjali's Birthday)
-    upcoming = dashboard["upcoming"]
-    assert isinstance(upcoming, list), f"upcoming should be a list, got {type(upcoming)}"
-    assert len(upcoming) > 0, "upcoming should not be empty"
-    birthday = next((u for u in upcoming if u.get("occasion") == "Birthday"), None)
-    assert birthday is not None, "Birthday not found in upcoming"
-    assert birthday.get("person_label") == "Anjali", f"Expected person_label='Anjali', got {birthday.get('person_label')}"
-    assert "next_date" in birthday, "Missing 'next_date' in upcoming date"
-    assert birthday["next_date"] is not None, "next_date should not be None"
-    assert "days_until" in birthday, "Missing 'days_until' in upcoming date"
-    assert isinstance(birthday["days_until"], int), f"days_until should be numeric, got {type(birthday['days_until'])}"
-    log(f"   ✅ upcoming contains Birthday with next_date and numeric days_until")
-    
-    # Verify studio
-    studio = dashboard["studio"]
-    assert "whatsapp" in studio, "Missing 'whatsapp' in studio"
-    assert "google_review_url" in studio, "Missing 'google_review_url' in studio"
-    assert studio["whatsapp"] == expected_studio_whatsapp, f"Expected studio.whatsapp='{expected_studio_whatsapp}', got {studio['whatsapp']}"
-    assert studio["google_review_url"] == "https://g.page/x", f"Expected google_review_url='https://g.page/x', got {studio['google_review_url']}"
-    log(f"   ✅ studio.whatsapp == '{expected_studio_whatsapp}' and studio.google_review_url == 'https://g.page/x'")
-    
-    log("   ✅ Client dashboard test PASSED")
-
-def test_booking_request(client_token):
-    """Test POST /api/me/booking-requests (require_client)."""
-    log("10. POST /api/me/booking-requests...")
-    headers = {"Authorization": f"Bearer {client_token}"}
-    resp = requests.post(f"{BASE_URL}/me/booking-requests", headers=headers, json={
-        "service_type": "Anniversary Shoot",
-        "preferred_date": "2026-12-06",
-        "message": "hi"
-    })
-    assert resp.status_code == 200, f"POST booking-requests failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    log(f"   Response: {data}")
-    assert data.get("status") == "ok", f"Expected status='ok', got {data.get('status')}"
-    assert "request_id" in data, "Missing 'request_id' in response"
-    log(f"   ✅ Booking request created: {data['request_id']}")
-    return data["request_id"]
-
-def test_reviews(client_token):
-    """Test POST /api/me/reviews (require_client) with validation."""
-    log("11. POST /api/me/reviews (valid rating=5)...")
-    headers = {"Authorization": f"Bearer {client_token}"}
-    resp = requests.post(f"{BASE_URL}/me/reviews", headers=headers, json={
-        "rating": 5,
-        "text": "great"
-    })
-    assert resp.status_code == 200, f"POST reviews (rating=5) failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    log(f"   Response: {data}")
-    assert data.get("status") == "ok", f"Expected status='ok', got {data.get('status')}"
-    assert "review_id" in data, "Missing 'review_id' in response"
-    log(f"   ✅ Review created: {data['review_id']}")
-    review_id = data["review_id"]
-    
-    # Test validation: rating=6 should be 422
-    log("12. POST /api/me/reviews (invalid rating=6, should be 422)...")
-    resp = requests.post(f"{BASE_URL}/me/reviews", headers=headers, json={
-        "rating": 6
-    })
-    assert resp.status_code == 422, f"Expected 422 for rating=6, got {resp.status_code}"
-    log(f"   ✅ rating=6 correctly rejected with 422")
-    
-    # Test validation: rating=0 should be 422
-    log("13. POST /api/me/reviews (invalid rating=0, should be 422)...")
-    resp = requests.post(f"{BASE_URL}/me/reviews", headers=headers, json={
-        "rating": 0
-    })
-    assert resp.status_code == 422, f"Expected 422 for rating=0, got {resp.status_code}"
-    log(f"   ✅ rating=0 correctly rejected with 422")
-    
-    return review_id
-
-def test_edge_case_new_client():
-    """Test edge case: brand-new client user with no grants."""
-    log("14. Edge case: brand-new client with no grants...")
-    
-    # Login as new client (no grants)
-    client_token, client_user_id = client_login_otp(TEST_PHONE_NEW, "New User")
-    
-    # GET dashboard (should return empty memories, not an error)
-    log("15. GET /api/me/dashboard (new client with no grants)...")
-    headers = {"Authorization": f"Bearer {client_token}"}
-    resp = requests.get(f"{BASE_URL}/me/dashboard", headers=headers)
-    assert resp.status_code == 200, f"GET me/dashboard failed: {resp.status_code} {resp.text}"
-    dashboard = resp.json()
-    log(f"   Dashboard: {dashboard}")
-    
-    # Verify structure
-    assert "profile" in dashboard, "Missing 'profile' in dashboard"
-    assert "memories" in dashboard, "Missing 'memories' in dashboard"
-    assert "upcoming" in dashboard, "Missing 'upcoming' in dashboard"
-    assert "studio" in dashboard, "Missing 'studio' in dashboard"
-    
-    # Verify memories is empty (not an error)
-    memories = dashboard["memories"]
-    assert isinstance(memories, list), f"memories should be a list, got {type(memories)}"
-    assert len(memories) == 0, f"memories should be empty for new client, got {len(memories)} items"
-    log(f"   ✅ memories is empty (not an error)")
-    
-    # Verify upcoming is empty
-    upcoming = dashboard["upcoming"]
-    assert isinstance(upcoming, list), f"upcoming should be a list, got {type(upcoming)}"
-    assert len(upcoming) == 0, f"upcoming should be empty for new client, got {len(upcoming)} items"
-    log(f"   ✅ upcoming is empty")
-    
-    # Verify studio is still returned with defaults (no studio_id, so defaults)
-    studio = dashboard["studio"]
-    assert "whatsapp" in studio, "Missing 'whatsapp' in studio"
-    # New client has no events/grants, so no studio_id -> returns default profile
-    assert studio["whatsapp"] == "8888766739", f"Expected studio.whatsapp='8888766739' (default), got {studio['whatsapp']}"
-    log(f"   ✅ studio still returned with default whatsapp='8888766739'")
-    
-    log("   ✅ Edge case test PASSED")
-    return client_user_id
-
-def cleanup(admin_token, event_id, client_id, client_user_ids, booking_request_id, review_id):
-    """Cleanup: delete all created resources."""
-    log("16. CLEANUP: Deleting all created resources...")
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    
-    # Delete event
-    log(f"   Deleting event {event_id}...")
-    resp = requests.delete(f"{BASE_URL}/events/{event_id}", headers=headers)
-    if resp.status_code == 200:
-        log(f"   ✅ Event deleted")
+try:
+    # Step 1: Health check
+    print("Step 1: GET /api/ (health check)")
+    resp = requests.get(f"{BASE_URL}/", timeout=10)
+    if resp.status_code == 200 and resp.json().get("status") == "ok":
+        log_test(1, "PASS", f"Status: {resp.status_code}, Response: {resp.json()}")
     else:
-        log(f"   ⚠️  Event delete failed: {resp.status_code} {resp.text}")
-    
-    # Delete CRM client
-    log(f"   Deleting CRM client {client_id}...")
-    resp = requests.delete(f"{BASE_URL}/clients/{client_id}", headers=headers)
-    if resp.status_code == 200:
-        log(f"   ✅ CRM client deleted")
+        log_test(1, "FAIL", f"Status: {resp.status_code}, Response: {resp.text}")
+        raise Exception("Health check failed")
+
+    # Step 2: Admin login
+    print("\nStep 2: POST /api/auth/admin/login")
+    resp = requests.post(
+        f"{BASE_URL}/auth/admin/login",
+        json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
+        timeout=10
+    )
+    if resp.status_code == 200 and "session_token" in resp.json():
+        admin_token = resp.json()["session_token"]
+        log_test(2, "PASS", f"Status: {resp.status_code}, Got session_token")
     else:
-        log(f"   ⚠️  CRM client delete failed: {resp.status_code} {resp.text}")
-    
-    # Delete client users (direct DB cleanup via admin endpoint if available, or manual)
-    # Note: There's no DELETE /api/users/{user_id} endpoint in the current implementation
-    # We'll need to clean up via direct DB access or leave it for manual cleanup
-    log(f"   ⚠️  Client users cleanup: No DELETE endpoint available, will clean up via DB")
-    
-    # Delete booking request (direct DB cleanup)
-    log(f"   ⚠️  Booking request cleanup: No DELETE endpoint available, will clean up via DB")
-    
-    # Delete review (direct DB cleanup)
-    log(f"   ⚠️  Review cleanup: No DELETE endpoint available, will clean up via DB")
-    
-    # Delete studio profile (direct DB cleanup)
-    log(f"   ⚠️  Studio profile cleanup: No DELETE endpoint available, will clean up via DB")
-    
-    # Delete OTP codes (direct DB cleanup)
-    log(f"   ⚠️  OTP codes cleanup: No DELETE endpoint available, will clean up via DB")
-    
-    log("   ✅ Cleanup complete (some items require direct DB cleanup)")
+        log_test(2, "FAIL", f"Status: {resp.status_code}, Response: {resp.text}")
+        raise Exception("Admin login failed")
 
-def direct_db_cleanup():
-    """Direct MongoDB cleanup for resources without DELETE endpoints."""
-    log("17. Direct DB cleanup...")
-    try:
-        from pymongo import MongoClient
-        client = MongoClient("mongodb://localhost:27017")
-        db = client["lumiere_gallery"]
-        
-        # Delete all client users except admin
-        result = db.users.delete_many({"role": "client"})
-        log(f"   Deleted {result.deleted_count} client users")
-        
-        # Delete all access grants
-        result = db.access_grants.delete_many({})
-        log(f"   Deleted {result.deleted_count} access grants")
-        
-        # Delete all booking requests
-        result = db.booking_requests.delete_many({})
-        log(f"   Deleted {result.deleted_count} booking requests")
-        
-        # Delete all reviews
-        result = db.reviews.delete_many({})
-        log(f"   Deleted {result.deleted_count} reviews")
-        
-        # Delete all studio profiles
-        result = db.studio_profiles.delete_many({})
-        log(f"   Deleted {result.deleted_count} studio profiles")
-        
-        # Delete all OTP codes
-        result = db.otp_codes.delete_many({})
-        log(f"   Deleted {result.deleted_count} OTP codes")
-        
-        # Delete all CRM clients (in case any remain)
-        result = db.clients.delete_many({})
-        log(f"   Deleted {result.deleted_count} CRM clients")
-        
-        # Delete all contacts
-        result = db.contacts.delete_many({})
-        log(f"   Deleted {result.deleted_count} contacts")
-        
-        # Delete all important dates
-        result = db.important_dates.delete_many({})
-        log(f"   Deleted {result.deleted_count} important dates")
-        
-        log("   ✅ Direct DB cleanup complete")
-    except Exception as e:
-        log(f"   ⚠️  Direct DB cleanup failed: {e}")
+    admin_headers = {"Authorization": f"Bearer {admin_token}"}
 
-def main():
-    log("=" * 80)
-    log("SLICE 2 CRM ENDPOINTS TEST")
-    log("=" * 80)
+    # Step 3: Create event
+    print("\nStep 3: POST /api/events (create event)")
+    resp = requests.post(
+        f"{BASE_URL}/events",
+        json={"name": "QA Recovery", "category": "event"},
+        headers=admin_headers,
+        timeout=10
+    )
+    if resp.status_code == 200 and "event_id" in resp.json():
+        event_id = resp.json()["event_id"]
+        log_test(3, "PASS", f"Status: {resp.status_code}, event_id: {event_id}")
+    else:
+        log_test(3, "FAIL", f"Status: {resp.status_code}, Response: {resp.text}")
+        raise Exception("Create event failed")
+
+    # Step 4: Upload photo
+    print("\nStep 4: POST /api/events/{event_id}/photos (upload photo)")
+    test_image = create_test_image()
+    files = {"file": ("test.jpg", test_image, "image/jpeg")}
+    resp = requests.post(
+        f"{BASE_URL}/events/{event_id}/photos",
+        files=files,
+        headers=admin_headers,
+        timeout=30
+    )
+    if resp.status_code == 200 and "photo_id" in resp.json():
+        photo_data = resp.json()
+        photo_id = photo_data["photo_id"]
+        storage_path = photo_data.get("storage_path", "")
+        thumb_path = photo_data.get("thumb_path", "")
+        photo_url = photo_data.get("url", "")
+        thumb_url = photo_data.get("thumb_url", "")
+        log_test(4, "PASS", f"Status: {resp.status_code}, photo_id: {photo_id}")
+        print(f"   Storage path: {storage_path}")
+        print(f"   Thumb path: {thumb_path}")
+        print(f"   Photo URL: {photo_url} (None = uses /api/files proxy)")
+        print(f"   Thumb URL: {thumb_url} (None = uses /api/files proxy)")
+        
+        # Validate Emergent storage serving via /api/files proxy
+        if storage_path:
+            print(f"   Validating Emergent storage via /api/files/{storage_path}...")
+            photo_resp = requests.get(f"{BASE_URL}/files/{storage_path}", headers=admin_headers, timeout=10)
+            if photo_resp.status_code == 200 and photo_resp.headers.get('content-type', '').startswith('image'):
+                log_test("4a", "PASS", f"Emergent storage serving: {photo_resp.status_code}, {len(photo_resp.content)} bytes, {photo_resp.headers.get('content-type')}")
+            else:
+                log_test("4a", "FAIL", f"Emergent storage serving failed: {photo_resp.status_code}")
+        else:
+            log_test("4a", "FAIL", "No storage_path in photo response")
+    else:
+        log_test(4, "FAIL", f"Status: {resp.status_code}, Response: {resp.text}")
+        raise Exception("Upload photo failed")
+
+    # Step 5: Check indexing status (poll until complete)
+    print("\nStep 5: GET /api/events/{event_id}/indexing-status (poll until complete)")
+    max_polls = 10
+    poll_count = 0
+    indexing_complete = False
     
-    try:
-        # Admin login
-        admin_token = admin_login()
+    while poll_count < max_polls:
+        resp = requests.get(
+            f"{BASE_URL}/events/{event_id}/indexing-status",
+            headers=admin_headers,
+            timeout=10
+        )
+        if resp.status_code == 200:
+            status_data = resp.json()
+            complete = status_data.get("complete", False)
+            status = status_data.get("status", "")
+            indexed = status_data.get("indexed_photos", 0)
+            total = status_data.get("total_photos", 0)
+            faces = status_data.get("total_faces", 0)
+            
+            print(f"   Poll {poll_count + 1}: status={status}, indexed={indexed}/{total}, faces={faces}, complete={complete}")
+            
+            if complete:
+                indexing_complete = True
+                log_test(5, "PASS", f"Indexing complete: {indexed}/{total} indexed, {faces} faces detected (mock engine)")
+                break
+        else:
+            print(f"   Poll {poll_count + 1} failed: {resp.status_code}")
         
-        # Test studio profile (GET/PATCH)
-        studio_profile = test_studio_profile(admin_token)
-        
-        # Setup for client dashboard test
-        event_id = create_event(admin_token)
-        grant_client_access(admin_token, event_id, TEST_PHONE)
-        client_id = create_crm_client(admin_token, TEST_PHONE)
-        
-        # Client login
-        client_token, client_user_id = client_login_otp(TEST_PHONE, "Anjali")
-        
-        # Test client dashboard
-        test_client_dashboard(client_token, studio_profile["whatsapp"])
-        
-        # Test booking request
-        booking_request_id = test_booking_request(client_token)
-        
-        # Test reviews (with validation)
-        review_id = test_reviews(client_token)
-        
-        # Test edge case: brand-new client with no grants
-        new_client_user_id = test_edge_case_new_client()
-        
-        # Cleanup
-        client_user_ids = [client_user_id, new_client_user_id]
-        cleanup(admin_token, event_id, client_id, client_user_ids, booking_request_id, review_id)
-        
-        # Direct DB cleanup
-        direct_db_cleanup()
-        
-        log("=" * 80)
-        log("✅ ALL TESTS PASSED")
-        log("=" * 80)
-        return 0
-        
-    except AssertionError as e:
-        log(f"❌ TEST FAILED: {e}")
-        return 1
-    except Exception as e:
-        log(f"❌ UNEXPECTED ERROR: {e}")
-        import traceback
-        traceback.print_exc()
-        return 1
+        poll_count += 1
+        time.sleep(1)
+    
+    if not indexing_complete:
+        log_test(5, "FAIL", f"Indexing did not complete after {max_polls} polls")
 
-if __name__ == "__main__":
-    sys.exit(main())
+    # Step 6: List photos
+    print("\nStep 6: GET /api/events/{event_id}/photos (list photos)")
+    resp = requests.get(
+        f"{BASE_URL}/events/{event_id}/photos",
+        headers=admin_headers,
+        timeout=10
+    )
+    if resp.status_code == 200:
+        photos_data = resp.json()
+        # Handle both envelope format and direct array
+        if isinstance(photos_data, dict) and "items" in photos_data:
+            photos = photos_data["items"]
+            total = photos_data.get("total", len(photos))
+        else:
+            photos = photos_data if isinstance(photos_data, list) else []
+            total = len(photos)
+        
+        log_test(6, "PASS", f"Status: {resp.status_code}, {total} photo(s) listed")
+        if photos:
+            print(f"   First photo: {photos[0].get('photo_id', 'N/A')}")
+    else:
+        log_test(6, "FAIL", f"Status: {resp.status_code}, Response: {resp.text}")
+
+    # Step 7: Client OTP flow
+    print("\nStep 7a: POST /api/auth/client/request-otp (request OTP)")
+    test_phone = "+919000000001"
+    resp = requests.post(
+        f"{BASE_URL}/auth/client/request-otp",
+        json={"channel": "phone", "phone": test_phone},
+        timeout=10
+    )
+    if resp.status_code == 200:
+        otp_data = resp.json()
+        dev_code = otp_data.get("dev_code", "")
+        if dev_code:
+            log_test("7a", "PASS", f"Status: {resp.status_code}, dev_code: {dev_code}")
+            
+            # Step 7b: Verify OTP
+            print("\nStep 7b: POST /api/auth/client/verify-otp (verify OTP)")
+            resp = requests.post(
+                f"{BASE_URL}/auth/client/verify-otp",
+                json={"channel": "phone", "phone": test_phone, "code": dev_code},
+                timeout=10
+            )
+            if resp.status_code == 200 and "session_token" in resp.json():
+                client_token = resp.json()["session_token"]
+                log_test("7b", "PASS", f"Status: {resp.status_code}, Got client session_token")
+            else:
+                log_test("7b", "FAIL", f"Status: {resp.status_code}, Response: {resp.text}")
+        else:
+            log_test("7a", "FAIL", f"Status: {resp.status_code}, No dev_code in response")
+    else:
+        log_test("7a", "FAIL", f"Status: {resp.status_code}, Response: {resp.text}")
+
+    # Step 8: Public access flow
+    print("\nStep 8a: POST /api/public/events/{event_id}/access (public access)")
+    resp = requests.post(
+        f"{BASE_URL}/public/events/{event_id}/access",
+        json={"name": "QA Guest", "phone": "+919000000002"},
+        timeout=10
+    )
+    if resp.status_code == 200 and "session_token" in resp.json():
+        public_token = resp.json()["session_token"]
+        log_test("8a", "PASS", f"Status: {resp.status_code}, Got public session_token")
+        
+        # Step 8b: Get photos with public token
+        print("\nStep 8b: GET /api/client/events/{event_id}/photos (with public token)")
+        public_headers = {"Authorization": f"Bearer {public_token}"}
+        resp = requests.get(
+            f"{BASE_URL}/client/events/{event_id}/photos",
+            headers=public_headers,
+            timeout=10
+        )
+        if resp.status_code == 200:
+            photos_data = resp.json()
+            # Handle both envelope format and direct array
+            if isinstance(photos_data, dict) and "items" in photos_data:
+                photos = photos_data["items"]
+                total = photos_data.get("total", len(photos))
+            else:
+                photos = photos_data if isinstance(photos_data, list) else []
+                total = len(photos)
+            
+            log_test("8b", "PASS", f"Status: {resp.status_code}, {total} photo(s) accessible")
+        else:
+            log_test("8b", "FAIL", f"Status: {resp.status_code}, Response: {resp.text}")
+    else:
+        log_test("8a", "FAIL", f"Status: {resp.status_code}, Response: {resp.text}")
+
+    # Step 9: Delete event (cleanup)
+    print("\nStep 9: DELETE /api/events/{event_id} (cleanup)")
+    resp = requests.delete(
+        f"{BASE_URL}/events/{event_id}",
+        headers=admin_headers,
+        timeout=10
+    )
+    if resp.status_code == 200:
+        cleanup_data = resp.json()
+        log_test(9, "PASS", f"Status: {resp.status_code}, Cleanup: {cleanup_data}")
+        
+        # Verify deletion
+        print("\nStep 9b: GET /api/events/{event_id} (verify deletion)")
+        resp = requests.get(
+            f"{BASE_URL}/events/{event_id}",
+            headers=admin_headers,
+            timeout=10
+        )
+        if resp.status_code == 404:
+            log_test("9b", "PASS", f"Status: {resp.status_code}, Event deleted successfully")
+        else:
+            log_test("9b", "FAIL", f"Status: {resp.status_code}, Event still exists")
+    else:
+        log_test(9, "FAIL", f"Status: {resp.status_code}, Response: {resp.text}")
+
+except Exception as e:
+    print(f"\n❌ Test execution failed: {e}")
+    import traceback
+    traceback.print_exc()
+
+# Summary
+print("\n" + "=" * 80)
+print("TEST SUMMARY")
+print("=" * 80)
+
+passed = sum(1 for r in results if r["status"] == "PASS")
+failed = sum(1 for r in results if r["status"] == "FAIL")
+total = len(results)
+
+print(f"\nTotal: {total} tests")
+print(f"✅ Passed: {passed}")
+print(f"❌ Failed: {failed}")
+
+if failed == 0:
+    print("\n🎉 ALL TESTS PASSED - Backend recovery successful!")
+else:
+    print(f"\n⚠️  {failed} test(s) failed - see details above")
+
+print("\nDetailed Results:")
+for r in results:
+    symbol = "✅" if r["status"] == "PASS" else "❌"
+    print(f"{symbol} Step {r['step']}: {r['status']}")
+    if r["details"]:
+        print(f"   {r['details']}")
