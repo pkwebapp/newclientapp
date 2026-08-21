@@ -81,7 +81,7 @@ export function DesktopShell({
               <Text style={[styles.navText, isActive("/admin/settings") && styles.navTextActive]}>Settings</Text>
             </Pressable>
           ) : null}
-          <Pressable testID="nav-home" onPress={() => router.push("/login")} style={styles.navItem}>
+          <Pressable testID="nav-home" onPress={() => router.push("/")} style={styles.navItem}>
             <Ionicons name="home-outline" size={20} color={colors.onSurfaceTertiary} />
             <Text style={styles.navText}>Home</Text>
           </Pressable>

@@ -22,6 +22,10 @@ import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/th
 const statusTone = (s: string) => (s === "active" ? "success" : s === "lead" ? "gold" : "neutral");
 const TYPE_LABEL: Record<string, string> = { family: "Family", individual: "Individual", corporate: "Corporate" };
 
+export async function generateStaticParams(): Promise<Record<string, string>[]> {
+  return [];
+}
+
 export default function ClientProfile() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();

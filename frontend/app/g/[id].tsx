@@ -28,6 +28,10 @@ type Tab = "all" | "liked" | "mine";
 
 const tokenKey = (id: string) => `pik_visitor_token_${id}`;
 
+export async function generateStaticParams(): Promise<Record<string, string>[]> {
+  return [];
+}
+
 export default function PublicGallery() {
   const { id, tab: tabParam } = useLocalSearchParams<{ id: string; tab?: string }>();
   const router = useRouter();

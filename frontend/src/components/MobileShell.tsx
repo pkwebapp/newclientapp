@@ -150,7 +150,7 @@ function Drawer({
     onClose();
     setTimeout(() => {
       if (item.action === "signout") signOut();
-      else if (item.action === "home") router.replace("/login" as any);
+      else if (item.action === "home") router.replace("/" as any);
       else if (item.href) router.push(item.href as any);
     }, 60);
   };

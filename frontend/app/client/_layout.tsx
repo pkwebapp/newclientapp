@@ -1,4 +1,5 @@
 import { Redirect, Stack } from "expo-router";
+import Head from "expo-router/head";
 import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { useAuth } from "@/src/context/AuthContext";
@@ -30,9 +31,19 @@ export default function ClientLayout() {
   if (user.role !== "client") return <Redirect href="/" />;
 
   const stack = <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />;
+  const noindex = (
+    <Head>
+      <meta name="robots" content="noindex, nofollow" />
+    </Head>
+  );
 
-  if (isDesktop) return <DesktopShell role="client">{stack}</DesktopShell>;
-  return stack;
+  if (isDesktop) return <DesktopShell role="client">{noindex}{stack}</DesktopShell>;
+  return (
+    <>
+      {noindex}
+      {stack}
+    </>
+  );
 }
 
 const styles = StyleSheet.create({

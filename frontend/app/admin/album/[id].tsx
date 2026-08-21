@@ -35,6 +35,10 @@ function previewK(previewUrl: string): string {
   return m ? m[1] : "";
 }
 
+export async function generateStaticParams(): Promise<Record<string, string>[]> {
+  return [];
+}
+
 export default function AlbumDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();

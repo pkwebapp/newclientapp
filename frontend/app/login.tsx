@@ -1,4 +1,5 @@
 import { useRouter } from "expo-router";
+import Head from "expo-router/head";
 import { StyleSheet, Text, View } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
@@ -18,6 +19,9 @@ export default function Landing() {
 
   return (
     <View style={styles.container} testID="landing-screen">
+      <Head>
+        <meta name="robots" content="noindex, follow" />
+      </Head>
       <Image source={{ uri: HERO }} style={StyleSheet.absoluteFill} contentFit="cover" />
       <LinearGradient
         colors={["rgba(13,13,13,0.2)", "rgba(13,13,13,0.75)", "rgba(13,13,13,0.98)"]}
@@ -35,7 +39,7 @@ export default function Landing() {
         <View style={[{ flex: 1, justifyContent: "flex-end" }, isDesktop && styles.heroBlockDesktop]}>
           <Text style={[styles.title, isDesktop && styles.titleDesktop]}>Your moments,{"\n"}found in an instant.</Text>
           <Text style={styles.subtitle}>
-            Take a selfie and we'll surface every photo of you from the event gallery.
+            Take a selfie and we’ll surface every photo of you from the event gallery.
           </Text>
 
           <View style={[{ marginTop: spacing["2xl"], gap: spacing.md }, isDesktop && { maxWidth: 380 }]}>

@@ -25,6 +25,10 @@ import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/th
 
 type Tab = "photos" | "access" | "share" | "settings";
 
+export async function generateStaticParams(): Promise<Record<string, string>[]> {
+  return [];
+}
+
 export default function AdminEvent() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();

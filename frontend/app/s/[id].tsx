@@ -31,6 +31,10 @@ function scopeLabel(scope?: string, sharer?: string | null): string {
   return "All photos";
 }
 
+export async function generateStaticParams(): Promise<Record<string, string>[]> {
+  return [];
+}
+
 export default function SharedGallery() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
