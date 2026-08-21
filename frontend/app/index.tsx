@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import Head from "expo-router/head";
-import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -33,6 +33,21 @@ const FAQS = [
   { q: "Is my gallery private?", a: "Yes — every gallery is a private, secure link, and your selfie is used only to match your photos." },
   { q: "Which cities do you cover?", a: "Studios in Andheri West, Mumbai and Morjim, Goa — plus destination and pan-India shoots." },
 ];
+
+function FaqRow({ q, a }: { q: string; a: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={styles.faqItem}>
+      <Pressable onPress={() => setOpen((o) => !o)} style={styles.faqHead} accessibilityRole="button">
+        <H3 style={styles.faqQ}>{q}</H3>
+        <Ionicons name={open ? "remove" : "add"} size={18} color={colors.brand} />
+      </Pressable>
+      <View style={[styles.faqAnswerWrap, !open && styles.collapsed]}>
+        <P style={styles.faqA}>{a}</P>
+      </View>
+    </View>
+  );
+}
 
 export default function Home() {
   const router = useRouter();
@@ -66,7 +81,7 @@ export default function Home() {
 
       <ScrollView style={styles.page} showsVerticalScrollIndicator={false}>
         {/* ---------------- HERO ---------------- */}
-        <View style={[styles.hero, { minHeight: Math.max(500, height * 0.74) }]}>
+        <View style={[styles.hero, { minHeight: Math.max(420, height * 0.6) }]}>
           <Image source={{ uri: HERO }} style={StyleSheet.absoluteFill} contentFit="cover" />
           <LinearGradient
             colors={["rgba(14,13,12,0.25)", "rgba(14,13,12,0.78)", "rgba(14,13,12,0.99)"]}
@@ -112,38 +127,32 @@ export default function Home() {
           <Section style={styles.block}>
             <H2 style={styles.h2}>Questions, answered</H2>
             {FAQS.map((f) => (
-              <View key={f.q} style={styles.faqItem}>
-                <H3 style={styles.faqQ}>{f.q}</H3>
-                <P style={styles.faqA}>{f.a}</P>
-              </View>
+              <FaqRow key={f.q} q={f.q} a={f.a} />
             ))}
           </Section>
 
           {/* ---------------- FOOTER / NAP ---------------- */}
           <Footer style={styles.footer}>
-            <Text style={styles.footerBrand}>PK Photography</Text>
-            <P style={styles.footerTagline}>
-              Wedding, pre-wedding, event, corporate, portrait & drone photography and videography in Mumbai & Goa.
-            </P>
-            <View style={[styles.studios, isWide && styles.studiosWide]}>
-              <View style={styles.studio}>
-                <Text style={styles.studioName}>Mumbai</Text>
-                <P style={styles.addr}>C1302, Evershine Cosmic, Opp. Infiniti Mall, Andheri West, Mumbai 400053</P>
-                <A href="tel:+918888766739" style={styles.link}>+91 88887 66739</A>
-              </View>
-              <View style={styles.studio}>
-                <Text style={styles.studioName}>Goa</Text>
-                <P style={styles.addr}>House No. 1053 A, Madhlavaddo, Morjim, Goa 403512</P>
-                <A href="tel:+918188881165" style={styles.link}>+91 81888 81165</A>
+            <View style={styles.footerTop}>
+              <Text style={styles.footerBrand}>PK Photography</Text>
+              <View style={styles.social}>
+                <A href="mailto:prabhakar@pkphotography.in" style={styles.socialBtn}>
+                  <Ionicons name="mail-outline" size={17} color={colors.onSurfaceTertiary} />
+                </A>
+                <A href="https://wa.me/918888766739" style={styles.socialBtn}>
+                  <Ionicons name="logo-whatsapp" size={17} color={colors.onSurfaceTertiary} />
+                </A>
+                <A href="https://g.page/r/CVhvUcwRhP2GEAE/review" style={styles.socialBtn}>
+                  <Ionicons name="star-outline" size={17} color={colors.onSurfaceTertiary} />
+                </A>
+                <A href="https://www.pkphotography.in" style={styles.socialBtn}>
+                  <Ionicons name="globe-outline" size={17} color={colors.onSurfaceTertiary} />
+                </A>
               </View>
             </View>
-            <View style={styles.footerLinks}>
-              <A href="mailto:prabhakar@pkphotography.in" style={styles.link}>Email</A>
-              <A href="https://wa.me/918888766739" style={styles.link}>WhatsApp</A>
-              <A href="https://g.page/r/CVhvUcwRhP2GEAE/review" style={styles.link}>Reviews</A>
-              <A href="https://www.pkphotography.in" style={styles.link}>pkphotography.in</A>
-            </View>
-            <Text style={styles.copy}>© 2026 PK Photography · Powered by PIK Connect</Text>
+            <P style={styles.addr}>Mumbai · C1302, Evershine Cosmic, Andheri West 400053 · +91 88887 66739</P>
+            <P style={styles.addr}>Goa · House No. 1053 A, Morjim 403512 · +91 81888 81165</P>
+            <Text style={styles.copy}>© 2026 PK Photography · PIK Connect</Text>
           </Footer>
         </View>
       </ScrollView>
@@ -154,39 +163,38 @@ export default function Home() {
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.surface },
   hero: { justifyContent: "flex-end" },
-  heroInner: { padding: spacing.xl, paddingBottom: spacing["2xl"], gap: spacing.xl },
+  heroInner: { padding: spacing.xl, paddingBottom: spacing.xl, gap: spacing.lg },
   heroInnerWide: { maxWidth: 1120, width: "100%", alignSelf: "center", paddingHorizontal: spacing["3xl"] },
   logoRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   logo: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.sm, letterSpacing: 4, fontWeight: "600" },
-  heroCopy: { gap: spacing.md },
-  h1: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.hero, lineHeight: 46, margin: 0 },
-  h1Wide: { fontSize: 58, lineHeight: 64 },
-  heroSub: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.lg, lineHeight: 25, marginTop: spacing.xs, maxWidth: 380 },
-  ctaRow: { gap: spacing.md, marginTop: spacing.md },
-  trust: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: spacing.sm },
+  heroCopy: { gap: spacing.sm },
+  h1: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.hero, lineHeight: 44, margin: 0 },
+  h1Wide: { fontSize: 56, lineHeight: 62 },
+  heroSub: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 22, marginTop: spacing.xs, maxWidth: 340 },
+  ctaRow: { gap: spacing.sm, marginTop: spacing.md },
+  trust: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.xs, marginTop: spacing.sm },
 
-  container: { width: "100%", maxWidth: 760, alignSelf: "center", paddingHorizontal: spacing.xl },
-  block: { paddingVertical: spacing.xl, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
-  h2: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, margin: 0, marginBottom: spacing.lg },
+  container: { width: "100%", maxWidth: 640, alignSelf: "center", paddingHorizontal: spacing.xl },
+  block: { paddingVertical: spacing.lg, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  h2: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.lg, margin: 0, marginBottom: spacing.md },
 
   steps: { gap: spacing.md },
   step: { flexDirection: "row", alignItems: "center", gap: spacing.md },
-  stepIcon: { width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
-  stepText: { flex: 1, color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 22, margin: 0 },
+  stepIcon: { width: 30, height: 30, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
+  stepText: { flex: 1, color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 20, margin: 0 },
 
-  faqItem: { marginBottom: spacing.lg },
-  faqQ: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.base, margin: 0, marginBottom: 4 },
-  faqA: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 21, margin: 0 },
+  faqItem: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.divider },
+  faqHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: spacing.md, gap: spacing.md },
+  faqQ: { flex: 1, color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "600", margin: 0 },
+  faqAnswerWrap: { overflow: "hidden" },
+  collapsed: { height: 0 },
+  faqA: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 21, margin: 0, paddingBottom: spacing.md },
 
-  footer: { paddingVertical: spacing.xl, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, gap: spacing.sm },
+  footer: { paddingVertical: spacing.lg, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, gap: spacing.xs },
+  footerTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.xs },
   footerBrand: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.lg },
-  footerTagline: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 20, margin: 0, marginBottom: spacing.sm, maxWidth: 520 },
-  studios: { gap: spacing.lg, marginTop: spacing.xs },
-  studiosWide: { flexDirection: "row" },
-  studio: { flex: 1, gap: 3 },
-  studioName: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, letterSpacing: 1, textTransform: "uppercase" },
-  addr: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 19, margin: 0, maxWidth: 320 },
-  footerLinks: { flexDirection: "row", flexWrap: "wrap", gap: spacing.lg, marginTop: spacing.md },
-  link: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, textDecorationLine: "none" },
-  copy: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.xs, marginTop: spacing.md },
+  social: { flexDirection: "row", gap: spacing.xs },
+  socialBtn: { width: 36, height: 36, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary, textDecorationLine: "none" },
+  addr: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.xs, lineHeight: 18, margin: 0 },
+  copy: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.xs, marginTop: spacing.sm },
 });
