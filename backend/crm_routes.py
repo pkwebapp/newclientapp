@@ -88,6 +88,19 @@ def next_occurrence(datestr: str):
 CLIENT_TYPES = {"family", "individual", "corporate"}
 CLIENT_STATUSES = {"lead", "active", "past"}
 
+# Pipeline lifecycle (finer-grained than status): New Inquiry -> Booked -> Completed -> Past
+PIPELINE_STAGES = ["new_inquiry", "booked", "completed", "past"]
+_STAGE_FROM_STATUS = {"lead": "new_inquiry", "active": "booked", "past": "past"}
+_STATUS_FROM_STAGE = {"new_inquiry": "lead", "booked": "active", "completed": "active", "past": "past"}
+
+
+def stage_from_status(status: str | None) -> str:
+    return _STAGE_FROM_STATUS.get(status or "", "new_inquiry")
+
+
+def status_from_stage(stage: str) -> str:
+    return _STATUS_FROM_STAGE.get(stage, "active")
+
 
 def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:12]}"
@@ -100,6 +113,7 @@ def public_client(doc: dict, *, contacts=None, important_dates=None,
         "name": doc.get("name"),
         "type": doc.get("type", "family"),
         "status": doc.get("status", "active"),
+        "pipeline_stage": doc.get("pipeline_stage") or stage_from_status(doc.get("status", "active")),
         "tags": doc.get("tags", []),
         "notes": doc.get("notes"),
         "created_at": doc.get("created_at"),
@@ -203,6 +217,7 @@ class ClientCreate(BaseModel):
     name: str = Field(min_length=1)
     type: str = "family"
     status: str = "active"
+    pipeline_stage: Optional[str] = None
     tags: list[str] = []
     notes: Optional[str] = None
     contacts: list[ContactIn] = []
@@ -213,6 +228,7 @@ class ClientUpdate(BaseModel):
     name: Optional[str] = None
     type: Optional[str] = None
     status: Optional[str] = None
+    pipeline_stage: Optional[str] = None
     tags: Optional[list[str]] = None
     notes: Optional[str] = None
 
@@ -230,12 +246,14 @@ async def create_client(body: ClientCreate, admin: dict = Depends(require_admin)
     studio_id = admin["user_id"]
     client_id = _new_id("cli")
     ts = now_iso()
+    stage = body.pipeline_stage if body.pipeline_stage in PIPELINE_STAGES else stage_from_status(body.status)
     doc = {
         "client_id": client_id,
         "studio_id": studio_id,
         "name": body.name.strip(),
         "type": body.type,
         "status": body.status,
+        "pipeline_stage": stage,
         "tags": [t.strip() for t in body.tags if t.strip()],
         "notes": body.notes,
         "created_at": ts,
@@ -277,12 +295,15 @@ async def list_clients(
     q: Optional[str] = None,
     status: Optional[str] = None,
     tag: Optional[str] = None,
+    stage: Optional[str] = None,
     admin: dict = Depends(require_admin),
 ):
     studio_id = admin["user_id"]
     query: dict = {"studio_id": studio_id}
     if status and status in CLIENT_STATUSES:
         query["status"] = status
+    if stage and stage in PIPELINE_STAGES:
+        query["pipeline_stage"] = stage
     if tag:
         query["tags"] = tag
 
