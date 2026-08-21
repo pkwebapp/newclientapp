@@ -10,7 +10,7 @@ import io
 from PIL import Image
 
 # Base URL from frontend/.env
-BASE_URL = "https://newclient-demo.preview.emergentagent.com/api"
+BASE_URL = "https://client-portal-453.preview.emergentagent.com/api"
 
 # Admin credentials
 ADMIN_EMAIL = "admin@lumiere.studio"
