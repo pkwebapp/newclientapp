@@ -168,6 +168,10 @@ class AlbumAccessCreate(BaseModel):
     phone: Optional[str] = None
 
 
+class AlbumClientAssignmentCreate(BaseModel):
+    client_id: str
+
+
 async def _admin_album_or_404(album_id: str, admin: dict) -> dict:
     a = await db.albums.find_one({"album_id": album_id}, {"_id": 0})
     if not a:
@@ -200,6 +204,7 @@ async def create_album(body: AlbumCreate, admin: dict = Depends(require_admin)):
         "spreads": [],
         "back_cover": None,
         "warnings": [],
+        "client_assignments": [],
         "created_by": admin["user_id"],
         "created_at": now_iso(),
         "updated_at": now_iso(),
@@ -432,9 +437,85 @@ async def revoke_album_access(album_id: str, grant_id: str,
     return {"status": "revoked"}
 
 
+async def _assigned_album_access(album: dict, user: dict) -> bool:
+    ors = []
+    if user.get("email"):
+        ors.append({"email": {"$in": [user["email"].lower(), user["email"]]}})
+    if user.get("phone"):
+        ors.append({"phone": user["phone"]})
+    if not ors:
+        return False
+    for assignment in album.get("client_assignments") or []:
+        client_id = assignment.get("client_id")
+        if client_id and await db.contacts.find_one(
+            {"client_id": client_id, "studio_id": album.get("created_by"), "$or": ors},
+            {"_id": 0, "contact_id": 1},
+        ):
+            return True
+    return False
+
+
+async def _album_assignment_rows(album: dict, admin: dict) -> list[dict]:
+    rows = []
+    for assignment in album.get("client_assignments") or []:
+        client_id = assignment.get("client_id")
+        client = await db.clients.find_one(
+            {"client_id": client_id, "studio_id": admin["user_id"]}, {"_id": 0, "name": 1}
+        )
+        if not client:
+            continue
+        rows.append({
+            "client_id": client_id,
+            "client_name": client.get("name"),
+            "contact_count": await db.contacts.count_documents({"client_id": client_id, "studio_id": admin["user_id"]}),
+            "assigned_at": assignment.get("assigned_at"),
+        })
+    return rows
+
+
+@album_router.get("/{album_id}/client-assignments")
+async def list_album_client_assignments(album_id: str, admin: dict = Depends(require_admin)):
+    album = await _admin_album_or_404(album_id, admin)
+    return await _album_assignment_rows(album, admin)
+
+
+@album_router.post("/{album_id}/client-assignments")
+async def assign_album_client(album_id: str, body: AlbumClientAssignmentCreate,
+                              admin: dict = Depends(require_admin)):
+    album = await _admin_album_or_404(album_id, admin)
+    client = await db.clients.find_one(
+        {"client_id": body.client_id, "studio_id": admin["user_id"]}, {"_id": 0, "client_id": 1}
+    )
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    assignments = [a for a in (album.get("client_assignments") or []) if a.get("client_id") != body.client_id]
+    assignments.append({
+        "client_id": body.client_id,
+        "assigned_by": admin["user_id"],
+        "assigned_at": now_iso(),
+    })
+    await db.albums.update_one(
+        {"album_id": album_id}, {"$set": {"client_assignments": assignments, "updated_at": now_iso()}}
+    )
+    fresh = await _admin_album_or_404(album_id, admin)
+    return {"status": "assigned", "album_id": album_id, "assignments": await _album_assignment_rows(fresh, admin)}
+
+
+@album_router.delete("/{album_id}/client-assignments/{client_id}")
+async def remove_album_client_assignment(album_id: str, client_id: str,
+                                         admin: dict = Depends(require_admin)):
+    album = await _admin_album_or_404(album_id, admin)
+    assignments = [a for a in (album.get("client_assignments") or []) if a.get("client_id") != client_id]
+    await db.albums.update_one(
+        {"album_id": album_id}, {"$set": {"client_assignments": assignments, "updated_at": now_iso()}}
+    )
+    return {"status": "unassigned", "album_id": album_id, "client_id": client_id}
+
+
+
 @album_router.get("/client/mine")
 async def client_my_albums(user: dict = Depends(require_client)):
-    """Albums shared with the logged-in client (by email or phone grant)."""
+    """Albums shared directly or through a CRM Client/Family assignment."""
     ors = []
     if user.get("email"):
         ors.append({"client_email": user["email"].lower()})
@@ -442,19 +523,34 @@ async def client_my_albums(user: dict = Depends(require_client)):
         ors.append({"client_phone": user["phone"]})
     if not ors:
         return []
+
     grants = await db.album_access_grants.find(
         {"status": "active", "$or": ors}, {"_id": 0}
     ).to_list(2000)
-    out, seen = [], set()
-    for g in grants:
-        aid = g["album_id"]
-        if aid in seen:
-            continue
-        seen.add(aid)
+    album_ids = {g["album_id"] for g in grants}
+
+    contact_ors = []
+    if user.get("email"):
+        contact_ors.append({"email": {"$in": [user["email"].lower(), user["email"]]}})
+    if user.get("phone"):
+        contact_ors.append({"phone": user["phone"]})
+    if contact_ors:
+        contacts = await db.contacts.find({"$or": contact_ors}, {"_id": 0, "client_id": 1}).to_list(2000)
+        family_ids = list({c["client_id"] for c in contacts})
+        if family_ids:
+            assigned = await db.albums.find(
+                {"client_assignments.client_id": {"$in": family_ids}}, {"_id": 0, "album_id": 1}
+            ).to_list(2000)
+            album_ids.update(a["album_id"] for a in assigned)
+
+    out = []
+    for aid in album_ids:
         a = await db.albums.find_one({"album_id": aid}, {"_id": 0})
         if not a or a.get("archived") or a.get("status") != "published":
             continue
         if not (a.get("cover") or a.get("spreads")):
+            continue
+        if not await _assigned_album_access(a, user) and aid not in {g["album_id"] for g in grants}:
             continue
         out.append({
             "album_id": a["album_id"],

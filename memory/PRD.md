@@ -100,3 +100,27 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - Originals stay on Drive. App stores only metadata + serves web-sized previews via proxy GET /api/gdrive/thumb/{fileId}?w=. Face search (AWS Rekognition) runs on previews, mapped by Drive file id.
 - Endpoints: POST /api/events/gdrive, POST /api/events/{id}/sync (add/update/remove counts, idempotent). Events carry source="gdrive". Recurses subfolders and preserves folder_path.
 - Frontend: New Event screen source toggle (Upload / Google Drive) + link field; admin gallery shows "Sync now" panel; dashboard shows a "Drive" badge. Client masonry grid, face-scan, likes/proofing all reuse existing flows.
+
+
+
+## Cloud integration configuration (2026-08)
+- [x] User-provided Cloudinary credentials configured in backend-only environment.
+- [x] User-provided AWS credentials configured for Rekognition in `ap-southeast-2`; S3 import bucket set to `faceser`.
+- Pending: live integration smoke test and optional frontend browser test.
+
+
+
+## Import session (2026-08)
+- [x] Confirmed workspace origin is `https://github.com/pkwebapp/newclientapp`.
+- [x] Restored missing local runtime dependencies and environment files without changing application code.
+- [x] Restarted backend and Expo services; backend health endpoint and frontend preview respond successfully.
+- Note: local clone does not contain the prior Cloudinary/AWS secrets; current runtime defaults to mock face engine and Emergent storage until credentials are intentionally configured.
+
+
+
+## Feature: CRM client-group access assignments (2026-08)
+- Added multi-client assignments for galleries and flipbook albums from each Admin Access tab.
+- Assignment resolves through each Client/Family's contact email/phone, so current and future contacts inherit access without manual grants.
+- Gallery assignments support Full gallery vs Matched only; album assignments match direct album access. Removing an assignment removes only the automatic group access.
+
+- Assignment relationship is many-to-many: one client can be assigned to multiple galleries/albums, and each gallery/album can include multiple clients.

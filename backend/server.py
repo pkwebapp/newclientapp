@@ -78,22 +78,59 @@ async def admin_event_or_404(event_id: str, admin: dict) -> dict:
     return event
 
 
+async def _assigned_event_access(event: dict, client_user: dict) -> dict | None:
+    """Resolve CRM client/family assignments for any of its current contacts."""
+    ors = []
+    if client_user.get("email"):
+        email = client_user["email"].lower()
+        ors.append({"email": {"$in": [email, client_user["email"]]}})
+    if client_user.get("phone"):
+        ors.append({"phone": client_user["phone"]})
+    if not ors:
+        return None
+    assignments = list(event.get("client_assignments") or [])
+    # Keep older events linked with the original single client_id working.
+    if event.get("client_id") and not any(a.get("client_id") == event["client_id"] for a in assignments):
+        assignments.append({"client_id": event["client_id"], "full_gallery_access": True})
+    for assignment in assignments:
+        client_id = assignment.get("client_id")
+        if not client_id:
+            continue
+        contact = await db.contacts.find_one(
+            {"client_id": client_id, "studio_id": event.get("created_by"), "$or": ors},
+            {"_id": 0, "contact_id": 1},
+        )
+        if contact:
+            return {
+                "grant_id": f"crm_assignment:{event['event_id']}:{client_id}",
+                "event_id": event["event_id"],
+                "client_id": client_id,
+                "status": "active",
+                "full_gallery_access": bool(assignment.get("full_gallery_access", False)),
+                "source": "crm_assignment",
+            }
+    return None
+
+
 async def client_grant_or_403(event_id: str, client_user: dict) -> dict:
-    """Return the active access grant for this client on the event, else 403."""
-    ensure_event_available(await get_event_or_404(event_id))
+    """Return a direct or CRM-assigned active access grant, else 403."""
+    event = await get_event_or_404(event_id)
+    ensure_event_available(event)
     ors = []
     if client_user.get("email"):
         ors.append({"client_email": client_user["email"].lower()})
     if client_user.get("phone"):
         ors.append({"client_phone": client_user["phone"]})
-    if not ors:
-        raise HTTPException(status_code=403, detail="No access to this gallery")
-    grant = await db.access_grants.find_one(
-        {"event_id": event_id, "status": "active", "$or": ors}, {"_id": 0}
-    )
-    if not grant:
-        raise HTTPException(status_code=403, detail="No access to this gallery")
-    return grant
+    if ors:
+        grant = await db.access_grants.find_one(
+            {"event_id": event_id, "status": "active", "$or": ors}, {"_id": 0}
+        )
+        if grant:
+            return grant
+    assigned = await _assigned_event_access(event, client_user)
+    if assigned:
+        return assigned
+    raise HTTPException(status_code=403, detail="No access to this gallery")
 
 
 def make_thumbnail(image_bytes: bytes, max_side: int = 480) -> tuple[bytes, int, int]:
@@ -380,6 +417,11 @@ class AccessGrantCreate(BaseModel):
     full_gallery_access: bool = False
 
 
+class EventClientAssignmentCreate(BaseModel):
+    client_id: str
+    full_gallery_access: bool = True
+
+
 @api_router.post("/events")
 async def create_event(body: EventCreate, admin: dict = Depends(require_admin)):
     if body.category not in CATEGORIES:
@@ -401,6 +443,12 @@ async def create_event(body: EventCreate, admin: dict = Depends(require_admin)):
         "cover_path": None,
         "share_enabled": True,
         "client_id": body.client_id,
+        "client_assignments": ([{
+            "client_id": body.client_id,
+            "full_gallery_access": True,
+            "assigned_by": admin["user_id"],
+            "assigned_at": now_iso(),
+        }] if body.client_id else []),
         "value": body.value or 0,
         "created_by": admin["user_id"],
         "created_at": now_iso(),
@@ -1057,6 +1105,76 @@ async def revoke_access(event_id: str, grant_id: str, admin: dict = Depends(requ
     return {"status": "revoked"}
 
 
+async def _event_assignment_rows(event: dict, admin: dict) -> list[dict]:
+    assignments = list(event.get("client_assignments") or [])
+    if event.get("client_id") and not any(a.get("client_id") == event["client_id"] for a in assignments):
+        assignments.insert(0, {"client_id": event["client_id"], "full_gallery_access": True})
+    rows = []
+    for assignment in assignments:
+        client_id = assignment.get("client_id")
+        client = await db.clients.find_one(
+            {"client_id": client_id, "studio_id": admin["user_id"]}, {"_id": 0, "name": 1}
+        )
+        if not client:
+            continue
+        contact_count = await db.contacts.count_documents({"client_id": client_id, "studio_id": admin["user_id"]})
+        rows.append({
+            "client_id": client_id,
+            "client_name": client.get("name"),
+            "contact_count": contact_count,
+            "full_gallery_access": bool(assignment.get("full_gallery_access", True)),
+            "assigned_at": assignment.get("assigned_at"),
+        })
+    return rows
+
+
+@api_router.get("/events/{event_id}/client-assignments")
+async def list_event_client_assignments(event_id: str, admin: dict = Depends(require_admin)):
+    event = await admin_event_or_404(event_id, admin)
+    return await _event_assignment_rows(event, admin)
+
+
+@api_router.post("/events/{event_id}/client-assignments")
+async def assign_event_client(event_id: str, body: EventClientAssignmentCreate,
+                              admin: dict = Depends(require_admin)):
+    event = await admin_event_or_404(event_id, admin)
+    client = await db.clients.find_one(
+        {"client_id": body.client_id, "studio_id": admin["user_id"]}, {"_id": 0, "client_id": 1}
+    )
+    if not client:
+        raise HTTPException(status_code=404, detail="Client not found")
+    assignments = [a for a in (event.get("client_assignments") or []) if a.get("client_id") != body.client_id]
+    assignments.append({
+        "client_id": body.client_id,
+        "full_gallery_access": body.full_gallery_access,
+        "assigned_by": admin["user_id"],
+        "assigned_at": now_iso(),
+    })
+    updates = {"client_assignments": assignments}
+    if not event.get("client_id"):
+        updates["client_id"] = body.client_id
+    await db.events.update_one({"event_id": event_id}, {"$set": updates})
+    fresh = await get_event_or_404(event_id)
+    return {"status": "assigned", "event_id": event_id, "assignments": await _event_assignment_rows(fresh, admin)}
+
+
+@api_router.delete("/events/{event_id}/client-assignments/{client_id}")
+async def remove_event_client_assignment(event_id: str, client_id: str,
+                                         admin: dict = Depends(require_admin)):
+    event = await admin_event_or_404(event_id, admin)
+    assignments = [a for a in (event.get("client_assignments") or []) if a.get("client_id") != client_id]
+    updates = {"client_assignments": assignments}
+    if event.get("client_id") == client_id:
+        if assignments:
+            updates["client_id"] = assignments[0].get("client_id")
+        else:
+            await db.events.update_one({"event_id": event_id}, {"$set": updates, "$unset": {"client_id": ""}})
+            return {"status": "unassigned", "event_id": event_id, "client_id": client_id}
+    await db.events.update_one({"event_id": event_id}, {"$set": updates})
+    return {"status": "unassigned", "event_id": event_id, "client_id": client_id}
+
+
+
 @api_router.get("/events/{event_id}/clients")
 async def list_event_clients(event_id: str, admin: dict = Depends(require_admin)):
     await admin_event_or_404(event_id, admin)
@@ -1299,19 +1417,46 @@ async def client_events(user: dict = Depends(require_client)):
         ors.append({"client_phone": user["phone"]})
     if not ors:
         return []
+
     grants = await db.access_grants.find({"status": "active", "$or": ors}, {"_id": 0}).to_list(2000)
+    by_event: dict[str, dict] = {g["event_id"]: g for g in grants}
+
+    # A CRM assignment grants the same gallery access to every matching contact,
+    # including contacts added after the assignment was made.
+    contact_ors = []
+    if user.get("email"):
+        contact_ors.append({"email": {"$in": [user["email"].lower(), user["email"]]}})
+    if user.get("phone"):
+        contact_ors.append({"phone": user["phone"]})
+    family_ids = []
+    if contact_ors:
+        contacts = await db.contacts.find({"$or": contact_ors}, {"_id": 0, "client_id": 1}).to_list(2000)
+        family_ids = list({c["client_id"] for c in contacts})
+    if family_ids:
+        assigned_events = await db.events.find(
+            {"$or": [
+                {"client_assignments.client_id": {"$in": family_ids}},
+                {"client_id": {"$in": family_ids}},
+            ]},
+            {"_id": 0},
+        ).to_list(2000)
+        for event in assigned_events:
+            assignment = await _assigned_event_access(event, user)
+            if assignment:
+                current = by_event.get(event["event_id"])
+                if not current or assignment.get("full_gallery_access"):
+                    by_event[event["event_id"]] = assignment
+
     out = []
-    for g in grants:
-        event = await db.events.find_one({"event_id": g["event_id"]}, {"_id": 0})
-        if not event:
+    for event_id, grant in by_event.items():
+        event = await db.events.find_one({"event_id": event_id}, {"_id": 0})
+        if not event or event.get("status") == "archived":
             continue
-        if event.get("status") == "archived":
-            continue  # archived galleries are offline for clients
         album = await db.client_albums.find_one(
-            {"event_id": g["event_id"], "client_user_id": user["user_id"]}, {"_id": 0}
+            {"event_id": event_id, "client_user_id": user["user_id"]}, {"_id": 0}
         )
         pe = public_event(event)
-        pe["full_gallery_access"] = g.get("full_gallery_access", False)
+        pe["full_gallery_access"] = grant.get("full_gallery_access", False)
         pe["my_photos_count"] = len(album.get("photo_ids", [])) if album else 0
         pe["searched"] = album is not None
         out.append(pe)

@@ -49,6 +49,8 @@ export default function AlbumDetail() {
   const [album, setAlbum] = useState<any>(null);
   const [share, setShare] = useState<any>(null);
   const [grants, setGrants] = useState<any[]>([]);
+  const [crmClients, setCrmClients] = useState<any[]>([]);
+  const [clientAssignments, setClientAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
 
@@ -69,14 +71,18 @@ export default function AlbumDetail() {
 
   const load = useCallback(async () => {
     try {
-      const [a, sh, ac] = await Promise.all([
+      const [a, sh, ac, assigned, crm] = await Promise.all([
         api.get(`/albums/${id}`),
         api.get(`/albums/${id}/share`),
         api.get(`/albums/${id}/access`),
+        api.get(`/albums/${id}/client-assignments`),
+        api.get(`/clients`),
       ]);
       setAlbum(a);
       setShare(sh);
       setGrants(ac);
+      setClientAssignments(assigned || []);
+      setCrmClients(crm || []);
       setTitle(a.title || "");
       setClient(a.client_name || "");
       setEvent(a.event_name || "");
@@ -188,6 +194,24 @@ export default function AlbumDetail() {
       setGrants(await api.get(`/albums/${id}/access`));
     } catch (e: any) {
       toast.show(e instanceof ApiError ? e.message : "Could not grant access", "error");
+    }
+  };
+
+
+
+  const assignClientGroup = async (client: any) => {
+    const existing = clientAssignments.some((a) => a.client_id === client.client_id);
+    try {
+      if (existing) {
+        await api.del(`/albums/${id}/client-assignments/${client.client_id}`);
+        toast.show(`${client.name} unassigned`, "info");
+      } else {
+        await api.post(`/albums/${id}/client-assignments`, { client_id: client.client_id });
+        toast.show(`${client.name} assigned · all contacts now have access`, "success");
+      }
+      load();
+    } catch (e: any) {
+      toast.show(e?.message || "Could not update client assignment", "error");
     }
   };
 
@@ -400,8 +424,35 @@ export default function AlbumDetail() {
         {/* ---------------- ACCESS ---------------- */}
         {tab === "access" && (
           <>
-            <Text style={styles.sectionTitle}>Grant access</Text>
-            <Text style={styles.muted}>Clients you add here will see this album in their app after they log in with the same email or number.</Text>
+            <Text style={styles.sectionTitle}>Client groups</Text>
+            <Text style={styles.muted}>
+              Assigning a client gives access to every contact in that client. New contacts inherit access automatically after this album is published.
+            </Text>
+            {crmClients.length === 0 ? (
+              <Text style={styles.muted}>Add a client in the Clients section to assign a group.</Text>
+            ) : (
+              crmClients.map((client) => {
+                const assigned = clientAssignments.some((a) => a.client_id === client.client_id);
+                return (
+                  <Pressable
+                    key={client.client_id}
+                    testID={`album-client-assignment-${client.client_id}`}
+                    onPress={() => assignClientGroup(client)}
+                    style={styles.grantRow}
+                  >
+                    <Ionicons name={assigned ? "checkmark-circle" : "people-outline"} size={22} color={assigned ? colors.brand : colors.muted} />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.grantValue} numberOfLines={1}>{client.name}</Text>
+                      <Text style={styles.muted}>{client.stats?.contact_count || 0} contacts · {assigned ? "Assigned" : "Not assigned"}</Text>
+                    </View>
+                    <Text style={styles.assignText}>{assigned ? "Remove" : "Assign"}</Text>
+                  </Pressable>
+                );
+              })
+            )}
+
+            <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Grant individual access</Text>
+            <Text style={styles.muted}>People you add directly can open this album after logging in with the same email or number.</Text>
             <View style={styles.channelRow}>
               {(["email", "phone"] as const).map((c) => (
                 <Pressable key={c} testID={`album-grant-channel-${c}`} onPress={() => setChannel(c)} style={[styles.channelBtn, channel === c && styles.channelActive]}>
@@ -419,7 +470,7 @@ export default function AlbumDetail() {
             />
             <Button testID="album-add-grant-btn" title="Grant access" icon="person-add-outline" onPress={addGrant} />
 
-            <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>People with access ({activeGrants.length})</Text>
+            <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Individual access ({activeGrants.length})</Text>
             {grants.length === 0 ? (
               <Text style={styles.muted}>No one has been given access yet.</Text>
             ) : (
@@ -628,6 +679,7 @@ const styles = StyleSheet.create({
   channelTextActive: { color: colors.onBrand, fontWeight: "600" },
   grantRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginTop: spacing.md },
   grantValue: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base },
+  assignText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
   revoke: { color: colors.onError, fontFamily: fonts.text, fontSize: fontSize.sm },
   switchRow: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.md },
   switchLabel: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.lg },

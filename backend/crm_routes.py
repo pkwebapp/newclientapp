@@ -327,7 +327,10 @@ async def list_clients(
     for d in docs:
         cid = d["client_id"]
         contact_count = await db.contacts.count_documents({"client_id": cid})
-        event_count = await db.events.count_documents({"client_id": cid, "created_by": studio_id})
+        event_count = await db.events.count_documents({
+            "created_by": studio_id,
+            "$or": [{"client_id": cid}, {"client_assignments.client_id": cid}],
+        })
         primary = await db.contacts.find_one(
             {"client_id": cid, "is_primary": True}, {"_id": 0}
         ) or await db.contacts.find_one({"client_id": cid}, {"_id": 0})
@@ -346,7 +349,11 @@ async def get_client(client_id: str, admin: dict = Depends(require_admin)):
     contacts = await db.contacts.find({"client_id": client_id}, {"_id": 0}).sort("created_at", 1).to_list(500)
     dates = await db.important_dates.find({"client_id": client_id}, {"_id": 0}).sort("date", 1).to_list(500)
     events = await db.events.find(
-        {"client_id": client_id, "created_by": studio_id}, {"_id": 0}
+        {
+            "created_by": studio_id,
+            "$or": [{"client_id": client_id}, {"client_assignments.client_id": client_id}],
+        },
+        {"_id": 0},
     ).sort("created_at", -1).to_list(500)
 
     lifetime_value = sum((e.get("value") or 0) for e in events)
@@ -388,9 +395,17 @@ async def delete_client(client_id: str, admin: dict = Depends(require_admin)):
     await _client_or_404(client_id, studio_id)
     await db.contacts.delete_many({"client_id": client_id})
     await db.important_dates.delete_many({"client_id": client_id})
-    # Unlink events (keep the galleries/albums intact).
+    # Unlink events/albums (keep galleries and albums intact).
     await db.events.update_many(
         {"client_id": client_id, "created_by": studio_id}, {"$unset": {"client_id": ""}}
+    )
+    await db.events.update_many(
+        {"created_by": studio_id, "client_assignments.client_id": client_id},
+        {"$pull": {"client_assignments": {"client_id": client_id}}},
+    )
+    await db.albums.update_many(
+        {"created_by": studio_id, "client_assignments.client_id": client_id},
+        {"$pull": {"client_assignments": {"client_id": client_id}}},
     )
     await db.clients.delete_one({"client_id": client_id})
     return {"status": "deleted", "client_id": client_id}
@@ -504,7 +519,17 @@ async def attach_event(client_id: str, event_id: str, admin: dict = Depends(requ
     event = await db.events.find_one({"event_id": event_id, "created_by": studio_id})
     if not event:
         raise HTTPException(status_code=404, detail="Event not found")
-    await db.events.update_one({"event_id": event_id}, {"$set": {"client_id": client_id}})
+    await db.events.update_one(
+        {"event_id": event_id},
+        {"$set": {"client_id": client_id}, "$addToSet": {
+            "client_assignments": {
+                "client_id": client_id,
+                "full_gallery_access": True,
+                "assigned_by": studio_id,
+                "assigned_at": now_iso(),
+            }
+        }},
+    )
     return {"status": "attached", "event_id": event_id, "client_id": client_id}
 
 
@@ -513,8 +538,8 @@ async def detach_event(client_id: str, event_id: str, admin: dict = Depends(requ
     studio_id = admin["user_id"]
     await _client_or_404(client_id, studio_id)
     await db.events.update_one(
-        {"event_id": event_id, "created_by": studio_id, "client_id": client_id},
-        {"$unset": {"client_id": ""}},
+        {"event_id": event_id, "created_by": studio_id},
+        {"$unset": {"client_id": ""}, "$pull": {"client_assignments": {"client_id": client_id}}},
     )
     return {"status": "detached", "event_id": event_id, "client_id": client_id}
 

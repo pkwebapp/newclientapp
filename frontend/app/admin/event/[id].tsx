@@ -46,6 +46,8 @@ export default function AdminEvent() {
   const [status, setStatus] = useState<any>(null);
   const [grants, setGrants] = useState<any[]>([]);
   const [clients, setClients] = useState<any[]>([]);
+  const [crmClients, setCrmClients] = useState<any[]>([]);
+  const [clientAssignments, setClientAssignments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadDone, setUploadDone] = useState(0);
@@ -75,13 +77,15 @@ export default function AdminEvent() {
       const e = await api.get(`/events/${id}`);
       setEvent(e);
       setThreshold(String(Math.round(e.similarity_threshold)));
-      const [ps, st, gr, cl, sh, vs] = await Promise.all([
+      const [ps, st, gr, cl, sh, vs, assigned, crm] = await Promise.all([
         api.get(`/events/${id}/photos?limit=${PHOTO_PAGE}&offset=0`),
         api.get(`/events/${id}/indexing-status`),
         api.get(`/events/${id}/access`),
         api.get(`/events/${id}/clients`),
         api.get(`/events/${id}/share`),
         api.get(`/events/${id}/visitors`),
+        api.get(`/events/${id}/client-assignments`),
+        api.get(`/clients`),
       ]);
       setPhotos(ps.items || []);
       setPhotosTotal(ps.total || 0);
@@ -91,6 +95,8 @@ export default function AdminEvent() {
       setClients(cl);
       setShare(sh);
       setVisitors(vs);
+      setClientAssignments(assigned || []);
+      setCrmClients(crm || []);
     } catch (e: any) {
       toast.show(e?.message || "Could not load event", "error");
     } finally {
@@ -262,6 +268,39 @@ export default function AdminEvent() {
       load();
     } catch (e: any) {
       toast.show(e instanceof ApiError ? e.message : "Could not grant access", "error");
+    }
+  };
+
+
+
+  const assignClientGroup = async (client: any) => {
+    const existing = clientAssignments.find((a) => a.client_id === client.client_id);
+    try {
+      if (existing) {
+        await api.del(`/events/${id}/client-assignments/${client.client_id}`);
+        toast.show(`${client.name} unassigned`, "info");
+      } else {
+        await api.post(`/events/${id}/client-assignments`, {
+          client_id: client.client_id,
+          full_gallery_access: true,
+        });
+        toast.show(`${client.name} assigned · all contacts now have access`, "success");
+      }
+      load();
+    } catch (e: any) {
+      toast.show(e?.message || "Could not update client assignment", "error");
+    }
+  };
+
+  const toggleClientGroupAccess = async (assignment: any) => {
+    try {
+      await api.post(`/events/${id}/client-assignments`, {
+        client_id: assignment.client_id,
+        full_gallery_access: !assignment.full_gallery_access,
+      });
+      load();
+    } catch (e: any) {
+      toast.show(e?.message || "Could not update client access", "error");
     }
   };
 
@@ -589,7 +628,48 @@ export default function AdminEvent() {
         {/* ---------------- ACCESS ---------------- */}
         {tab === "access" && (
           <>
-            <Text style={styles.sectionTitle}>Grant access</Text>
+            <Text style={styles.sectionTitle}>Client groups</Text>
+            <Text style={styles.muted}>
+              Assigning a client gives access to every contact in that client. New contacts inherit access automatically.
+            </Text>
+            {crmClients.length === 0 ? (
+              <Text style={styles.muted}>Add a client in the Clients section to assign a group.</Text>
+            ) : (
+              crmClients.map((client) => {
+                const assignment = clientAssignments.find((a) => a.client_id === client.client_id);
+                return (
+                  <View key={client.client_id} style={styles.grantRow} testID={`client-assignment-${client.client_id}`}>
+                    <Pressable
+                      testID={`assign-client-${client.client_id}`}
+                      onPress={() => assignClientGroup(client)}
+                      style={{ flexDirection: "row", alignItems: "center", gap: spacing.md, flex: 1, minHeight: 44 }}
+                    >
+                      <Ionicons name={assignment ? "checkmark-circle" : "people-outline"} size={22} color={assignment ? colors.brand : colors.muted} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.grantValue} numberOfLines={1}>{client.name}</Text>
+                        <Text style={styles.muted}>{client.stats?.contact_count || 0} contacts · {assignment ? "Assigned" : "Not assigned"}</Text>
+                      </View>
+                    </Pressable>
+                    {assignment ? (
+                      <View style={{ alignItems: "flex-end", gap: spacing.xs }}>
+                        <Switch
+                          testID={`client-assignment-full-${client.client_id}`}
+                          value={!!assignment.full_gallery_access}
+                          onValueChange={() => toggleClientGroupAccess(assignment)}
+                          trackColor={{ true: colors.brand, false: colors.surfaceTertiary }}
+                          thumbColor={colors.onSurface}
+                        />
+                        <Text style={styles.muted}>{assignment.full_gallery_access ? "Full gallery" : "Matched only"}</Text>
+                      </View>
+                    ) : (
+                      <Text style={styles.assignText}>Assign</Text>
+                    )}
+                  </View>
+                );
+              })
+            )}
+
+            <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Grant individual access</Text>
             <View style={styles.channelRow}>
               {(["email", "phone"] as const).map((c) => (
                 <Pressable key={c} testID={`grant-channel-${c}`} onPress={() => setChannel(c)} style={[styles.channelBtn, channel === c && styles.channelActive]}>
@@ -614,7 +694,7 @@ export default function AdminEvent() {
             </View>
             <Button testID="add-grant-btn" title="Invite client" icon="person-add-outline" onPress={addGrant} />
 
-            <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Invited clients ({grants.filter((g) => g.status === "active").length})</Text>
+            <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Individual access ({grants.filter((g) => g.status === "active").length})</Text>
             {grants.length === 0 ? (
               <Text style={styles.muted}>No clients invited yet.</Text>
             ) : (
@@ -943,6 +1023,7 @@ const styles = StyleSheet.create({
   switchHint: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
   grantRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginTop: spacing.md },
   grantValue: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base },
+  assignText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
   revoke: { color: colors.onError, fontFamily: fonts.text, fontSize: fontSize.sm },
   muted: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginBottom: spacing.sm },
   presetRow: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md, marginBottom: spacing.md },
