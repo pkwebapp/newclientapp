@@ -3792,3 +3792,52 @@ agent_communication:
       
       The implementation looks production-ready based on code review. Automated testing can be added later with improved login flow handling.
 
+
+
+#====================================================================================================
+# NEW TASK — Service-specific WhatsApp enquiry text and website design offering
+#====================================================================================================
+
+user_problem_statement: |
+  Make the Explore Services WhatsApp enquiry text specific to the selected service and add website design
+  to Design Services.
+
+frontend:
+  - task: "Service-specific WhatsApp enquiries"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/client/services.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Each service card now opens WhatsApp with a URL-encoded enquiry naming the selected service,
+          for example: “Hi PK Photography, I’d like to enquire about Wedding Photography & Videography.”
+          The general Ask on WhatsApp CTA remains available with a generic enquiry for users who do not
+          select a service. Design Services now explicitly includes website design. Frontend lint passed,
+          Expo restarted, and the route returns HTTP 200. Frontend interaction testing is pending permission.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Selected service opens WhatsApp with service-specific text"
+    - "Design Services includes website design"
+    - "Generic WhatsApp CTA and service list regression"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Updated the Explore Services enquiry flow and Design Services copy. Expo preview is healthy; frontend
+      testing remains opt-in.
+

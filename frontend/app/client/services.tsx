@@ -33,15 +33,19 @@ const SERVICES: Service[] = [
   { title: "Photo & Video Editing", detail: "Professional retouching, colour work, reels, teasers and polished campaign delivery.", icon: "color-wand-outline" },
   { title: "Album Design & Printing", detail: "Premium handcrafted albums designed to preserve memories for generations.", icon: "book-outline" },
   { title: "Drone Photography & Videography", detail: "Cinematic aerial footage for weddings, events, real estate and commercial projects.", icon: "airplane-outline" },
-  { title: "Design Services", detail: "Creative design for print, digital marketing, branding and promotional materials.", icon: "brush-outline" },
+  { title: "Design Services", detail: "Creative design for website design, print, digital marketing, branding and promotional materials.", icon: "brush-outline" },
 ];
 
 export default function ClientServices() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
-  const askAboutServices = () => {
-    Linking.openURL("https://wa.me/918888766739?text=Hi%20PK%20Photography%2C%20I%27d%20like%20to%20explore%20your%20services.").catch(() => {});
+  const askAboutService = (serviceTitle?: string) => {
+    const message = serviceTitle
+      ? `Hi PK Photography, I’d like to enquire about ${serviceTitle}.`
+      : "Hi PK Photography, I’d like to explore your services.";
+    const url = `https://wa.me/918888766739?text=${encodeURIComponent(message)}`;
+    Linking.openURL(url).catch(() => {});
   };
 
   return (
@@ -67,7 +71,7 @@ export default function ClientServices() {
 
         <View style={styles.list}>
           {SERVICES.map((service, index) => (
-            <Pressable key={service.title} testID={`service-card-${index + 1}`} style={styles.serviceCard} onPress={askAboutServices}>
+            <Pressable key={service.title} testID={`service-card-${index + 1}`} style={styles.serviceCard} onPress={() => askAboutService(service.title)}>
               <View style={styles.serviceIcon}>
                 <Ionicons name={service.icon} size={20} color={colors.brand} />
               </View>
@@ -83,7 +87,7 @@ export default function ClientServices() {
         <View style={styles.cta}>
           <Text style={styles.ctaTitle}>Have something specific in mind?</Text>
           <Text style={styles.ctaText}>Tell us what you are planning and we’ll suggest the right coverage.</Text>
-          <Button testID="services-whatsapp-btn" title="Ask on WhatsApp" icon="logo-whatsapp" onPress={askAboutServices} />
+          <Button testID="services-whatsapp-btn" title="Ask on WhatsApp" icon="logo-whatsapp" onPress={() => askAboutService()} />
         </View>
       </ScrollView>
     </View>

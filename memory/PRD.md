@@ -152,6 +152,12 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 
 
 
+## Refinement: Service-specific enquiry messages (2026-08)
+- Service cards now open WhatsApp with a pre-filled message naming the selected service.
+- Design Services now includes website design; the general WhatsApp CTA remains generic.
+
+
+
 ## Bug fix: Reliable back-button navigation (2026-08)
 - Added a shared `goBackOr` helper that uses history when available and explicit route fallbacks for direct links, refreshes, bookmarks, and native cold starts.
 - Applied to login, admin, client, gallery, album, settings, create, selfie, booking, and review screens.
