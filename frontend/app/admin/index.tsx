@@ -74,7 +74,7 @@ export default function AdminDashboard() {
         </View>
       ) : (
         <ScrollView
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing["3xl"] }}
+          contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 96 }}
           refreshControl={
             <RefreshControl tintColor={colors.brand} refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} />
           }
@@ -113,6 +113,7 @@ export default function AdminDashboard() {
               title="Create your first gallery"
               subtitle="Set up an event gallery, upload photos, and invite your clients."
               action={<Button testID="empty-new-gallery" title="New gallery" icon="add" onPress={() => router.push("/admin/new-event")} />}
+              style={{ marginTop: spacing.md }}
             />
           ) : (
             recent.map((e) => (

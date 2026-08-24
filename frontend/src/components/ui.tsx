@@ -137,14 +137,16 @@ export function EmptyState({
   title,
   subtitle,
   action,
+  style,
 }: {
   icon?: keyof typeof Ionicons.glyphMap;
   title: string;
   subtitle?: string;
   action?: React.ReactNode;
+  style?: any;
 }) {
   return (
-    <View style={styles.empty}>
+    <View style={[styles.empty, style]}>
       <View style={styles.emptyIcon}>
         <Ionicons name={icon} size={34} color={colors.brand} />
       </View>

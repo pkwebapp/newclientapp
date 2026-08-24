@@ -2265,3 +2265,125 @@ agent_communication:
         17/17 core tests passed. Desktop/web redesign with sidebar shell is production-ready. Both admin and client 
         authenticated flows working correctly across desktop and mobile viewports. Minor observations noted but do 
         not block functionality.
+
+
+#====================================================================================================
+# NEW TASK (this session) — Admin dashboard empty-state CTA cut off by bottom tab bar
+#====================================================================================================
+frontend:
+  - task: "Fix: Admin dashboard empty-state 'New gallery' button cut off / too low (below bottom tab bar) on mobile"
+    implemented: true
+    working: true
+    file: "app/admin/index.tsx, src/components/ui.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            USER-REPORTED BUG (mobile, admin Studio Console dashboard at route /admin):
+            On the empty state ("Create your first gallery"), the orange "New gallery" CTA button
+            was pushed too low and its bottom was cut off / hidden behind the bottom tab bar.
+            ROOT CAUSE: (1) ScrollView contentContainerStyle paddingBottom was only spacing["3xl"]
+            (48) which is LESS than the bottom tab bar height (~64 + insets.bottom), so the last
+            content sat under the blur tab bar. (2) Shared EmptyState has a large marginTop
+            spacing["3xl"] (48) pushing the whole block down.
+            FIX:
+            • Added an optional `style` prop to the shared EmptyState (src/components/ui.tsx),
+              default behavior unchanged (`<View style={[styles.empty, style]}>`).
+            • On the admin dashboard (app/admin/index.tsx): passed style={{ marginTop: spacing.md }}
+              to raise the empty state, and increased ScrollView paddingBottom to
+              `insets.bottom + 96` so the CTA clears the bottom tab bar.
+            VERIFY ON A MOBILE VIEWPORT (~390px) logged in as admin (admin@lumiere.studio /
+            Admin@12345) with a studio that has NO galleries (empty state). Confirm:
+            (a) the "New gallery" button is FULLY visible above the bottom tab bar (not cut off /
+            not hidden), (b) it sits a bit higher than before, (c) tapping it navigates to the
+            new-event screen, (d) no layout break on the rest of the dashboard, (e) also sanity
+            check a wider/desktop viewport still looks fine.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ✅ ✅ BUG FIX VERIFIED - ALL TESTS PASSED
+            
+            Tested mobile UI bug fix on PIK Connect admin dashboard at mobile viewport (390x844).
+            Admin: admin@lumiere.studio / Admin@12345 (studio with NO galleries, empty state visible).
+            
+            PRIMARY TEST RESULT - BUTTON VISIBILITY:
+            ✅ PASS: "New gallery" button is FULLY VISIBLE above bottom tab bar
+            
+            📊 PRECISE MEASUREMENTS (Mobile 390x844):
+            • Button position: y = 680.0px
+            • Button height: 52.0px
+            • Button bottom edge: 732.0px
+            • Tab bar top edge: 787.0px
+            • **CLEARANCE: 55.0px** (button does NOT overlap tab bar)
+            
+            VERIFICATION CHECKLIST:
+            ✅ (a) Button FULLY visible above tab bar - NOT cut off, NOT hidden (55px clearance)
+            ✅ (b) Button sits higher than before (marginTop reduced from spacing["3xl"] to spacing.md)
+            ✅ (c) Tapping button navigates correctly to /admin/new-event screen
+            ✅ (d) Dashboard layout NOT broken - all sections intact (stats, quick actions, recent galleries)
+            ✅ (e) Desktop viewport (1440x900) sanity check PASSED - sidebar renders correctly, no layout issues
+            
+            TECHNICAL DETAILS:
+            • ScrollView paddingBottom: insets.bottom + 96 (provides sufficient clearance)
+            • EmptyState marginTop: spacing.md (raised from spacing["3xl"])
+            • Bottom tab bar height: ~49px (measured at y=787)
+            • Mobile viewport: 390x844 (portrait)
+            • Desktop viewport: 1440x900 (sidebar shell, no tab bar)
+            
+            ADDITIONAL TESTS:
+            ✅ No console errors detected
+            ✅ No red-screen crashes
+            ✅ No failed network requests (except non-critical Cloudflare RUM beacon)
+            ✅ Button click interaction working correctly
+            ✅ Navigation back to dashboard working
+            
+            SCREENSHOTS CAPTURED:
+            • MOBILE-dashboard-bottom-view.png - Shows button fully visible above tab bar
+            • new-event-page.png - Shows successful navigation after button click
+            • DESKTOP-dashboard.png - Shows desktop layout with sidebar
+            
+            The bug fix is production-ready. The "New gallery" button is now fully visible on mobile
+            with 55px clearance above the bottom tab bar, eliminating the previous cut-off issue.
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: |
+        Please verify the admin dashboard empty-state CTA fix on a MOBILE viewport (~390px).
+        Login: admin@lumiere.studio / Admin@12345. The studio should currently have no galleries
+        (empty state visible). Focus: the orange "New gallery" button must be fully visible above
+        the bottom tab bar (previously it was cut off / hidden behind the tab bar), and slightly
+        higher than before. Confirm tapping it opens the new-event screen and nothing else on the
+        dashboard is broken. A quick desktop-viewport sanity check is also welcome.
+    - agent: "testing"
+      message: |
+        ✅ MOBILE UI BUG FIX VERIFICATION COMPLETE - BUG FIXED
+        
+        Verified the admin dashboard empty-state "New gallery" button fix on mobile viewport (390x844).
+        
+        PRIMARY FINDING:
+        ✅ The "New gallery" button is now FULLY VISIBLE above the bottom tab bar with 55px clearance.
+        ✅ The bug is FIXED - button is no longer cut off or hidden behind the tab bar.
+        
+        MEASUREMENTS:
+        • Button bottom edge: 732px
+        • Tab bar top edge: 787px
+        • Clearance: 55px (sufficient gap)
+        
+        ALL VERIFICATION POINTS PASSED:
+        ✅ Button fully visible above tab bar (not cut off)
+        ✅ Button sits higher than before (marginTop reduced)
+        ✅ Button click navigates to /admin/new-event correctly
+        ✅ Dashboard layout intact (no broken elements)
+        ✅ Desktop viewport (1440x900) renders correctly with sidebar
+        
+        The ScrollView paddingBottom fix (insets.bottom + 96) and EmptyState marginTop reduction
+        successfully resolved the mobile UI issue. Production-ready.
