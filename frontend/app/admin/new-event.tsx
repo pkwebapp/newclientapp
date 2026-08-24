@@ -8,6 +8,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
+import { goBackOr } from "@/src/navigation/back";
+
 
 const CATEGORIES = ["portrait", "wedding", "event"];
 
@@ -76,7 +78,7 @@ export default function NewEvent() {
 
   return (
     <View style={styles.container} testID="new-event-screen">
-      <GlassHeader title="New Event" onBack={() => router.back()} topInset={insets.top} />
+      <GlassHeader title="New Event" onBack={() => goBackOr(router, "/admin")} topInset={insets.top} />
       <KeyboardAwareScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + spacing["2xl"] }]} bottomOffset={24} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>Photo source</Text>
         <View style={styles.segment}>

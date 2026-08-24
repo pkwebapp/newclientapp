@@ -8,6 +8,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { goBackOr } from "@/src/navigation/back";
+
 
 const TYPES = [
   { key: "family", label: "Family", icon: "people" },
@@ -92,7 +94,7 @@ export default function NewClient() {
 
   return (
     <View style={styles.container} testID="new-client-screen">
-      <GlassHeader title="New Client" onBack={() => router.back()} topInset={insets.top} />
+      <GlassHeader title="New Client" onBack={() => goBackOr(router, "/admin/clients")} topInset={insets.top} />
       <KeyboardAwareScrollView
         contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + spacing["2xl"] }]}
         bottomOffset={24}

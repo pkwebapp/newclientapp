@@ -21,6 +21,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ApiError, imgUrl, getAuthToken, UploadItem } from "@/src/api/client";
 import { Button, TextField, Pill, GlassHeader, EmptyState, useToast } from "@/src/components/ui";
 import { useResponsive } from "@/src/hooks/use-responsive";
+import { goBackOr } from "@/src/navigation/back";
+
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
 type Tab = "photos" | "access" | "share" | "settings";
@@ -523,7 +525,7 @@ export default function AdminEvent() {
 
   return (
     <View style={styles.container} testID="admin-event-screen">
-      <GlassHeader title={event?.name} subtitle={categoryMeta[event?.category]?.label} onBack={() => router.back()} topInset={insets.top} />
+      <GlassHeader title={event?.name} subtitle={categoryMeta[event?.category]?.label} onBack={() => goBackOr(router, "/admin")} topInset={insets.top} />
 
       <View style={styles.tabs}>
         {(["photos", "access", "share", "settings"] as Tab[]).map((t) => (
@@ -975,7 +977,7 @@ export default function AdminEvent() {
             <Text style={styles.modalTitle}>Delete this gallery?</Text>
             <Text style={styles.modalText}>
               This permanently deletes {event?.photo_count ?? 0} photo{(event?.photo_count ?? 0) !== 1 ? "s" : ""} from cloud
-              storage, erases all face data, and removes every client's access. This cannot be undone.
+              storage, erases all face data, and removes every client’s access. This cannot be undone.
             </Text>
             <Text style={[styles.muted, { alignSelf: "stretch", marginBottom: spacing.xs }]}>
               Type DELETE to confirm
@@ -1009,7 +1011,7 @@ export default function AdminEvent() {
             <Ionicons name="trash-outline" size={28} color={colors.onError} />
             <Text style={styles.modalTitle}>Delete face data?</Text>
             <Text style={styles.modalText}>
-              This removes {confirmDelete?.name || "this client"}'s face signature and matched album for this event. They can re-scan later.
+              This removes {confirmDelete?.name || "this client"}’s face signature and matched album for this event. They can re-scan later.
             </Text>
             <Button testID="confirm-delete-btn" title="Delete" variant="danger" onPress={() => deleteFaceData(confirmDelete)} />
             <Pressable onPress={() => setConfirmDelete(null)} style={{ marginTop: spacing.md, alignItems: "center" }}>

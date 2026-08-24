@@ -9,6 +9,8 @@ import { api, ApiError } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { useResponsive } from "@/src/hooks/use-responsive";
+import { goBackOr } from "@/src/navigation/back";
+
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
 export default function ClientLogin() {
@@ -74,7 +76,7 @@ export default function ClientLogin() {
     <View style={styles.container} testID="client-login-screen">
       <GlassHeader
         title={step === "identify" ? "Sign in" : "Verify"}
-        onBack={() => (step === "verify" ? setStep("identify") : router.back())}
+        onBack={() => (step === "verify" ? setStep("identify") : goBackOr(router, "/"))}
         topInset={insets.top}
       />
       <KeyboardAwareScrollView
@@ -89,7 +91,7 @@ export default function ClientLogin() {
         {step === "identify" ? (
           <>
             <Text style={styles.title}>Find your photos</Text>
-            <Text style={styles.sub}>We'll send a one-time code to verify it's you.</Text>
+            <Text style={styles.sub}>We’ll send a one-time code to verify it’s you.</Text>
 
             <View style={styles.tabs}>
               {(["email", "phone"] as const).map((c) => (

@@ -3,7 +3,6 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
   Linking,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -20,6 +19,8 @@ import * as Haptics from "expo-haptics";
 import { api, ApiError } from "@/src/api/client";
 import { Button, GlassHeader, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { goBackOr } from "@/src/navigation/back";
+
 
 export default function SelfieScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -119,7 +120,7 @@ export default function SelfieScreen() {
   if (!consentGiven) {
     return (
       <View style={styles.container} testID="consent-screen">
-        <GlassHeader title="Before we begin" onBack={() => router.back()} topInset={insets.top} />
+        <GlassHeader title="Before we begin" onBack={() => goBackOr(router, `/client/event/${id}`)} topInset={insets.top} />
         <ScrollView contentContainerStyle={[styles.consentBody, { paddingBottom: insets.bottom + spacing.xl }]}>
           <View style={styles.consentIcon}>
             <Ionicons name="shield-checkmark-outline" size={30} color={colors.brand} />
@@ -141,7 +142,7 @@ export default function SelfieScreen() {
           ))}
           <View style={{ marginTop: spacing["2xl"] }}>
             <Button testID="accept-consent-btn" title="I agree — continue" loading={accepting} onPress={acceptConsent} />
-            <Pressable testID="decline-consent-btn" onPress={() => router.back()} style={{ marginTop: spacing.lg, alignItems: "center" }}>
+            <Pressable testID="decline-consent-btn" onPress={() => goBackOr(router, `/client/event/${id}`)} style={{ marginTop: spacing.lg, alignItems: "center" }}>
               <Text style={styles.decline}>Not now</Text>
             </Pressable>
           </View>
@@ -154,7 +155,7 @@ export default function SelfieScreen() {
   if (!permission?.granted) {
     return (
       <View style={styles.container} testID="camera-permission-screen">
-        <GlassHeader title="Camera access" onBack={() => router.back()} topInset={insets.top} />
+        <GlassHeader title="Camera access" onBack={() => goBackOr(router, `/client/event/${id}`)} topInset={insets.top} />
         <View style={styles.permBody}>
           <View style={styles.consentIcon}>
             <Ionicons name="camera-outline" size={30} color={colors.brand} />
@@ -193,7 +194,7 @@ export default function SelfieScreen() {
       </View>
 
       <View style={[styles.camHeader, { paddingTop: insets.top + spacing.sm }]}>
-        <Pressable testID="camera-back" onPress={() => router.back()} style={styles.roundBtn} hitSlop={10}>
+        <Pressable testID="camera-back" onPress={() => goBackOr(router, `/client/event/${id}`)} style={styles.roundBtn} hitSlop={10}>
           <Ionicons name="chevron-back" size={24} color={colors.onSurface} />
         </Pressable>
         <View style={styles.tip}>

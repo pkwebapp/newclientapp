@@ -8,6 +8,8 @@ import { api, downloadPhoto } from "@/src/api/client";
 import { PhotoGrid } from "@/src/components/PhotoGrid";
 import { EmptyState, GlassHeader, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { goBackOr } from "@/src/navigation/back";
+
 
 export default function AdminClientGallery() {
   const { eventId, clientId, name } = useLocalSearchParams<{ eventId: string; clientId: string; name?: string }>();
@@ -62,7 +64,7 @@ export default function AdminClientGallery() {
       <GlassHeader
         title={name || "Client gallery"}
         subtitle={tab === "matched" ? "Matched photos" : "Liked photos"}
-        onBack={() => router.back()}
+        onBack={() => goBackOr(router, "/admin")}
         topInset={insets.top}
       />
       {loading ? (

@@ -8,6 +8,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { goBackOr } from "@/src/navigation/back";
+
 
 export default function ReviewScreen() {
   const router = useRouter();
@@ -45,7 +47,7 @@ export default function ReviewScreen() {
 
   return (
     <View style={styles.container} testID="review-screen">
-      <GlassHeader title="Review Your Experience" onBack={() => router.back()} topInset={insets.top} />
+      <GlassHeader title="Review Your Experience" onBack={() => goBackOr(router, "/client")} topInset={insets.top} />
       <KeyboardAwareScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + spacing["2xl"] }]} bottomOffset={24} keyboardShouldPersistTaps="handled">
         {done ? (
           <View style={styles.doneWrap}>

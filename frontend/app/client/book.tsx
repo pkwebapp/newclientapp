@@ -8,6 +8,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { goBackOr } from "@/src/navigation/back";
+
 
 const SERVICES = [
   { key: "Wedding", icon: "heart" },
@@ -53,7 +55,7 @@ export default function BookPhotographer() {
   if (done) {
     return (
       <View style={styles.container} testID="book-screen">
-        <GlassHeader title="Book Photographer" onBack={() => router.back()} topInset={insets.top} />
+        <GlassHeader title="Book Photographer" onBack={() => goBackOr(router, "/client")} topInset={insets.top} />
         <View style={styles.doneWrap}>
           <View style={styles.doneIcon}>
             <Ionicons name="checkmark" size={40} color={colors.brand} />
@@ -70,7 +72,7 @@ export default function BookPhotographer() {
 
   return (
     <View style={styles.container} testID="book-screen">
-      <GlassHeader title="Book Us Again" onBack={() => router.back()} topInset={insets.top} />
+      <GlassHeader title="Book Us Again" onBack={() => goBackOr(router, "/client")} topInset={insets.top} />
       <KeyboardAwareScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + spacing["2xl"] }]} bottomOffset={24} keyboardShouldPersistTaps="handled">
         <Text style={styles.label}>What do you need?</Text>
         <View style={styles.chipWrap}>

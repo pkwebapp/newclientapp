@@ -21,6 +21,7 @@ import {
   ADMIN_TAB_ROOTS,
   ADMIN_DRAWER_ITEMS,
   ADMIN_DRAWER_FOOTER,
+  CLIENT_DRAWER_ITEMS,
   TabItem,
   DrawerItem,
 } from "@/src/navigation/nav-config";
@@ -143,7 +144,7 @@ function Drawer({
 
   if (!mounted) return null;
 
-  const items = role === "admin" ? ADMIN_DRAWER_ITEMS : [];
+  const items = role === "admin" ? ADMIN_DRAWER_ITEMS : CLIENT_DRAWER_ITEMS;
   const footer = ADMIN_DRAWER_FOOTER;
 
   const handle = (item: DrawerItem) => {

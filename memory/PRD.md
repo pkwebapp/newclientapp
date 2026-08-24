@@ -149,3 +149,9 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 ## Feature: Web landing page screen separation (2026-08)
 - Desktop web hero now fills one viewport so the How it works section begins on the next scroll screen.
 - Mobile and native hero sizing remain unchanged.
+
+
+
+## Bug fix: Reliable back-button navigation (2026-08)
+- Added a shared `goBackOr` helper that uses history when available and explicit route fallbacks for direct links, refreshes, bookmarks, and native cold starts.
+- Applied to login, admin, client, gallery, album, settings, create, selfie, booking, and review screens.

@@ -8,6 +8,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { goBackOr } from "@/src/navigation/back";
+
 
 export default function StudioSettings() {
   const router = useRouter();
@@ -59,7 +61,7 @@ export default function StudioSettings() {
 
   return (
     <View style={styles.container} testID="studio-settings-screen">
-      <GlassHeader title="Studio Settings" onBack={() => router.back()} topInset={insets.top} />
+      <GlassHeader title="Studio Settings" onBack={() => goBackOr(router, "/admin")} topInset={insets.top} />
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
       ) : (

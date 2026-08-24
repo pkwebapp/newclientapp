@@ -18,6 +18,7 @@ const ADMIN_NAV: NavItem[] = [
 
 const CLIENT_NAV: NavItem[] = [
   { label: "Your Memories", icon: "images-outline", href: "/client" },
+  { label: "Explore Services", icon: "sparkles-outline", href: "/client/services" },
 ];
 
 /**
@@ -43,7 +44,8 @@ export function DesktopShell({
     if (href === "/admin/galleries") return pathname.startsWith("/admin/galleries") || pathname.startsWith("/admin/event");
     if (href === "/admin/clients") return pathname === "/admin/clients" || pathname.startsWith("/admin/client");
     if (href === "/admin/albums") return pathname.startsWith("/admin/album");
-    if (href === "/client") return pathname === "/client" || pathname.startsWith("/client/");
+    if (href === "/client/services") return pathname === "/client/services";
+    if (href === "/client") return pathname === "/client";
     return pathname === href;
   };
 

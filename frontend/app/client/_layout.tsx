@@ -4,7 +4,9 @@ import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
 
 import { useAuth } from "@/src/context/AuthContext";
 import { useResponsive } from "@/src/hooks/use-responsive";
+import { MobileShell } from "@/src/components/MobileShell";
 import { DesktopShell } from "@/src/components/DesktopShell";
+
 import { colors, fonts, fontSize } from "@/src/theme";
 
 /**
@@ -38,12 +40,7 @@ export default function ClientLayout() {
   );
 
   if (isDesktop) return <DesktopShell role="client">{noindex}{stack}</DesktopShell>;
-  return (
-    <>
-      {noindex}
-      {stack}
-    </>
-  );
+  return <MobileShell role="client">{noindex}{stack}</MobileShell>;
 }
 
 const styles = StyleSheet.create({

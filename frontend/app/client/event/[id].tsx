@@ -11,6 +11,8 @@ import { EmptyState, GlassHeader, Button, useToast } from "@/src/components/ui";
 import { PhotoGrid } from "@/src/components/PhotoGrid";
 import { sharePhotoFile } from "@/src/utils/share-photo";
 
+import { goBackOr } from "@/src/navigation/back";
+
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
 export default function ClientEventDetail() {
@@ -181,7 +183,7 @@ export default function ClientEventDetail() {
       <GlassHeader
         title={detail?.name || "Gallery"}
         subtitle={detail ? categoryMeta[detail.category]?.label : undefined}
-        onBack={() => router.back()}
+        onBack={() => goBackOr(router, "/client")}
         topInset={insets.top}
       />
       {loading ? (

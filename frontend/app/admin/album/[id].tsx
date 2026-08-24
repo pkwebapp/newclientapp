@@ -19,8 +19,10 @@ import * as DocumentPicker from "expo-document-picker";
 import * as Clipboard from "expo-clipboard";
 
 import { api, ApiError } from "@/src/api/client";
-import { Button, TextField, GlassHeader, EmptyState, Pill, useToast } from "@/src/components/ui";
+import { Button, TextField, GlassHeader, Pill, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { goBackOr } from "@/src/navigation/back";
+
 
 type Tab = "pages" | "share" | "access" | "settings";
 
@@ -310,7 +312,7 @@ export default function AlbumDetail() {
     try {
       await api.del(`/albums/${id}`);
       toast.show("Album deleted", "success");
-      router.back();
+      goBackOr(router, "/admin/albums");
     } catch (e: any) {
       toast.show(e instanceof ApiError ? e.message : "Delete failed", "error");
       setDeleting(false);
@@ -342,7 +344,7 @@ export default function AlbumDetail() {
 
   return (
     <View style={styles.container} testID="admin-album-detail">
-      <GlassHeader title={album.title} subtitle={[album.client_name, album.event_name].filter(Boolean).join(" · ") || "Album flipbook"} onBack={() => router.back()} topInset={insets.top} />
+      <GlassHeader title={album.title} subtitle={[album.client_name, album.event_name].filter(Boolean).join(" · ") || "Album flipbook"} onBack={() => goBackOr(router, "/admin/albums")} topInset={insets.top} />
 
       <View style={styles.tabs}>
         {(["pages", "share", "access", "settings"] as Tab[]).map((t) => (
@@ -678,7 +680,7 @@ export default function AlbumDetail() {
             <Ionicons name="warning-outline" size={28} color={colors.onError} />
             <Text style={styles.modalTitle}>Delete this album?</Text>
             <Text style={styles.modalText}>
-              This permanently deletes all {album.page_count || 0} rendered pages, the music track, and every client's access. This cannot be undone.
+              This permanently deletes all {album.page_count || 0} rendered pages, the music track, and every client’s access. This cannot be undone.
             </Text>
             <Text style={[styles.muted, { alignSelf: "stretch", marginBottom: spacing.xs }]}>Type DELETE to confirm</Text>
             <TextField testID="delete-album-confirm-input" value={deleteText} onChangeText={setDeleteText} autoCapitalize="characters" placeholder="DELETE" />

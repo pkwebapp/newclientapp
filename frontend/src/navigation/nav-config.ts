@@ -84,6 +84,18 @@ export const ADMIN_DRAWER_ITEMS: DrawerItem[] = [
     href: "/admin/settings",
   },
 ];
+// ---- Client (Client Gallery) ----
+export const CLIENT_DRAWER_ITEMS: DrawerItem[] = [
+  {
+    key: "services",
+    label: "Explore Services",
+    sublabel: "Photography, films & creative services",
+    icon: "sparkles-outline",
+    href: "/client/services",
+  },
+];
+
+
 
 export const ADMIN_DRAWER_FOOTER: DrawerItem[] = [
   { key: "home", label: "Landing page", icon: "home-outline", action: "home" },

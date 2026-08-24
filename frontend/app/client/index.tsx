@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, imgUrl } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { EmptyState, Pill, GlassHeader, useToast } from "@/src/components/ui";
+import { HeaderMenuButton } from "@/src/components/MobileShell";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
 const FALLBACK =
@@ -97,6 +98,7 @@ export default function ClientDashboard() {
         title="Your Memories"
         subtitle={`Welcome, ${firstName}`}
         topInset={insets.top}
+        left={<HeaderMenuButton />}
         right={
           <Pressable testID="signout-btn" onPress={signOut} hitSlop={10} style={{ padding: 6 }}>
             <Ionicons name="log-out-outline" size={22} color={colors.onSurfaceTertiary} />
