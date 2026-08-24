@@ -3841,3 +3841,164 @@ agent_communication:
       Updated the Explore Services enquiry flow and Design Services copy. Expo preview is healthy; frontend
       testing remains opt-in.
 
+
+
+#====================================================================================================
+# NEW TASK — Use same-event cover photo on Client Dashboard
+#====================================================================================================
+
+user_problem_statement: |
+  For event cards on the Client Dashboard, use a cover photo from the same event only instead of an
+  unrelated fallback image.
+
+backend:
+  - task: "Resolve client dashboard event covers from the same event"
+    implemented: true
+    working: true
+    file: "backend/crm_routes.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: false
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added event_cover_for_client(): it prefers the event cover and falls back to the first photo
+          belonging to that event. Google Drive events return an event-specific preview URL. The dashboard
+          memory payload now includes cover_path, cover_drive_id, and cover_url. Backend compiled and health
+          endpoint returned 200 after restart.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL 11 BACKEND TESTS PASSED - Same-event cover photo feature fully functional.
+          
+          Tested comprehensive end-to-end flow with throwaway events and client dashboard access:
+          
+          TEST SCENARIOS:
+          1. ✅ Admin login → 200 with session_token
+          2. ✅ Event WITH explicit cover_path:
+             • Created event1 with explicit cover_path set to photo's thumb_path
+             • Dashboard returns cover_path matching the explicit cover
+             • cover_path: lumiere-gallery/events/evt_8d817a9aca4e/pho_4ffd40ff5596_thumb.jpg ✓
+          
+          3. ✅ Event WITHOUT cover_path but WITH photos (fallback behavior):
+             • Created event2 with 2 photos, no explicit cover_path
+             • Dashboard correctly falls back to first photo's thumb_path
+             • cover_path: lumiere-gallery/events/evt_e18289b0d0ac/pho_37615fe76178_thumb.jpg ✓
+             • Verified cover_path contains event2_id (same-event validation) ✓
+             • Verified cover_path does NOT contain event1_id or event3_id ✓
+          
+          4. ✅ Event WITHOUT cover_path and WITHOUT photos:
+             • Created event3 with no photos
+             • Dashboard correctly returns None for all cover fields
+             • cover_path: None, cover_drive_id: None, cover_url: None ✓
+          
+          5. ✅ Client access and dashboard:
+             • Granted client access to all 3 events via POST /api/events/{id}/access
+             • Client OTP login successful (OTP_DEV_MODE=true, dev_code: 985887)
+             • GET /api/me/dashboard → 200 with 3 memories ✓
+             • All memories include cover_path, cover_drive_id, cover_url fields ✓
+          
+          6. ✅ Google Drive event cover (code inspection):
+             • Inspected event_cover_for_client() function (lines 174-188)
+             • If event has cover_drive_id, returns it directly (line 177-179)
+             • If fallback photo has source="gdrive" and drive_file_id, returns drive_file_id (line 186-187)
+             • event_cover_url() generates Google Drive preview URL: /api/gdrive/thumb/{drive_file_id}?w=1200 (line 192-193)
+             • Google Drive covers remain event-specific (query scoped by event_id on line 181) ✓
+          
+          7. ✅ Existing auth and event APIs regression:
+             • GET /api/ → 200 (health check) ✓
+             • GET /api/events (admin) → 200 ✓
+             • GET /api/events/{id} (admin) → 200 ✓
+             • GET /api/client/events (client) → 200 ✓
+             • GET /api/client/events/{id}/photos (client) → 200 ✓
+          
+          8. ✅ Cleanup:
+             • Deleted all 3 throwaway events (evt_8d817a9aca4e, evt_e18289b0d0ac, evt_0185af6b9a99)
+             • All photos and access grants cleaned up with events ✓
+          
+          9. ✅ Backend logs check:
+             • No 5xx errors detected in backend logs
+             • All requests returned correct status codes (200 for operations, 400 only for initial test with wrong category)
+          
+          KEY FEATURES VERIFIED:
+          ✅ Event with explicit cover_path returns that cover in dashboard
+          ✅ Event without cover_path falls back to first photo from SAME event (sorted by uploaded_at, photo_id)
+          ✅ Event without cover_path and without photos returns None for all cover fields
+          ✅ Google Drive event covers remain event-specific (code inspection confirms query scoped by event_id)
+          ✅ Dashboard memory payload includes cover_path, cover_drive_id, and cover_url fields
+          ✅ Client with access can call GET /api/me/dashboard and receive expected cover fields
+          ✅ Existing auth and event APIs remain 200 (no regressions)
+          ✅ No 5xx errors in backend logs
+          
+          TECHNICAL DETAILS:
+          • event_cover_for_client() function correctly implements same-event cover resolution
+          • Fallback query: db.photos.find({"event_id": event["event_id"]}) ensures same-event only
+          • Google Drive photos return cover_drive_id instead of cover_path
+          • event_cover_url() generates preview URL for Google Drive covers
+          • All cover fields (cover_path, cover_drive_id, cover_url) included in dashboard response
+          
+          Backend is production-ready. 0 failures.
+
+frontend:
+  - task: "Remove unrelated event-card fallback artwork"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/client/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Removed the unrelated global stock-image fallback. Client event cards now use the same-event
+          cover_url or same-event cover_path; events without photos show the native dark card background
+          instead of another event's artwork. Frontend lint passed. Backend and frontend verification are
+          pending.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Dashboard event card cover belongs to the same event"
+    - "Missing cover/photo shows neutral placeholder, not unrelated image"
+    - "Upload and Google Drive event cover regression"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Updated client dashboard event-card cover resolution to remain event-specific and removed the
+      unrelated global fallback. Backend is restarted and healthy; test_result must guide verification.
+  - agent: "testing"
+    message: |
+      ✅ BACKEND TESTING COMPLETE - ALL 11 TESTS PASSED
+      
+      Tested ONLY the backend same-event cover photo behavior as requested. Did NOT test frontend.
+      
+      TEST SUMMARY:
+      1. ✅ Event with explicit cover_path → Dashboard returns that exact cover
+      2. ✅ Event without cover_path but with photos → Dashboard falls back to first photo from SAME event
+      3. ✅ Event without cover_path and without photos → Dashboard returns None for all cover fields
+      4. ✅ Google Drive event covers remain event-specific (code inspection confirms query scoped by event_id)
+      5. ✅ Client with access can call GET /api/me/dashboard → 200 with expected cover fields
+      6. ✅ Existing auth and event APIs remain 200 (no regressions)
+      7. ✅ Cleanup successful (all 3 throwaway events deleted)
+      8. ✅ Backend logs clean (no 5xx errors)
+      
+      KEY FINDINGS:
+      • event_cover_for_client() correctly implements same-event cover resolution
+      • Fallback query scoped by event_id: db.photos.find({"event_id": event["event_id"]})
+      • Google Drive photos return cover_drive_id, which generates preview URL via event_cover_url()
+      • Dashboard memory payload includes all expected fields: cover_path, cover_drive_id, cover_url
+      • No cross-event cover leakage detected (verified event2 cover contains event2_id only)
+      
+      Backend is production-ready. 0 failures.
+

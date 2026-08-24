@@ -1,593 +1,337 @@
 #!/usr/bin/env python3
-"""Backend test for CRM name enrichment in gallery/album access lists."""
-import sys
-import httpx
-import json
-from typing import Optional
+"""
+Backend test for same-event cover photo feature.
+Tests that client dashboard event covers are sourced from the same event only.
+"""
+import requests
+import io
+from PIL import Image
 
-# Backend URL from environment
-BACKEND_URL = "http://localhost:8001/api"
+BASE_URL = "https://newclient-app-1.preview.emergentagent.com/api"
 
-# Admin credentials from test_credentials.md
+# Admin credentials from /app/memory/test_credentials.md
 ADMIN_EMAIL = "admin@lumiere.studio"
 ADMIN_PASSWORD = "Admin@12345"
 
-# Test state
-admin_token: Optional[str] = None
-throwaway_resources = {
-    "clients": [],
-    "events": [],
-    "albums": [],
-    "users": [],
-}
+def create_test_image(width=400, height=400, color=(255, 0, 0)):
+    """Create a small test JPEG image."""
+    img = Image.new('RGB', (width, height), color=color)
+    buf = io.BytesIO()
+    img.save(buf, format='JPEG', quality=85)
+    buf.seek(0)
+    return buf
 
-
-def log(msg: str):
-    print(f"  {msg}")
-
-
-def test_step(num: int, desc: str):
-    print(f"\n{num}. {desc}")
-
-
-def cleanup_all():
-    """Clean up all throwaway resources."""
-    print("\n" + "=" * 80)
-    print("CLEANUP: Removing all throwaway resources")
+def test_same_event_cover():
+    """Test same-event cover photo backend behavior."""
+    print("=" * 80)
+    print("BACKEND TEST: Same-Event Cover Photo")
     print("=" * 80)
     
-    if not admin_token:
-        log("⚠️  No admin token, skipping cleanup")
-        return
-    
-    headers = {"Authorization": f"Bearer {admin_token}"}
-    
-    # Delete events
-    for event_id in throwaway_resources["events"]:
-        try:
-            resp = httpx.delete(f"{BACKEND_URL}/events/{event_id}", headers=headers, timeout=30)
-            if resp.status_code == 200:
-                log(f"✅ Deleted event {event_id}")
-            else:
-                log(f"⚠️  Failed to delete event {event_id}: {resp.status_code}")
-        except Exception as e:
-            log(f"⚠️  Error deleting event {event_id}: {e}")
-    
-    # Delete albums
-    for album_id in throwaway_resources["albums"]:
-        try:
-            resp = httpx.delete(f"{BACKEND_URL}/albums/{album_id}", headers=headers, timeout=30)
-            if resp.status_code == 200:
-                log(f"✅ Deleted album {album_id}")
-            else:
-                log(f"⚠️  Failed to delete album {album_id}: {resp.status_code}")
-        except Exception as e:
-            log(f"⚠️  Error deleting album {album_id}: {e}")
-    
-    # Delete CRM clients
-    for client_id in throwaway_resources["clients"]:
-        try:
-            resp = httpx.delete(f"{BACKEND_URL}/clients/{client_id}", headers=headers, timeout=30)
-            if resp.status_code == 200:
-                log(f"✅ Deleted CRM client {client_id}")
-            else:
-                log(f"⚠️  Failed to delete CRM client {client_id}: {resp.status_code}")
-        except Exception as e:
-            log(f"⚠️  Error deleting CRM client {client_id}: {e}")
-    
-    log("✅ Cleanup complete")
-
-
-def main():
-    global admin_token
-    
-    print("=" * 80)
-    print("BACKEND TEST: CRM Name Enrichment in Gallery/Album Access Lists")
-    print("=" * 80)
+    admin_token = None
+    client_token = None
+    event1_id = None
+    event2_id = None
+    event3_id = None
+    photo1_id = None
+    photo2_id = None
+    photo3_id = None
+    client_phone = "+919876540001"
     
     try:
-        # ===================================================================
-        # SETUP: Admin login
-        # ===================================================================
-        test_step(1, "Admin login")
-        resp = httpx.post(
-            f"{BACKEND_URL}/auth/admin/login",
-            json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
-            timeout=30,
-        )
+        # ===== TEST 1: Admin login =====
+        print("\n[TEST 1] Admin login...")
+        resp = requests.post(f"{BASE_URL}/auth/admin/login", json={
+            "email": ADMIN_EMAIL,
+            "password": ADMIN_PASSWORD
+        })
         assert resp.status_code == 200, f"Admin login failed: {resp.status_code} {resp.text}"
         admin_token = resp.json()["session_token"]
-        log(f"✅ Admin logged in, token: {admin_token[:20]}...")
+        print(f"✅ Admin login successful")
         
         headers = {"Authorization": f"Bearer {admin_token}"}
         
-        # ===================================================================
-        # SETUP: Create CRM client/family with contacts
-        # ===================================================================
-        test_step(2, "Create CRM client 'Test Family Alpha' with 3 contacts")
-        resp = httpx.post(
-            f"{BACKEND_URL}/clients",
-            headers=headers,
-            json={
-                "name": "Test Family Alpha",
-                "type": "family",
-                "status": "active",
-                "contacts": [
-                    {
-                        "name": "Alice Alpha",
-                        "role": "bride",
-                        "email": "alice.alpha@testcrm.example",
-                        "phone": "+919876543210",
-                        "is_primary": True,
-                    },
-                    {
-                        "name": "Bob Alpha",
-                        "role": "groom",
-                        "email": "bob.alpha@testcrm.example",
-                        "phone": "+919876543211",
-                    },
-                    {
-                        "name": "Charlie Alpha",
-                        "role": "parent",
-                        "phone": "+919876543212",
-                    },
-                ],
-            },
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"Create client failed: {resp.status_code} {resp.text}"
-        client1 = resp.json()
-        client1_id = client1["client_id"]
-        throwaway_resources["clients"].append(client1_id)
-        log(f"✅ Created CRM client: {client1_id} ({client1['name']})")
-        log(f"   Contacts: {len(client1['contacts'])} (Alice, Bob, Charlie)")
-        
-        # ===================================================================
-        # SETUP: Create second CRM client
-        # ===================================================================
-        test_step(3, "Create CRM client 'Test Family Beta' with 2 contacts")
-        resp = httpx.post(
-            f"{BACKEND_URL}/clients",
-            headers=headers,
-            json={
-                "name": "Test Family Beta",
-                "type": "family",
-                "status": "active",
-                "contacts": [
-                    {
-                        "name": "Diana Beta",
-                        "role": "bride",
-                        "email": "diana.beta@testcrm.example",
-                        "phone": "+919876543220",
-                        "is_primary": True,
-                    },
-                    {
-                        "name": "Eve Beta",
-                        "role": "groom",
-                        "email": "eve.beta@testcrm.example",
-                        "phone": "+919876543221",
-                    },
-                ],
-            },
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"Create client failed: {resp.status_code} {resp.text}"
-        client2 = resp.json()
-        client2_id = client2["client_id"]
-        throwaway_resources["clients"].append(client2_id)
-        log(f"✅ Created CRM client: {client2_id} ({client2['name']})")
-        log(f"   Contacts: {len(client2['contacts'])} (Diana, Eve)")
-        
-        # ===================================================================
-        # TEST: Client search by client name
-        # ===================================================================
-        test_step(4, "Verify GET /api/clients?q=<client-name> returns matching client")
-        resp = httpx.get(
-            f"{BACKEND_URL}/clients",
-            headers=headers,
-            params={"q": "Alpha"},
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"Client search failed: {resp.status_code} {resp.text}"
-        results = resp.json()
-        assert len(results) >= 1, f"Expected at least 1 result for 'Alpha', got {len(results)}"
-        assert any(c["client_id"] == client1_id for c in results), "Client 'Test Family Alpha' not found in search results"
-        log(f"✅ Search 'Alpha' returned {len(results)} result(s), including Test Family Alpha")
-        
-        # ===================================================================
-        # TEST: Client search by contact name
-        # ===================================================================
-        test_step(5, "Verify GET /api/clients?q=<contact-name> finds the client")
-        resp = httpx.get(
-            f"{BACKEND_URL}/clients",
-            headers=headers,
-            params={"q": "Alice"},
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"Client search failed: {resp.status_code} {resp.text}"
-        results = resp.json()
-        assert len(results) >= 1, f"Expected at least 1 result for 'Alice', got {len(results)}"
-        assert any(c["client_id"] == client1_id for c in results), "Client with contact 'Alice Alpha' not found"
-        log(f"✅ Search 'Alice' (contact name) returned {len(results)} result(s), including Test Family Alpha")
-        
-        # ===================================================================
-        # TEST: Client search by contact email
-        # ===================================================================
-        test_step(6, "Verify GET /api/clients?q=<contact-email> finds the client")
-        resp = httpx.get(
-            f"{BACKEND_URL}/clients",
-            headers=headers,
-            params={"q": "bob.alpha@testcrm.example"},
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"Client search failed: {resp.status_code} {resp.text}"
-        results = resp.json()
-        assert len(results) >= 1, f"Expected at least 1 result for email, got {len(results)}"
-        assert any(c["client_id"] == client1_id for c in results), "Client with contact email not found"
-        log(f"✅ Search 'bob.alpha@testcrm.example' (contact email) returned {len(results)} result(s)")
-        
-        # ===================================================================
-        # TEST: Client search by contact phone
-        # ===================================================================
-        test_step(7, "Verify GET /api/clients?q=<contact-phone> finds the client")
-        resp = httpx.get(
-            f"{BACKEND_URL}/clients",
-            headers=headers,
-            params={"q": "+919876543212"},
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"Client search failed: {resp.status_code} {resp.text}"
-        results = resp.json()
-        assert len(results) >= 1, f"Expected at least 1 result for phone, got {len(results)}"
-        assert any(c["client_id"] == client1_id for c in results), "Client with contact phone not found"
-        log(f"✅ Search '+919876543212' (contact phone) returned {len(results)} result(s)")
-        
-        # ===================================================================
-        # SETUP: Create throwaway gallery event
-        # ===================================================================
-        test_step(8, "Create throwaway gallery event")
-        resp = httpx.post(
-            f"{BACKEND_URL}/events",
-            headers=headers,
-            json={
-                "name": "QA CRM Access Test Event",
-                "date": "2026-06-15",
-                "category": "wedding",
-            },
-            timeout=30,
-        )
+        # ===== TEST 2: Create event WITH explicit cover_path =====
+        print("\n[TEST 2] Create event with explicit cover_path...")
+        resp = requests.post(f"{BASE_URL}/events", headers=headers, json={
+            "name": "QA Event With Cover",
+            "category": "wedding",
+            "date": "2026-03-15"
+        })
         assert resp.status_code == 200, f"Create event failed: {resp.status_code} {resp.text}"
-        event = resp.json()
-        event_id = event["event_id"]
-        throwaway_resources["events"].append(event_id)
-        log(f"✅ Created event: {event_id} ({event['name']})")
+        event1_id = resp.json()["event_id"]
+        print(f"✅ Created event1: {event1_id}")
         
-        # ===================================================================
-        # SETUP: Create throwaway album
-        # ===================================================================
-        test_step(9, "Create throwaway album")
-        resp = httpx.post(
-            f"{BACKEND_URL}/albums",
+        # Upload a photo to event1 and set it as cover
+        print("   Uploading photo to event1...")
+        img_buf = create_test_image(color=(255, 0, 0))  # Red image
+        resp = requests.post(
+            f"{BASE_URL}/events/{event1_id}/photos",
             headers=headers,
-            json={
-                "title": "QA CRM Access Test Album",
-                "client_name": "Test Family",
-                "event_name": "Test Wedding",
-            },
-            timeout=30,
+            files={"file": ("test1.jpg", img_buf, "image/jpeg")}
         )
-        assert resp.status_code == 200, f"Create album failed: {resp.status_code} {resp.text}"
-        album = resp.json()
-        album_id = album["album_id"]
-        throwaway_resources["albums"].append(album_id)
-        log(f"✅ Created album: {album_id} ({album['title']})")
+        assert resp.status_code == 200, f"Upload photo failed: {resp.status_code} {resp.text}"
+        photo1_id = resp.json()["photo_id"]
+        photo1_storage_path = resp.json().get("storage_path")
+        photo1_thumb_path = resp.json().get("thumb_path")
+        print(f"✅ Uploaded photo1: {photo1_id}")
+        print(f"   storage_path: {photo1_storage_path}")
+        print(f"   thumb_path: {photo1_thumb_path}")
         
-        # ===================================================================
-        # TEST: Add direct gallery access using CRM contact email
-        # ===================================================================
-        test_step(10, "Add direct gallery access using CRM contact email (alice.alpha@testcrm.example)")
-        resp = httpx.post(
-            f"{BACKEND_URL}/events/{event_id}/access",
+        # Set explicit cover_path for event1
+        print("   Setting explicit cover_path for event1...")
+        cover_path_to_set = photo1_thumb_path or photo1_storage_path
+        resp = requests.patch(f"{BASE_URL}/events/{event1_id}", headers=headers, json={
+            "cover_path": cover_path_to_set
+        })
+        assert resp.status_code == 200, f"Set cover_path failed: {resp.status_code} {resp.text}"
+        print(f"✅ Set cover_path: {cover_path_to_set}")
+        
+        # ===== TEST 3: Create event WITHOUT cover_path but WITH photos =====
+        print("\n[TEST 3] Create event without cover_path but with photos...")
+        resp = requests.post(f"{BASE_URL}/events", headers=headers, json={
+            "name": "QA Event No Cover",
+            "category": "portrait",
+            "date": "2026-04-20"
+        })
+        assert resp.status_code == 200, f"Create event failed: {resp.status_code} {resp.text}"
+        event2_id = resp.json()["event_id"]
+        print(f"✅ Created event2: {event2_id}")
+        
+        # Upload two photos to event2 (no explicit cover)
+        print("   Uploading photo 2a to event2...")
+        img_buf = create_test_image(color=(0, 255, 0))  # Green image
+        resp = requests.post(
+            f"{BASE_URL}/events/{event2_id}/photos",
             headers=headers,
-            json={
-                "channel": "email",
-                "email": "alice.alpha@testcrm.example",
-                "full_gallery_access": True,
-            },
-            timeout=30,
+            files={"file": ("test2a.jpg", img_buf, "image/jpeg")}
         )
-        assert resp.status_code == 200, f"Grant access failed: {resp.status_code} {resp.text}"
-        grant1 = resp.json()
-        log(f"✅ Granted gallery access via email: {grant1['grant_id']}")
+        assert resp.status_code == 200, f"Upload photo failed: {resp.status_code} {resp.text}"
+        photo2_id = resp.json()["photo_id"]
+        photo2_storage_path = resp.json().get("storage_path")
+        photo2_thumb_path = resp.json().get("thumb_path")
+        print(f"✅ Uploaded photo2a: {photo2_id}")
+        print(f"   storage_path: {photo2_storage_path}")
+        print(f"   thumb_path: {photo2_thumb_path}")
         
-        # ===================================================================
-        # TEST: Add direct album access using CRM contact phone
-        # ===================================================================
-        test_step(11, "Add direct album access using CRM contact phone (+919876543220)")
-        resp = httpx.post(
-            f"{BACKEND_URL}/albums/{album_id}/access",
+        print("   Uploading photo 2b to event2...")
+        img_buf = create_test_image(color=(0, 0, 255))  # Blue image
+        resp = requests.post(
+            f"{BASE_URL}/events/{event2_id}/photos",
             headers=headers,
-            json={
-                "channel": "phone",
-                "phone": "+919876543220",
-            },
-            timeout=30,
+            files={"file": ("test2b.jpg", img_buf, "image/jpeg")}
         )
-        assert resp.status_code == 200, f"Grant album access failed: {resp.status_code} {resp.text}"
-        album_grant1 = resp.json()
-        log(f"✅ Granted album access via phone: {album_grant1['grant_id']}")
+        assert resp.status_code == 200, f"Upload photo failed: {resp.status_code} {resp.text}"
+        photo3_id = resp.json()["photo_id"]
+        print(f"✅ Uploaded photo2b: {photo3_id}")
         
-        # ===================================================================
-        # TEST: Add non-CRM gallery access (fallback test)
-        # ===================================================================
-        test_step(12, "Add direct gallery access for non-CRM contact (fallback test)")
-        resp = httpx.post(
-            f"{BACKEND_URL}/events/{event_id}/access",
-            headers=headers,
-            json={
-                "channel": "email",
-                "email": "noncrm.user@example.com",
-                "full_gallery_access": False,
-            },
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"Grant access failed: {resp.status_code} {resp.text}"
-        grant_noncrm = resp.json()
-        log(f"✅ Granted gallery access to non-CRM email: {grant_noncrm['grant_id']}")
+        # ===== TEST 4: Create event WITHOUT cover_path and WITHOUT photos =====
+        print("\n[TEST 4] Create event without cover_path and without photos...")
+        resp = requests.post(f"{BASE_URL}/events", headers=headers, json={
+            "name": "QA Event Empty",
+            "category": "event",
+            "date": "2026-05-10"
+        })
+        assert resp.status_code == 200, f"Create event failed: {resp.status_code} {resp.text}"
+        event3_id = resp.json()["event_id"]
+        print(f"✅ Created event3 (empty): {event3_id}")
         
-        # ===================================================================
-        # TEST: Add non-CRM album access (fallback test)
-        # ===================================================================
-        test_step(13, "Add direct album access for non-CRM contact (fallback test)")
-        resp = httpx.post(
-            f"{BACKEND_URL}/albums/{album_id}/access",
-            headers=headers,
-            json={
-                "channel": "phone",
-                "phone": "+919999999999",
-            },
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"Grant album access failed: {resp.status_code} {resp.text}"
-        album_grant_noncrm = resp.json()
-        log(f"✅ Granted album access to non-CRM phone: {album_grant_noncrm['grant_id']}")
+        # ===== TEST 5: Grant client access to all three events =====
+        print("\n[TEST 5] Grant client access to all three events...")
+        for event_id in [event1_id, event2_id, event3_id]:
+            resp = requests.post(
+                f"{BASE_URL}/events/{event_id}/access",
+                headers=headers,
+                json={
+                    "channel": "phone",
+                    "phone": client_phone,
+                    "full_gallery_access": True
+                }
+            )
+            assert resp.status_code == 200, f"Grant access failed: {resp.status_code} {resp.text}"
+            print(f"✅ Granted access to {event_id}")
         
-        # ===================================================================
-        # TEST: Verify GET /api/events/{id}/access includes CRM names
-        # ===================================================================
-        test_step(14, "Verify GET /api/events/{id}/access includes client_name and contact_name for CRM grants")
-        resp = httpx.get(
-            f"{BACKEND_URL}/events/{event_id}/access",
-            headers=headers,
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"List access failed: {resp.status_code} {resp.text}"
-        access_list = resp.json()
-        log(f"✅ Retrieved {len(access_list)} access grants")
+        # ===== TEST 6: Client OTP login =====
+        print("\n[TEST 6] Client OTP login...")
+        resp = requests.post(f"{BASE_URL}/auth/client/request-otp", json={
+            "channel": "phone",
+            "phone": client_phone
+        })
+        assert resp.status_code == 200, f"Request OTP failed: {resp.status_code} {resp.text}"
+        dev_code = resp.json().get("dev_code")
+        print(f"✅ OTP requested, dev_code: {dev_code}")
         
-        # Find the CRM grant (alice.alpha@testcrm.example)
-        crm_grant = next((g for g in access_list if g.get("client_email") == "alice.alpha@testcrm.example"), None)
-        assert crm_grant is not None, "CRM grant not found in access list"
-        log(f"   CRM grant found: {crm_grant['grant_id']}")
+        resp = requests.post(f"{BASE_URL}/auth/client/verify-otp", json={
+            "channel": "phone",
+            "phone": client_phone,
+            "code": dev_code
+        })
+        assert resp.status_code == 200, f"Verify OTP failed: {resp.status_code} {resp.text}"
+        client_token = resp.json()["session_token"]
+        print(f"✅ Client logged in successfully")
         
-        # Verify CRM enrichment fields
-        assert "client_name" in crm_grant, "client_name field missing from CRM grant"
-        assert "contact_name" in crm_grant, "contact_name field missing from CRM grant"
-        assert crm_grant["client_name"] == "Test Family Alpha", f"Expected client_name='Test Family Alpha', got '{crm_grant.get('client_name')}'"
-        assert crm_grant["contact_name"] == "Alice Alpha", f"Expected contact_name='Alice Alpha', got '{crm_grant.get('contact_name')}'"
-        log(f"   ✅ client_name: {crm_grant['client_name']}")
-        log(f"   ✅ contact_name: {crm_grant['contact_name']}")
+        client_headers = {"Authorization": f"Bearer {client_token}"}
         
-        # Verify fallback fields are preserved
-        assert "client_email" in crm_grant, "client_email field missing"
-        assert crm_grant["client_email"] == "alice.alpha@testcrm.example", "client_email mismatch"
-        log(f"   ✅ client_email preserved: {crm_grant['client_email']}")
+        # ===== TEST 7: GET /api/me/dashboard and validate cover fields =====
+        print("\n[TEST 7] GET /api/me/dashboard and validate cover fields...")
+        resp = requests.get(f"{BASE_URL}/me/dashboard", headers=client_headers)
+        assert resp.status_code == 200, f"Dashboard failed: {resp.status_code} {resp.text}"
+        dashboard = resp.json()
+        print(f"✅ Dashboard retrieved successfully")
         
-        # Find the non-CRM grant
-        noncrm_grant = next((g for g in access_list if g.get("client_email") == "noncrm.user@example.com"), None)
-        assert noncrm_grant is not None, "Non-CRM grant not found in access list"
-        log(f"   Non-CRM grant found: {noncrm_grant['grant_id']}")
+        memories = dashboard.get("memories", [])
+        print(f"   Found {len(memories)} memories")
         
-        # Verify non-CRM grant has fallback fields and no server error
-        assert "client_email" in noncrm_grant, "client_email field missing from non-CRM grant"
-        assert noncrm_grant["client_email"] == "noncrm.user@example.com", "client_email mismatch"
-        # client_name and contact_name should be absent or None for non-CRM grants
-        if "client_name" in noncrm_grant:
-            assert noncrm_grant["client_name"] is None, "client_name should be None for non-CRM grant"
-        if "contact_name" in noncrm_grant:
-            assert noncrm_grant["contact_name"] is None, "contact_name should be None for non-CRM grant"
-        log(f"   ✅ Non-CRM grant has fallback fields, no CRM names (expected)")
+        # Find our test events in memories
+        event1_memory = None
+        event2_memory = None
+        event3_memory = None
         
-        # ===================================================================
-        # TEST: Verify GET /api/albums/{id}/access includes CRM names
-        # ===================================================================
-        test_step(15, "Verify GET /api/albums/{id}/access includes client_name and contact_name for CRM grants")
-        resp = httpx.get(
-            f"{BACKEND_URL}/albums/{album_id}/access",
-            headers=headers,
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"List album access failed: {resp.status_code} {resp.text}"
-        album_access_list = resp.json()
-        log(f"✅ Retrieved {len(album_access_list)} album access grants")
+        for mem in memories:
+            if mem.get("event_id") == event1_id:
+                event1_memory = mem
+            elif mem.get("event_id") == event2_id:
+                event2_memory = mem
+            elif mem.get("event_id") == event3_id:
+                event3_memory = mem
         
-        # Find the CRM grant (+919876543220)
-        album_crm_grant = next((g for g in album_access_list if g.get("client_phone") == "+919876543220"), None)
-        assert album_crm_grant is not None, "CRM album grant not found in access list"
-        log(f"   CRM album grant found: {album_crm_grant['grant_id']}")
+        # ===== TEST 8: Validate event1 (WITH explicit cover_path) =====
+        print("\n[TEST 8] Validate event1 cover (explicit cover_path)...")
+        assert event1_memory is not None, "Event1 not found in memories"
+        print(f"   Event1 memory: {event1_memory}")
         
-        # Verify CRM enrichment fields
-        assert "client_name" in album_crm_grant, "client_name field missing from CRM album grant"
-        assert "contact_name" in album_crm_grant, "contact_name field missing from CRM album grant"
-        assert album_crm_grant["client_name"] == "Test Family Beta", f"Expected client_name='Test Family Beta', got '{album_crm_grant.get('client_name')}'"
-        assert album_crm_grant["contact_name"] == "Diana Beta", f"Expected contact_name='Diana Beta', got '{album_crm_grant.get('contact_name')}'"
-        log(f"   ✅ client_name: {album_crm_grant['client_name']}")
-        log(f"   ✅ contact_name: {album_crm_grant['contact_name']}")
+        event1_cover_path = event1_memory.get("cover_path")
+        event1_cover_url = event1_memory.get("cover_url")
+        event1_cover_drive_id = event1_memory.get("cover_drive_id")
         
-        # Verify fallback fields are preserved
-        assert "client_phone" in album_crm_grant, "client_phone field missing"
-        assert album_crm_grant["client_phone"] == "+919876543220", "client_phone mismatch"
-        log(f"   ✅ client_phone preserved: {album_crm_grant['client_phone']}")
+        print(f"   cover_path: {event1_cover_path}")
+        print(f"   cover_url: {event1_cover_url}")
+        print(f"   cover_drive_id: {event1_cover_drive_id}")
         
-        # Find the non-CRM album grant
-        album_noncrm_grant = next((g for g in album_access_list if g.get("client_phone") == "+919999999999"), None)
-        assert album_noncrm_grant is not None, "Non-CRM album grant not found in access list"
-        log(f"   Non-CRM album grant found: {album_noncrm_grant['grant_id']}")
+        assert event1_cover_path == cover_path_to_set, \
+            f"Event1 cover_path mismatch: expected {cover_path_to_set}, got {event1_cover_path}"
+        print(f"✅ Event1 cover_path matches explicit cover: {event1_cover_path}")
         
-        # Verify non-CRM grant has fallback fields and no server error
-        assert "client_phone" in album_noncrm_grant, "client_phone field missing from non-CRM album grant"
-        assert album_noncrm_grant["client_phone"] == "+919999999999", "client_phone mismatch"
-        if "client_name" in album_noncrm_grant:
-            assert album_noncrm_grant["client_name"] is None, "client_name should be None for non-CRM album grant"
-        if "contact_name" in album_noncrm_grant:
-            assert album_noncrm_grant["contact_name"] is None, "contact_name should be None for non-CRM album grant"
-        log(f"   ✅ Non-CRM album grant has fallback fields, no CRM names (expected)")
+        # ===== TEST 9: Validate event2 (NO cover_path, fallback to first photo) =====
+        print("\n[TEST 9] Validate event2 cover (fallback to first photo)...")
+        assert event2_memory is not None, "Event2 not found in memories"
+        print(f"   Event2 memory: {event2_memory}")
         
-        # ===================================================================
-        # TEST: Access-list auth (401 without token)
-        # ===================================================================
-        test_step(16, "Verify GET /api/events/{id}/access returns 401 without token")
-        resp = httpx.get(
-            f"{BACKEND_URL}/events/{event_id}/access",
-            timeout=30,
-        )
-        assert resp.status_code == 401, f"Expected 401, got {resp.status_code}"
-        log(f"✅ Correctly returned 401 without token")
+        event2_cover_path = event2_memory.get("cover_path")
+        event2_cover_url = event2_memory.get("cover_url")
+        event2_cover_drive_id = event2_memory.get("cover_drive_id")
         
-        test_step(17, "Verify GET /api/albums/{id}/access returns 401 without token")
-        resp = httpx.get(
-            f"{BACKEND_URL}/albums/{album_id}/access",
-            timeout=30,
-        )
-        assert resp.status_code == 401, f"Expected 401, got {resp.status_code}"
-        log(f"✅ Correctly returned 401 without token")
+        print(f"   cover_path: {event2_cover_path}")
+        print(f"   cover_url: {event2_cover_url}")
+        print(f"   cover_drive_id: {event2_cover_drive_id}")
         
-        # ===================================================================
-        # TEST: Client-group assignment endpoints regression
-        # ===================================================================
-        test_step(18, "Verify client-group assignment endpoints still work for event")
-        resp = httpx.post(
-            f"{BACKEND_URL}/events/{event_id}/client-assignments",
-            headers=headers,
-            json={
-                "client_id": client1_id,
-                "full_gallery_access": True,
-            },
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"Assign client to event failed: {resp.status_code} {resp.text}"
-        assignment_result = resp.json()
-        assert assignment_result["status"] == "assigned", "Assignment status not 'assigned'"
-        log(f"✅ Assigned client {client1_id} to event {event_id}")
+        # Should fallback to first photo's thumb_path or storage_path
+        expected_cover = photo2_thumb_path or photo2_storage_path
+        assert event2_cover_path == expected_cover, \
+            f"Event2 cover_path mismatch: expected {expected_cover}, got {event2_cover_path}"
+        print(f"✅ Event2 cover_path correctly falls back to first photo: {event2_cover_path}")
         
-        # Verify assignment list includes client_name and contact_count
-        resp = httpx.get(
-            f"{BACKEND_URL}/events/{event_id}/client-assignments",
-            headers=headers,
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"List event assignments failed: {resp.status_code} {resp.text}"
-        assignments = resp.json()
-        assert len(assignments) >= 1, "Expected at least 1 assignment"
-        assignment = next((a for a in assignments if a["client_id"] == client1_id), None)
-        assert assignment is not None, "Assignment not found in list"
-        assert "client_name" in assignment, "client_name field missing from assignment"
-        assert "contact_count" in assignment, "contact_count field missing from assignment"
-        assert assignment["client_name"] == "Test Family Alpha", f"Expected client_name='Test Family Alpha', got '{assignment.get('client_name')}'"
-        assert assignment["contact_count"] == 3, f"Expected contact_count=3, got {assignment.get('contact_count')}"
-        log(f"   ✅ Assignment includes client_name: {assignment['client_name']}")
-        log(f"   ✅ Assignment includes contact_count: {assignment['contact_count']}")
+        # Verify it's from event2, not event1 or event3
+        assert event1_id not in (event2_cover_path or ""), \
+            f"Event2 cover_path incorrectly references event1"
+        assert event3_id not in (event2_cover_path or ""), \
+            f"Event2 cover_path incorrectly references event3"
+        assert event2_id in (event2_cover_path or ""), \
+            f"Event2 cover_path does not reference event2"
+        print(f"✅ Event2 cover is from same event (event2_id in path)")
         
-        test_step(19, "Verify client-group assignment endpoints still work for album")
-        resp = httpx.post(
-            f"{BACKEND_URL}/albums/{album_id}/client-assignments",
-            headers=headers,
-            json={
-                "client_id": client2_id,
-            },
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"Assign client to album failed: {resp.status_code} {resp.text}"
-        album_assignment_result = resp.json()
-        assert album_assignment_result["status"] == "assigned", "Album assignment status not 'assigned'"
-        log(f"✅ Assigned client {client2_id} to album {album_id}")
+        # ===== TEST 10: Validate event3 (NO cover_path, NO photos) =====
+        print("\n[TEST 10] Validate event3 cover (no cover, no photos)...")
+        assert event3_memory is not None, "Event3 not found in memories"
+        print(f"   Event3 memory: {event3_memory}")
         
-        # Verify album assignment list includes client_name and contact_count
-        resp = httpx.get(
-            f"{BACKEND_URL}/albums/{album_id}/client-assignments",
-            headers=headers,
-            timeout=30,
-        )
-        assert resp.status_code == 200, f"List album assignments failed: {resp.status_code} {resp.text}"
-        album_assignments = resp.json()
-        assert len(album_assignments) >= 1, "Expected at least 1 album assignment"
-        album_assignment = next((a for a in album_assignments if a["client_id"] == client2_id), None)
-        assert album_assignment is not None, "Album assignment not found in list"
-        assert "client_name" in album_assignment, "client_name field missing from album assignment"
-        assert "contact_count" in album_assignment, "contact_count field missing from album assignment"
-        assert album_assignment["client_name"] == "Test Family Beta", f"Expected client_name='Test Family Beta', got '{album_assignment.get('client_name')}'"
-        assert album_assignment["contact_count"] == 2, f"Expected contact_count=2, got {album_assignment.get('contact_count')}"
-        log(f"   ✅ Album assignment includes client_name: {album_assignment['client_name']}")
-        log(f"   ✅ Album assignment includes contact_count: {album_assignment['contact_count']}")
+        event3_cover_path = event3_memory.get("cover_path")
+        event3_cover_url = event3_memory.get("cover_url")
+        event3_cover_drive_id = event3_memory.get("cover_drive_id")
         
-        # ===================================================================
-        # CHECK: Backend logs for 5xx errors
-        # ===================================================================
-        test_step(20, "Check backend logs for 5xx errors")
-        import subprocess
-        result = subprocess.run(
-            ["tail", "-n", "100", "/var/log/supervisor/backend.err.log"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        err_log = result.stdout
-        if "500" in err_log or "502" in err_log or "503" in err_log or "504" in err_log:
-            log(f"⚠️  Found potential 5xx errors in backend logs:")
-            for line in err_log.split("\n"):
-                if "500" in line or "502" in line or "503" in line or "504" in line:
-                    log(f"     {line}")
-        else:
-            log(f"✅ No 5xx errors found in recent backend logs")
+        print(f"   cover_path: {event3_cover_path}")
+        print(f"   cover_url: {event3_cover_url}")
+        print(f"   cover_drive_id: {event3_cover_drive_id}")
         
-        # ===================================================================
-        # CLEANUP
-        # ===================================================================
-        cleanup_all()
+        assert event3_cover_path is None, \
+            f"Event3 cover_path should be None, got {event3_cover_path}"
+        assert event3_cover_drive_id is None, \
+            f"Event3 cover_drive_id should be None, got {event3_cover_drive_id}"
+        assert event3_cover_url is None, \
+            f"Event3 cover_url should be None, got {event3_cover_url}"
+        print(f"✅ Event3 correctly has no cover (all fields None)")
         
-        # ===================================================================
-        # SUMMARY
-        # ===================================================================
+        # ===== TEST 11: Verify existing auth and event APIs remain 200 =====
+        print("\n[TEST 11] Verify existing auth and event APIs remain 200...")
+        
+        # Health check
+        resp = requests.get(f"{BASE_URL}/")
+        assert resp.status_code == 200, f"Health check failed: {resp.status_code}"
+        print(f"✅ GET /api/ → 200")
+        
+        # List events (admin)
+        resp = requests.get(f"{BASE_URL}/events", headers=headers)
+        assert resp.status_code == 200, f"List events failed: {resp.status_code}"
+        print(f"✅ GET /api/events (admin) → 200")
+        
+        # Get event detail (admin)
+        resp = requests.get(f"{BASE_URL}/events/{event1_id}", headers=headers)
+        assert resp.status_code == 200, f"Get event failed: {resp.status_code}"
+        print(f"✅ GET /api/events/{event1_id} (admin) → 200")
+        
+        # List client events
+        resp = requests.get(f"{BASE_URL}/client/events", headers=client_headers)
+        assert resp.status_code == 200, f"List client events failed: {resp.status_code}"
+        print(f"✅ GET /api/client/events (client) → 200")
+        
+        # Get client event photos
+        resp = requests.get(f"{BASE_URL}/client/events/{event1_id}/photos", headers=client_headers)
+        assert resp.status_code == 200, f"Get client photos failed: {resp.status_code}"
+        print(f"✅ GET /api/client/events/{event1_id}/photos (client) → 200")
+        
         print("\n" + "=" * 80)
-        print("✅ ALL TESTS PASSED")
+        print("ALL TESTS PASSED ✅")
         print("=" * 80)
-        print("\nTEST SUMMARY:")
-        print("  ✅ Client search by client name, contact name, email, phone - ALL WORKING")
-        print("  ✅ Direct gallery access with CRM contact email - WORKING")
-        print("  ✅ Direct album access with CRM contact phone - WORKING")
-        print("  ✅ GET /api/events/{id}/access includes client_name and contact_name for CRM grants")
-        print("  ✅ GET /api/albums/{id}/access includes client_name and contact_name for CRM grants")
-        print("  ✅ Non-CRM grants return correctly with fallback fields (no server error)")
-        print("  ✅ Access-list auth: 401 without token (gallery and album)")
-        print("  ✅ Client-group assignment endpoints regression: WORKING")
-        print("  ✅ Assignment rows include client_name and contact_count")
-        print("  ✅ All throwaway resources cleaned up")
-        print("  ✅ No 5xx errors in backend logs")
-        print("\n" + "=" * 80)
-        
-        return 0
         
     except AssertionError as e:
         print(f"\n❌ TEST FAILED: {e}")
-        cleanup_all()
-        return 1
+        raise
     except Exception as e:
         print(f"\n❌ UNEXPECTED ERROR: {e}")
-        import traceback
-        traceback.print_exc()
-        cleanup_all()
-        return 1
-
+        raise
+    finally:
+        # ===== CLEANUP =====
+        print("\n" + "=" * 80)
+        print("CLEANUP: Deleting throwaway resources...")
+        print("=" * 80)
+        
+        if admin_token:
+            headers = {"Authorization": f"Bearer {admin_token}"}
+            
+            # Delete events (this also deletes photos and grants)
+            for event_id in [event1_id, event2_id, event3_id]:
+                if event_id:
+                    try:
+                        resp = requests.delete(f"{BASE_URL}/events/{event_id}", headers=headers)
+                        if resp.status_code == 200:
+                            print(f"✅ Deleted event: {event_id}")
+                        else:
+                            print(f"⚠️  Failed to delete event {event_id}: {resp.status_code}")
+                    except Exception as e:
+                        print(f"⚠️  Error deleting event {event_id}: {e}")
+            
+            # Delete client user (created via OTP)
+            if client_phone:
+                try:
+                    # Find and delete the client user
+                    # Note: There's no direct API to delete client users, but deleting events
+                    # should clean up access grants. The user record may remain but that's OK.
+                    print(f"ℹ️  Client user for {client_phone} may remain (no delete API)")
+                except Exception as e:
+                    print(f"⚠️  Error with client cleanup: {e}")
+        
+        print("\n" + "=" * 80)
+        print("CLEANUP COMPLETE")
+        print("=" * 80)
 
 if __name__ == "__main__":
-    sys.exit(main())
+    test_same_event_cover()

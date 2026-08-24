@@ -19,7 +19,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from config import db
+from config import db, PUBLIC_BASE_URL
 from auth_utils import require_admin, require_client
 
 crm_router = APIRouter(prefix="/api")
@@ -169,6 +169,29 @@ def public_event_lite(doc: dict) -> dict:
         "cover_path": doc.get("cover_path"),
         "created_at": doc.get("created_at"),
     }
+
+
+async def event_cover_for_client(event: dict) -> tuple[str | None, str | None]:
+    """Return a cover sourced only from this event, falling back to its first photo."""
+    cover_path = event.get("cover_path")
+    cover_drive_id = event.get("cover_drive_id")
+    if cover_path or cover_drive_id:
+        return cover_path, cover_drive_id
+
+    first = await db.photos.find({"event_id": event["event_id"]}, {"_id": 0, "storage_path": 1, "thumb_path": 1, "drive_file_id": 1, "source": 1}) \
+        .sort([("uploaded_at", 1), ("photo_id", 1)]).limit(1).to_list(1)
+    if not first:
+        return None, None
+    photo = first[0]
+    if photo.get("source") == "gdrive" and photo.get("drive_file_id"):
+        return None, photo["drive_file_id"]
+    return photo.get("thumb_path") or photo.get("storage_path"), None
+
+
+def event_cover_url(cover_path: str | None, cover_drive_id: str | None) -> str | None:
+    if cover_drive_id:
+        return f"{PUBLIC_BASE_URL}/api/gdrive/thumb/{cover_drive_id}?w=1200"
+    return None
 
 
 async def _client_or_404(client_id: str, studio_id: str) -> dict:
@@ -621,6 +644,7 @@ async def client_dashboard(user: dict = Depends(require_client)):
             year = str(event["created_at"])[:4]
         if event.get("created_by"):
             studio_ids.append(event["created_by"])
+        cover_path, cover_drive_id = await event_cover_for_client(event)
         memories.append({
             "event_id": event["event_id"],
             "name": event.get("name"),
@@ -629,7 +653,9 @@ async def client_dashboard(user: dict = Depends(require_client)):
             "category": event.get("category"),
             "photo_count": event.get("photo_count", 0),
             "my_photos_count": len(album.get("photo_ids", [])) if album else 0,
-            "cover_path": event.get("cover_path"),
+            "cover_path": cover_path,
+            "cover_drive_id": cover_drive_id,
+            "cover_url": event_cover_url(cover_path, cover_drive_id),
             "photographer": event.get("photographer"),
             "created_at": event.get("created_at"),
         })

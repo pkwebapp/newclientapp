@@ -21,9 +21,6 @@ import { EmptyState, Pill, GlassHeader, useToast } from "@/src/components/ui";
 import { HeaderMenuButton } from "@/src/components/MobileShell";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
-const FALLBACK =
-  "https://images.unsplash.com/photo-1623672655496-1537b4d84eb4?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NzB8MHwxfHNlYXJjaHwxfHxlbGVnYW50JTIwd2VkZGluZyUyMGV2ZW50JTIwcGhvdG9ncmFwaHklMjBkYXJrfGVufDB8fHx8MTc4NjgyMzAxOXww&ixlib=rb-4.1.0&q=85";
-
 const dialDigits = (num?: string) => {
   const digits = (num || "").replace(/\D/g, "");
   return digits.length === 10 ? `91${digits}` : digits;
@@ -208,7 +205,7 @@ export default function ClientDashboard() {
                     style={styles.card}
                   >
                     <Image
-                      source={{ uri: imgUrl(null, e.cover_path) || FALLBACK }}
+                      source={(e.cover_url || imgUrl(null, e.cover_path)) ? { uri: e.cover_url || imgUrl(null, e.cover_path) } : undefined}
                       style={StyleSheet.absoluteFill}
                       contentFit="cover"
                       transition={250}
