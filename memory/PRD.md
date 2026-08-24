@@ -143,3 +143,9 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - Added a Share action that shares image bytes through the native system share sheet instead of a PIK Connect link.
 - Images over 2 MB are recompressed to JPEG before sharing; web uses Web Share API when available and downloads a compressed fallback otherwise.
 - Added SDK 54-compatible `expo-sharing`, `expo-file-system`, and `expo-image-manipulator` dependencies.
+
+
+
+## Feature: Web landing page screen separation (2026-08)
+- Desktop web hero now fills one viewport so the How it works section begins on the next scroll screen.
+- Mobile and native hero sizing remain unchanged.

@@ -3308,3 +3308,51 @@ agent_communication:
       viewer controls remain available. No regression detected.
       
       Production-ready. 0 failures. before this bug is marked resolved.
+
+
+
+#====================================================================================================
+# NEW TASK — Web home hero and How it works section separation
+#====================================================================================================
+
+user_problem_statement: |
+  On the web preview home page, How it works should appear on the next screen instead of peeking into
+  the same hero viewport.
+
+frontend:
+  - task: "Make web desktop hero exactly one viewport high"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added a web-desktop-only viewport height rule to the landing hero. The hero now fills exactly
+          the browser viewport, placing How it works at the top of the next scroll screen; mobile and
+          native layouts retain their previous sizing. Frontend lint passes, Expo restarted, and a 1920x800
+          screenshot confirms How it works no longer appears in the first hero viewport.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Web desktop home hero viewport separation"
+    - "How it works appears on next scroll screen"
+    - "Mobile/native landing layout regression"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Updated the web preview landing page so the hero occupies one full viewport and How it works starts
+      on the next screen. Frontend browser testing is pending explicit permission.

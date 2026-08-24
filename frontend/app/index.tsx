@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import Head from "expo-router/head";
-import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { ImageBackground, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -55,6 +55,7 @@ export default function Home() {
   const { width, height } = useWindowDimensions();
   const insets = useSafeAreaInsets();
   const isWide = width >= 900;
+  const isWebWide = Platform.OS === "web" && isWide;
 
   // Logged-in users are sent to their dashboard (client-only; crawlers never run this).
   useEffect(() => {
@@ -85,7 +86,7 @@ export default function Home() {
         <ImageBackground
           source={{ uri: HERO }}
           resizeMode="cover"
-          style={[styles.hero, { minHeight: isWide ? Math.max(600, height * 0.9) : height }]}
+          style={[styles.hero, { height: isWebWide ? height : undefined, minHeight: isWebWide ? height : isWide ? Math.max(600, height * 0.9) : height }]}
         >
           <LinearGradient
             colors={["rgba(14,13,12,0.20)", "rgba(14,13,12,0.52)", "rgba(14,13,12,0.95)"]}
