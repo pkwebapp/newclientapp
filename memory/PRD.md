@@ -153,7 +153,26 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 
 
 ## Refinement: Service-specific enquiry messages (2026-08)
+
+
+## Feature: Offline client gallery previews (2026-08)
+- Client gallery previews are persisted in the native app document directory or browser Cache API, with metadata in AsyncStorage.
+- Full-access galleries continue fetching and caching all pages in the background; offline open restores cached photos.
+- Offline likes queue locally and sync after the next successful online refresh. Face scanning shows an offline limitation because Rekognition is cloud-based.
+
 - Service cards now open WhatsApp with a pre-filled message naming the selected service.
+
+
+## Feature: Client gallery fetch progress (2026-08)
+- Client gallery opening now shows a live `fetched photos / total photos` counter with a progress bar while remaining pages load and cache.
+- Offline restored galleries show the cached photo count and offline status.
+
+
+## Refinement: Complete gallery preloading (2026-08)
+- Full-access client galleries now fetch and cache every accessible photo preview before rendering the grid, with a live fetched/total counter during loading.
+- If a later page fails, already fetched photos remain available and pagination can retry the remainder.
+
+
 - Design Services now includes website design; the general WhatsApp CTA remains generic.
 
 

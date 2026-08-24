@@ -224,5 +224,5 @@ const styles = StyleSheet.create({
   social: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", gap: spacing.lg, marginTop: spacing.lg },
   socialBtn: { paddingVertical: spacing.xs, alignItems: "center", justifyContent: "center", textDecorationLine: "none" },
   addr: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 20, margin: 0 },
-  copy: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.xs, marginTop: spacing.lg },
+  copy: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: spacing.lg },
 });

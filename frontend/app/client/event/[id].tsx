@@ -1,7 +1,24 @@
 import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
-import { ActivityIndicator, Platform, Pressable, Share, StyleSheet, Text, View } from "react-native";
+import {
+  ActivityIndicator,
+  AppState,
+  Platform,
+  Pressable,
+  Share,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { BlurView } from "expo-blur";
+import {
+  cacheGallery,
+  pendingLikeActions,
+  queueLikeAction,
+  removeLikeActions,
+  restoreCachedGallery,
+} from "@/src/utils/offline-gallery";
+
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
@@ -33,43 +50,140 @@ export default function ClientEventDetail() {
   const [loadingMore, setLoadingMore] = useState(false);
   const PAGE = 60;
   const [sharing, setSharing] = useState(false);
+  const [offlineMode, setOfflineMode] = useState(false);
+  const [fetchingGallery, setFetchingGallery] = useState(false);
+  const [fetchedPhotos, setFetchedPhotos] = useState(0);
+  const [totalGalleryPhotos, setTotalGalleryPhotos] = useState(0);
 
+
+
+  const applyCachedGallery = useCallback(async () => {
+    const cached = await restoreCachedGallery(String(id));
+    if (!cached) return false;
+    const matchedSet = new Set(cached.matchedIds || []);
+    const likedSet = new Set(cached.likedIds || []);
+    const cachedPhotos = cached.photos || [];
+    setDetail(cached.event);
+    setMyPhotos(cachedPhotos.filter((photo) => matchedSet.has(photo.photo_id)));
+    setLikedPhotos(cachedPhotos.filter((photo) => likedSet.has(photo.photo_id)).map((photo) => ({ ...photo, liked: true })));
+    setAllPhotos(cachedPhotos);
+    setAllOffset(cachedPhotos.length);
+    setAllHasMore(false);
+    setSearched(!!cached.searched);
+    setOfflineMode(true);
+    setFetchedPhotos(cachedPhotos.length);
+    setTotalGalleryPhotos(cachedPhotos.length);
+    setFetchingGallery(false);
+    setLoading(false);
+    return true;
+  }, [id]);
+
+  const syncPendingLikes = useCallback(async () => {
+    const pending = await pendingLikeActions(String(id));
+    if (!pending.length) return;
+    try {
+      const live = await api.get(`/client/events/${id}/liked`);
+      const liveIds = new Set((live.photos || []).map((photo: any) => photo.photo_id));
+      const synced: string[] = [];
+      for (const action of pending) {
+        if (liveIds.has(action.photoId) !== action.liked) {
+          await api.post(`/client/events/${id}/photos/${action.photoId}/like`);
+        }
+        synced.push(action.photoId);
+      }
+      await removeLikeActions(String(id), synced);
+    } catch {
+      // Keep queued likes until the next successful online refresh.
+    }
+  }, [id]);
 
   const loadDetail = useCallback(async () => {
     try {
       const d = await api.get(`/client/events/${id}`);
-      setDetail(d);
+      setTotalGalleryPhotos(Number(d.photo_count || 0));
+      setFetchedPhotos(0);
+      setFetchingGallery(!!d.full_gallery_access && Number(d.photo_count || 0) > 0);
       const mp = await api.get(`/client/events/${id}/my-photos`);
-      setMyPhotos(mp.photos);
-      setSearched(mp.searched);
       const lk = await api.get(`/client/events/${id}/liked`);
-      setLikedPhotos(lk.photos);
+      let firstPage: any = { items: [], has_more: false };
       if (d.full_gallery_access) {
-        const ap = await api.get(`/client/events/${id}/photos?limit=${PAGE}&offset=0`);
-        setAllPhotos(ap.items || []);
-        setAllOffset((ap.items || []).length);
-        setAllHasMore(!!ap.has_more);
+        firstPage = await api.get(`/client/events/${id}/photos?limit=${PAGE}&offset=0`);
       }
+      setOfflineMode(false);
+      setDetail(d);
+      setMyPhotos(mp.photos || []);
+      setSearched(!!mp.searched);
+      setLikedPhotos(lk.photos || []);
+
+      let all = firstPage.items || [];
+      let offset = all.length;
+      let hasMore = !!firstPage.has_more;
+      setFetchedPhotos(all.length);
+      await cacheGallery(
+        String(id),
+        d,
+        [...(mp.photos || []), ...(lk.photos || []), ...all],
+        (lk.photos || []).map((photo: any) => photo.photo_id),
+        (mp.photos || []).map((photo: any) => photo.photo_id),
+        !!mp.searched,
+      );
+
+      while (d.full_gallery_access && hasMore) {
+        try {
+          const page = await api.get(`/client/events/${id}/photos?limit=${PAGE}&offset=${offset}`);
+          all = [...all, ...(page.items || [])];
+          offset = all.length;
+          hasMore = !!page.has_more;
+          setFetchedPhotos(all.length);
+          await cacheGallery(
+            String(id),
+            d,
+            [...(mp.photos || []), ...(lk.photos || []), ...all],
+            (lk.photos || []).map((photo: any) => photo.photo_id),
+            (mp.photos || []).map((photo: any) => photo.photo_id),
+            !!mp.searched,
+          );
+        } catch {
+          break;
+        }
+      }
+
+      setAllPhotos(all);
+      setAllOffset(all.length);
+      setAllHasMore(hasMore);
+      setFetchingGallery(false);
+      void syncPendingLikes();
     } catch (e: any) {
-      toast.show(e?.message || "Could not load gallery", "error");
+      const restored = await applyCachedGallery();
+      if (!restored) toast.show("This gallery is unavailable offline and has no saved previews", "error");
     } finally {
       setLoading(false);
     }
-  }, [id, toast]);
+  }, [applyCachedGallery, id, syncPendingLikes, toast]);
 
   const loadMoreAll = useCallback(async () => {
     if (tab !== "all" || !allHasMore || loadingMore) return;
     setLoadingMore(true);
     try {
       const ap = await api.get(`/client/events/${id}/photos?limit=${PAGE}&offset=${allOffset}`);
-      setAllPhotos((prev) => [...prev, ...(ap.items || [])]);
+      const nextPhotos = [...allPhotos, ...(ap.items || [])];
+      setAllPhotos(nextPhotos);
       setAllOffset((o) => o + (ap.items || []).length);
       setAllHasMore(!!ap.has_more);
+      setFetchedPhotos(nextPhotos.length);
+      void cacheGallery(
+        String(id),
+        detail,
+        [...myPhotos, ...likedPhotos, ...nextPhotos],
+        likedPhotos.map((photo) => photo.photo_id),
+        myPhotos.map((photo) => photo.photo_id),
+        searched,
+      );
     } catch {
     } finally {
       setLoadingMore(false);
     }
-  }, [tab, allHasMore, loadingMore, allOffset, id]);
+  }, [tab, allHasMore, loadingMore, allOffset, allPhotos, detail, id, likedPhotos, myPhotos, searched]);
 
   useFocusEffect(
     useCallback(() => {
@@ -84,7 +198,21 @@ export default function ClientEventDetail() {
   const showAll = detail?.full_gallery_access;
   const photos = tab === "mine" ? myPhotos : tab === "liked" ? likedPhotos : allPhotos;
 
-  const goScan = () => router.push(`/client/selfie/${id}`);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void loadDetail();
+    });
+    return () => subscription.remove();
+  }, [loadDetail]);
+
+  const goScan = () => {
+    if (offlineMode) {
+      toast.show("Face scan needs an internet connection", "info");
+      return;
+    }
+    router.push(`/client/selfie/${id}`);
+  };
 
   const setLikedFlag = (photoId: string, liked: boolean) => {
     const upd = (arr: any[]) => arr.map((p) => (p.photo_id === photoId ? { ...p, liked } : p));
@@ -106,10 +234,8 @@ export default function ClientEventDetail() {
     try {
       await api.post(`/client/events/${id}/photos/${photo.photo_id}/like`);
     } catch (e: any) {
-      // revert
-      setLikedFlag(photo.photo_id, !next);
-      loadDetail();
-      toast.show(e?.message || "Could not update like", "error");
+      await queueLikeAction({ eventId: String(id), photoId: photo.photo_id, liked: next });
+      toast.show("Like saved offline — it will sync when you’re back online", "info");
     }
   };
 
@@ -159,6 +285,10 @@ export default function ClientEventDetail() {
     ...(showAll ? [{ key: "all" as const, label: "All Photos" }] : []),
   ];
 
+  const fetchProgress = totalGalleryPhotos > 0
+    ? Math.min(100, Math.round((fetchedPhotos / totalGalleryPhotos) * 100))
+    : 0;
+
   const header = (
     <View style={{ paddingTop: spacing.lg }}>
       <BlurView intensity={30} tint="dark" style={styles.segment}>
@@ -166,6 +296,23 @@ export default function ClientEventDetail() {
           <Segment key={t.key} label={t.label} active={tab === t.key} onPress={() => setTab(t.key)} testID={`tab-${t.key}`} />
         ))}
       </BlurView>
+      {fetchingGallery && (
+        <View style={styles.fetchProgress} testID="gallery-fetch-progress">
+          <View style={styles.fetchProgressHeader}>
+            <Text style={styles.fetchProgressLabel}>Fetching photos</Text>
+            <Text style={styles.fetchProgressCount}>{fetchedPhotos} of {totalGalleryPhotos}</Text>
+          </View>
+          <View style={styles.fetchTrack}>
+            <View style={[styles.fetchFill, { width: `${fetchProgress}%` }]} />
+          </View>
+        </View>
+      )}
+      {offlineMode && (
+        <View style={styles.offlineNotice} testID="offline-gallery-notice">
+          <Ionicons name="cloud-offline-outline" size={15} color={colors.brand} />
+          <Text style={styles.offlineText}>Offline · showing saved previews</Text>
+        </View>
+      )}
       <Button
         testID="share-gallery-btn"
         title={`Share ${tab === "all" ? "All Photos" : tab === "liked" ? "Liked" : "My Photos"}`}
@@ -187,8 +334,11 @@ export default function ClientEventDetail() {
         topInset={insets.top}
       />
       {loading ? (
-        <View style={styles.center}>
+        <View style={styles.loadingState}>
           <ActivityIndicator color={colors.brand} />
+          {totalGalleryPhotos > 0 ? (
+            <Text style={styles.fetchLoadingText}>Fetching photos {fetchedPhotos} of {totalGalleryPhotos}</Text>
+          ) : null}
         </View>
       ) : tab === "mine" && !searched ? (
         <View style={{ flex: 1 }}>
@@ -263,10 +413,22 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surfaceSecondary,
   },
+  loadingState: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md },
+  fetchLoadingText: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.base },
+  fetchProgress: { marginTop: spacing.md, marginHorizontal: spacing.lg, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  fetchProgressHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
+  fetchProgressLabel: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm },
+  fetchProgressCount: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
+  fetchTrack: { height: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary, overflow: "hidden" },
+  fetchFill: { height: 6, borderRadius: radius.pill, backgroundColor: colors.brand },
+
   segBtn: { flex: 1, paddingVertical: spacing.md, alignItems: "center", borderRadius: radius.sm },
   segActive: { backgroundColor: colors.brand },
   segText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
+  offlineNotice: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs, marginTop: spacing.sm },
+  offlineText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm },
   segTextActive: { color: colors.onBrand, fontWeight: "600" },
+
   fabWrap: { position: "absolute", left: 0, right: 0, alignItems: "center" },
   fab: {
     flexDirection: "row",

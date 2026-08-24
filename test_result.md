@@ -4002,3 +4002,169 @@ agent_communication:
       
       Backend is production-ready. 0 failures.
 
+
+
+#====================================================================================================
+# NEW TASK — Offline client gallery previews and queued likes
+#====================================================================================================
+
+user_problem_statement: |
+  Improve offline behavior so previously viewed client gallery photos load without delay and remain
+  accessible offline. Cache photo previews for the complete client gallery; while offline allow viewing and
+  liking, and handle face scanning when possible.
+
+frontend:
+  - task: "Persistent offline gallery preview cache"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/utils/offline-gallery.ts, frontend/app/client/event/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added persistent cross-platform preview caching. Native previews download into the app document
+          directory; web previews use the browser Cache API, with gallery metadata stored in AsyncStorage.
+          Online gallery loading caches current photos and continues fetching/caching all remaining full-gallery
+          pages in the background. Offline open restores cached event/photos and shows an Offline notice.
+          Previously viewed previews remain available without network access.
+
+  - task: "Offline liking and face-scan behavior"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/client/event/[id].tsx, frontend/src/utils/offline-gallery.ts"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Likes remain optimistic offline and queue locally; the queue syncs against the server after a
+          successful online refresh. Face scanning is gracefully disabled while offline with an explanation,
+          because this app's face engine runs through cloud Rekognition and no local face model is installed.
+          Added AppState refresh so returning online/foreground attempts synchronization. TypeScript and
+          targeted lint pass; frontend interaction verification is pending permission.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Cache and restore client gallery previews online/offline"
+    - "Cache all pages for a full-access gallery"
+    - "Offline Like queue and online synchronization"
+    - "Offline face-scan limitation message"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Implemented persistent native/web preview caching, offline gallery restore, queued offline likes, and
+      graceful offline face-scan handling. Expo needs restart and frontend testing is opt-in.
+
+
+
+#====================================================================================================
+# NEW TASK — Client gallery fetch counter
+#====================================================================================================
+
+user_problem_statement: |
+  When someone opens a gallery, display how many photos have been fetched out of the total.
+
+frontend:
+  - task: "Show fetched photos progress while opening/loading a gallery"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/client/event/[id].tsx"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added a gallery fetch counter using the event photo_count total. The initial loading screen shows
+          “Fetching photos X of Y” once the total is known. During background pagination/cache prefetch, a
+          progress card displays the live fetched count, percentage bar, and total until all pages are loaded.
+          Offline restored galleries show their cached count and offline notice. TypeScript and targeted
+          frontend lint pass; frontend testing is pending permission.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Gallery opening counter displays fetched photos out of total"
+    - "Progress advances through background pagination"
+    - "Offline cached count and client gallery regressions"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Added live fetched/total photo progress to the client gallery opening flow. Expo restart and frontend
+      browser verification remain pending.
+
+
+
+#====================================================================================================
+# NEW TASK — Fetch all gallery photos before opening client gallery
+#====================================================================================================
+
+user_problem_statement: |
+  Load every photo at the start of opening a gallery to provide the smoothest scrolling and interaction
+  experience.
+
+frontend:
+  - task: "Await complete gallery photo and preview loading before rendering"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/client/event/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Changed full-gallery opening from first-page-plus-background-prefetch to an awaited initial load.
+          All accessible photo pages are fetched sequentially, every preview is persisted to the offline
+          cache, and only then is the gallery grid rendered. The existing “Fetching photos X of Y” counter
+          and progress UI remain visible during the wait. If a later page fails, obtained pages render safely
+          and pagination remains available for retry. TypeScript and targeted lint pass; frontend verification
+          is pending permission.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "All gallery pages fetched before full gallery grid opens"
+    - "Fetch counter advances during initial load"
+    - "Smooth scroll after opening and offline cache regression"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Full-access client galleries now await all photo metadata and preview caching before displaying the
+      grid, with safe partial fallback if a later page fails. Expo restart and frontend testing are pending.
+
