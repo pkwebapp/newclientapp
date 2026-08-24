@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -13,6 +13,8 @@ import { FlashList } from "@shopify/flash-list";
 import { Image } from "expo-image";
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { imgUrl } from "@/src/api/client";
 import { Pill } from "@/src/components/ui";
@@ -42,6 +44,7 @@ export function PhotoGrid({
   ListHeaderComponent,
   onToggleLike,
   onDownload,
+  onShare,
   onEndReached,
   loadingMore,
 }: {
@@ -52,6 +55,7 @@ export function PhotoGrid({
   ListHeaderComponent?: React.ReactElement;
   onToggleLike?: (photo: Photo) => void;
   onDownload?: (photo: Photo) => void;
+  onShare?: (photo: Photo) => void;
   onEndReached?: () => void;
   loadingMore?: boolean;
 }) {
@@ -177,27 +181,97 @@ export function PhotoGrid({
         onClose={() => setViewerIndex(null)}
         onToggleLike={onToggleLike}
         onDownload={onDownload}
+        onShare={onShare}
       />
     </View>
   );
 }
 
+function ZoomablePhoto({
+  photo,
+  screenW,
+  screenH,
+  onTap,
+}: {
+  photo: Photo;
+  screenW: number;
+  screenH: number;
+  onTap: () => void;
+}) {
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
+  const pinch = Gesture.Pinch()
+    .onStart(() => {
+      savedScale.value = scale.value;
+    })
+    .onUpdate((event) => {
+      scale.value = Math.min(4, Math.max(1, savedScale.value * event.scale));
+    })
+    .onEnd(() => {
+      if (scale.value < 1.05) {
+        scale.value = withTiming(1);
+        savedScale.value = 1;
+      } else {
+        savedScale.value = scale.value;
+      }
+    });
+
+  const doubleTap = Gesture.Tap()
+    .numberOfTaps(2)
+    .maxDuration(250)
+    .onEnd(() => {
+      const next = scale.value > 1.05 ? 1 : 2.5;
+      scale.value = withTiming(next);
+      savedScale.value = next;
+    });
+
+  const singleTap = Gesture.Tap()
+    .maxDuration(220)
+    .onEnd(() => runOnJS(onTap)());
+
+  const gesture = Gesture.Simultaneous(pinch, Gesture.Exclusive(doubleTap, singleTap));
+
+  return (
+    <GestureDetector gesture={gesture}>
+      <View style={[styles.zoomStage, { width: screenW, height: screenH }]}>
+        <Animated.View style={[styles.zoomImage, { width: screenW, height: screenH }, animatedStyle]}>
+          <Image
+            source={{ uri: imgUrl(photo.url || photo.thumb_url, photo.storage_path || photo.thumb_path) }}
+            style={StyleSheet.absoluteFill}
+            contentFit="contain"
+            transition={150}
+            cachePolicy="memory-disk"
+          />
+        </Animated.View>
+      </View>
+    </GestureDetector>
+  );
+}
 function FullscreenViewer({
   photos,
   index,
   onClose,
   onToggleLike,
   onDownload,
+  onShare,
 }: {
   photos: Photo[];
   index: number | null;
   onClose: () => void;
   onToggleLike?: (photo: Photo) => void;
   onDownload?: (photo: Photo) => void;
+  onShare?: (photo: Photo) => void;
 }) {
   const [current, setCurrent] = useState(0);
   const screenW = Dimensions.get("window").width;
   const screenH = Dimensions.get("window").height;
+  useEffect(() => {
+    if (index != null) setCurrent(index);
+  }, [index]);
   if (index == null) return null;
   const active = photos[current] || photos[index];
 
@@ -206,6 +280,7 @@ function FullscreenViewer({
       <View style={styles.viewer}>
         <FlatList
           data={photos}
+          key={`viewer-${index}`}
           horizontal
           pagingEnabled
           initialScrollIndex={index}
@@ -214,20 +289,19 @@ function FullscreenViewer({
           keyExtractor={(p) => p.photo_id}
           showsHorizontalScrollIndicator={false}
           renderItem={({ item }) => (
-            <Pressable style={{ width: screenW, height: screenH }} onPress={onClose}>
-              <Image
-                source={{ uri: imgUrl(item.url || item.thumb_url, item.storage_path || item.thumb_path) }}
-                style={{ width: screenW, height: screenH }}
-                contentFit="contain"
-                transition={150}
-                cachePolicy="memory-disk"
+            <View style={{ width: screenW, height: screenH }}>
+              <ZoomablePhoto
+                photo={item}
+                screenW={screenW}
+                screenH={screenH}
+                onTap={onClose}
               />
               {item.similarity != null && (
-                <View style={styles.viewerScore}>
+                <View style={styles.viewerScore} pointerEvents="none">
                   <Text style={styles.viewerScoreText}>{Math.round(item.similarity)}% match</Text>
                 </View>
               )}
-            </Pressable>
+            </View>
           )}
         />
 
@@ -239,7 +313,7 @@ function FullscreenViewer({
         ) : null}
 
         {/* Action bar (like + download) */}
-        {(onToggleLike || onDownload) && active && (
+        {(onToggleLike || onDownload || onShare) && active && (
           <View style={styles.viewerActions}>
             {onToggleLike && (
               <Pressable testID="viewer-like" onPress={() => onToggleLike(active)} style={styles.actionBtn} hitSlop={10}>
@@ -251,6 +325,12 @@ function FullscreenViewer({
               <Pressable testID="viewer-download" onPress={() => onDownload(active)} style={styles.actionBtn} hitSlop={10}>
                 <Ionicons name="download-outline" size={24} color={colors.onSurface} />
                 <Text style={styles.actionText}>Download</Text>
+              </Pressable>
+            )}
+            {onShare && (
+              <Pressable testID="viewer-share" onPress={() => onShare(active)} style={styles.actionBtn} hitSlop={10}>
+                <Ionicons name="share-social-outline" size={24} color={colors.onSurface} />
+                <Text style={styles.actionText}>Share</Text>
               </Pressable>
             )}
           </View>
@@ -292,6 +372,8 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   viewer: { flex: 1, backgroundColor: "#000", justifyContent: "center" },
+  zoomStage: { alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  zoomImage: { alignItems: "center", justifyContent: "center" },
   closeBtn: {
     position: "absolute",
     top: 50,

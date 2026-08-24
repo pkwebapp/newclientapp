@@ -48,6 +48,8 @@ export default function AdminEvent() {
   const [clients, setClients] = useState<any[]>([]);
   const [crmClients, setCrmClients] = useState<any[]>([]);
   const [clientAssignments, setClientAssignments] = useState<any[]>([]);
+  const [clientSearch, setClientSearch] = useState("");
+  const [searchingClients, setSearchingClients] = useState(false);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [uploadDone, setUploadDone] = useState(0);
@@ -77,7 +79,7 @@ export default function AdminEvent() {
       const e = await api.get(`/events/${id}`);
       setEvent(e);
       setThreshold(String(Math.round(e.similarity_threshold)));
-      const [ps, st, gr, cl, sh, vs, assigned, crm] = await Promise.all([
+      const [ps, st, gr, cl, sh, vs, assigned] = await Promise.all([
         api.get(`/events/${id}/photos?limit=${PHOTO_PAGE}&offset=0`),
         api.get(`/events/${id}/indexing-status`),
         api.get(`/events/${id}/access`),
@@ -85,7 +87,6 @@ export default function AdminEvent() {
         api.get(`/events/${id}/share`),
         api.get(`/events/${id}/visitors`),
         api.get(`/events/${id}/client-assignments`),
-        api.get(`/clients`),
       ]);
       setPhotos(ps.items || []);
       setPhotosTotal(ps.total || 0);
@@ -96,13 +97,28 @@ export default function AdminEvent() {
       setShare(sh);
       setVisitors(vs);
       setClientAssignments(assigned || []);
-      setCrmClients(crm || []);
     } catch (e: any) {
       toast.show(e?.message || "Could not load event", "error");
     } finally {
       setLoading(false);
     }
   }, [id, toast]);
+
+  const searchClients = async () => {
+    const query = clientSearch.trim();
+    if (query.length < 2) {
+      toast.show("Enter at least 2 characters to search clients", "error");
+      return;
+    }
+    setSearchingClients(true);
+    try {
+      setCrmClients(await api.get(`/clients?q=${encodeURIComponent(query)}`));
+    } catch (e: any) {
+      toast.show(e?.message || "Could not search clients", "error");
+    } finally {
+      setSearchingClients(false);
+    }
+  };
 
   useFocusEffect(
     useCallback(() => {
@@ -487,6 +503,16 @@ export default function AdminEvent() {
     }
   };
 
+  const clientOptions = Array.from(
+    new Map(
+      [...clientAssignments.map((a) => ({
+        client_id: a.client_id,
+        name: a.client_name,
+        stats: { contact_count: a.contact_count },
+      })), ...crmClients].map((client) => [client.client_id, client])
+    ).values()
+  );
+
   if (loading) {
     return (
       <View style={styles.center} testID="admin-event-loading">
@@ -517,6 +543,7 @@ export default function AdminEvent() {
               <View style={{ flex: 1 }}>
                 <Text style={styles.statusTitle}>Indexing status</Text>
                 <Text style={styles.statusSub}>
+
                   {status?.indexed_photos ?? 0}/{status?.total_photos ?? 0} indexed · {status?.total_faces ?? 0} faces
                   {status?.failed_photos ? ` · ${status.failed_photos} failed` : ""}
                 </Text>
@@ -632,10 +659,29 @@ export default function AdminEvent() {
             <Text style={styles.muted}>
               Assigning a client gives access to every contact in that client. New contacts inherit access automatically.
             </Text>
-            {crmClients.length === 0 ? (
-              <Text style={styles.muted}>Add a client in the Clients section to assign a group.</Text>
+            <View style={styles.clientSearchRow}>
+              <View style={{ flex: 1 }}>
+                <TextField
+                  testID="client-group-search-input"
+                  value={clientSearch}
+                  onChangeText={setClientSearch}
+                  placeholder="Search client, contact, email or phone"
+                  autoCapitalize="none"
+                />
+              </View>
+              <Button
+                testID="client-group-search-btn"
+                title="Search"
+                icon="search-outline"
+                loading={searchingClients}
+                onPress={searchClients}
+                style={styles.clientSearchButton}
+              />
+            </View>
+            {clientOptions.length === 0 ? (
+              <Text style={styles.muted}>{clientSearch.trim() ? "No matching clients found." : "Search to find a client group."}</Text>
             ) : (
-              crmClients.map((client) => {
+              clientOptions.map((client) => {
                 const assignment = clientAssignments.find((a) => a.client_id === client.client_id);
                 return (
                   <View key={client.client_id} style={styles.grantRow} testID={`client-assignment-${client.client_id}`}>
@@ -702,7 +748,8 @@ export default function AdminEvent() {
                 <View key={g.grant_id} style={styles.grantRow} testID={`grant-${g.grant_id}`}>
                   <Ionicons name={g.channel === "email" ? "mail-outline" : "call-outline"} size={18} color={colors.brand} />
                   <View style={{ flex: 1 }}>
-                    <Text style={styles.grantValue} numberOfLines={1}>{g.client_email || g.client_phone}</Text>
+                    {g.client_name ? <Text style={styles.grantValue} numberOfLines={1}>{g.client_name}</Text> : null}
+                    <Text style={g.client_name ? styles.muted : styles.grantValue} numberOfLines={1}>{g.client_name ? (g.contact_name || g.client_email || g.client_phone) : (g.client_email || g.client_phone)}</Text>
                     <View style={{ flexDirection: "row", gap: 6, marginTop: 4 }}>
                       <Pill label={g.status === "active" ? "Active" : "Revoked"} tone={g.status === "active" ? "success" : "neutral"} />
                       {g.full_gallery_access && <Pill label="Full gallery" tone="gold" />}
@@ -1013,6 +1060,8 @@ const styles = StyleSheet.create({
   faceBadge: { position: "absolute", bottom: 4, right: 4, flexDirection: "row", alignItems: "center", gap: 2, backgroundColor: colors.brand, paddingHorizontal: 6, paddingVertical: 2, borderRadius: radius.pill },
   faceBadgeText: { color: colors.onBrand, fontSize: 10, fontWeight: "700" },
   sectionTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, marginBottom: spacing.sm },
+  clientSearchRow: { flexDirection: "row", alignItems: "flex-end", gap: spacing.sm, marginBottom: spacing.md },
+  clientSearchButton: { minWidth: 112 },
   channelRow: { flexDirection: "row", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.xs, marginBottom: spacing.md },
   channelBtn: { flex: 1, paddingVertical: spacing.sm, alignItems: "center", borderRadius: radius.sm },
   channelActive: { backgroundColor: colors.brand },

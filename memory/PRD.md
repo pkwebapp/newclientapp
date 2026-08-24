@@ -124,3 +124,22 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - Gallery assignments support Full gallery vs Matched only; album assignments match direct album access. Removing an assignment removes only the automatic group access.
 
 - Assignment relationship is many-to-many: one client can be assigned to multiple galleries/albums, and each gallery/album can include multiple clients.
+
+
+
+## Feature: Client full-screen photo zoom (2026-08)
+- Added pinch zoom from 1x to 4x plus double-tap zoom/reset in the client gallery full-screen viewer.
+- Existing photo paging, close, like, download, captions, and match-score behavior remain available.
+
+
+
+## Feature: Searchable client access groups (2026-08)
+- Access tabs query CRM clients only after an explicit search, keeping the UI usable for large client directories while preserving assigned groups.
+- Direct shared-access rows show the matching Client/Family name and contact name when the grant matches a CRM contact, with email/phone fallback.
+
+
+
+## Feature: Client full-screen image sharing (2026-08)
+- Added a Share action that shares image bytes through the native system share sheet instead of a PIK Connect link.
+- Images over 2 MB are recompressed to JPEG before sharing; web uses Web Share API when available and downloads a compressed fallback otherwise.
+- Added SDK 54-compatible `expo-sharing`, `expo-file-system`, and `expo-image-manipulator` dependencies.

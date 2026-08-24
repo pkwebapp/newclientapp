@@ -419,11 +419,41 @@ async def grant_album_access(album_id: str, body: AlbumAccessCreate,
     return await db.album_access_grants.find_one(key, {"_id": 0})
 
 
+
+
+async def _album_access_grants_with_crm_names(grants: list[dict], studio_id: str) -> list[dict]:
+    out = []
+    for grant in grants:
+        row = dict(grant)
+        ors = []
+        if grant.get("client_email"):
+            email = grant["client_email"].lower()
+            ors.append({"email": {"$in": [email, grant["client_email"]]}})
+        if grant.get("client_phone"):
+            ors.append({"phone": grant["client_phone"]})
+        if ors:
+            contact = await db.contacts.find_one(
+                {"studio_id": studio_id, "$or": ors},
+                {"_id": 0, "client_id": 1, "name": 1},
+            )
+            if contact:
+                client = await db.clients.find_one(
+                    {"client_id": contact["client_id"], "studio_id": studio_id},
+                    {"_id": 0, "name": 1},
+                )
+                if client:
+                    row["client_id"] = contact["client_id"]
+                    row["client_name"] = client.get("name")
+                    row["contact_name"] = contact.get("name")
+        out.append(row)
+    return out
+
 @album_router.get("/{album_id}/access")
 async def list_album_access(album_id: str, admin: dict = Depends(require_admin)):
     await _admin_album_or_404(album_id, admin)
-    return await db.album_access_grants.find({"album_id": album_id}, {"_id": 0}) \
+    grants = await db.album_access_grants.find({"album_id": album_id}, {"_id": 0}) \
         .sort("created_at", -1).to_list(2000)
+    return await _album_access_grants_with_crm_names(grants, admin["user_id"])
 
 
 @album_router.delete("/{album_id}/access/{grant_id}")

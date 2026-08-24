@@ -1077,11 +1077,39 @@ async def grant_access(event_id: str, body: AccessGrantCreate, admin: dict = Dep
     return saved
 
 
+async def _access_grants_with_crm_names(grants: list[dict], studio_id: str) -> list[dict]:
+    """Enrich direct email/phone grants with the matching CRM client name."""
+    out = []
+    for grant in grants:
+        row = dict(grant)
+        ors = []
+        if grant.get("client_email"):
+            email = grant["client_email"].lower()
+            ors.append({"email": {"$in": [email, grant["client_email"]]}})
+        if grant.get("client_phone"):
+            ors.append({"phone": grant["client_phone"]})
+        if ors:
+            contact = await db.contacts.find_one(
+                {"studio_id": studio_id, "$or": ors},
+                {"_id": 0, "client_id": 1, "name": 1},
+            )
+            if contact:
+                client = await db.clients.find_one(
+                    {"client_id": contact["client_id"], "studio_id": studio_id},
+                    {"_id": 0, "name": 1},
+                )
+                if client:
+                    row["client_id"] = contact["client_id"]
+                    row["client_name"] = client.get("name")
+                    row["contact_name"] = contact.get("name")
+        out.append(row)
+    return out
+
 @api_router.get("/events/{event_id}/access")
 async def list_access(event_id: str, admin: dict = Depends(require_admin)):
     await admin_event_or_404(event_id, admin)
     grants = await db.access_grants.find({"event_id": event_id}, {"_id": 0}).to_list(2000)
-    return grants
+    return await _access_grants_with_crm_names(grants, admin["user_id"])
 
 
 @api_router.patch("/events/{event_id}/access/{grant_id}")

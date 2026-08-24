@@ -7,8 +7,10 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 
 import { api, downloadPhoto, ApiError } from "@/src/api/client";
-import { PhotoGrid } from "@/src/components/PhotoGrid";
 import { EmptyState, GlassHeader, Button, useToast } from "@/src/components/ui";
+import { PhotoGrid } from "@/src/components/PhotoGrid";
+import { sharePhotoFile } from "@/src/utils/share-photo";
+
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
 export default function ClientEventDetail() {
@@ -28,6 +30,8 @@ export default function ClientEventDetail() {
   const [allHasMore, setAllHasMore] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const PAGE = 60;
+  const [sharing, setSharing] = useState(false);
+
 
   const loadDetail = useCallback(async () => {
     try {
@@ -115,7 +119,18 @@ export default function ClientEventDetail() {
     }
   };
 
-  const [sharing, setSharing] = useState(false);
+  const sharePhoto = async (photo: any) => {
+    try {
+      const result = await sharePhotoFile(photo);
+      toast.show(
+        result === "downloaded" ? "Photo downloaded — share it from your device" : "Share sheet opened",
+        "success",
+      );
+    } catch (e: any) {
+      toast.show(e?.message || "Could not share this photo", "error");
+    }
+  };
+
   const shareCurrentTab = async () => {
     const scopeMap = { all: "all", liked: "liked", mine: "matched" } as const;
     const labelMap = { all: "all photos", liked: "liked photos", mine: "my photos" } as const;
@@ -205,6 +220,7 @@ export default function ClientEventDetail() {
           showScore={tab !== "all"}
           onToggleLike={toggleLike}
           onDownload={download}
+          onShare={sharePhoto}
           onEndReached={loadMoreAll}
           loadingMore={loadingMore && tab === "all"}
           ListHeaderComponent={header}
