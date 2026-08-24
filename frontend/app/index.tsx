@@ -147,19 +147,19 @@ export default function Home() {
             <P style={styles.addr}>Mumbai · C1302, Evershine Cosmic, Andheri West 400053 · +91 88887 66739</P>
             <P style={styles.addr}>Goa · House No. 1053 A, Morjim 403512 · +91 81888 81165</P>
             <View style={styles.social}>
-              <A href="https://www.instagram.com/pkphotography.in" style={styles.socialBtn}>
+              <A href="https://www.instagram.com/itspkphotography.in/" style={styles.socialBtn}>
                 <Ionicons name="logo-instagram" size={24} color={colors.onSurfaceSecondary} />
               </A>
-              <A href="https://www.facebook.com/pkphotography.in" style={styles.socialBtn}>
+              <A href="https://www.facebook.com/pkfashionphotography" style={styles.socialBtn}>
                 <Ionicons name="logo-facebook" size={24} color={colors.onSurfaceSecondary} />
               </A>
-              <A href="https://www.linkedin.com/company/pk-photography" style={styles.socialBtn}>
+              <A href="https://www.linkedin.com/company/pkphotography/" style={styles.socialBtn}>
                 <Ionicons name="logo-linkedin" size={24} color={colors.onSurfaceSecondary} />
               </A>
-              <A href="https://twitter.com/pkphotography" style={styles.socialBtn}>
+              <A href="https://x.com/pkphotographym" style={styles.socialBtn}>
                 <Ionicons name="logo-twitter" size={24} color={colors.onSurfaceSecondary} />
               </A>
-              <A href="https://www.youtube.com/@pkphotography" style={styles.socialBtn}>
+              <A href="https://www.youtube.com/@itspkphotography" style={styles.socialBtn}>
                 <Ionicons name="logo-youtube" size={24} color={colors.onSurfaceSecondary} />
               </A>
               <A href="https://wa.me/918888766739" style={styles.socialBtn}>

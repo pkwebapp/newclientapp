@@ -1,337 +1,599 @@
 #!/usr/bin/env python3
 """
-Backend test for same-event cover photo feature.
-Tests that client dashboard event covers are sourced from the same event only.
+Multi-tenant isolation audit test for PIK Connect / Lumiere Gallery
+Tests cross-admin tenant isolation following the review request playbook.
 """
+
 import requests
-import io
+import json
+import sys
+from io import BytesIO
 from PIL import Image
 
-BASE_URL = "https://newclient-app-1.preview.emergentagent.com/api"
+# Backend URL
+BASE_URL = "https://c0faba68-e5fa-4458-a8e2-55fae2614e16.preview.emergentagent.com/api"
 
-# Admin credentials from /app/memory/test_credentials.md
-ADMIN_EMAIL = "admin@lumiere.studio"
-ADMIN_PASSWORD = "Admin@12345"
+# Test credentials
+ADMIN_A_EMAIL = "admin@lumiere.studio"
+ADMIN_A_PASSWORD = "Admin@12345"
 
-def create_test_image(width=400, height=400, color=(255, 0, 0)):
-    """Create a small test JPEG image."""
-    img = Image.new('RGB', (width, height), color=color)
-    buf = io.BytesIO()
-    img.save(buf, format='JPEG', quality=85)
+# Throwaway Admin B credentials
+ADMIN_B_EMAIL = "throwaway_admin_b@test.example"
+ADMIN_B_PASSWORD = "ThrowawayB@12345"
+ADMIN_B_NAME = "Throwaway Admin B"
+
+def log(msg):
+    print(f"[TEST] {msg}")
+
+def create_test_image():
+    """Create a small test JPEG image"""
+    img = Image.new('RGB', (100, 100), color='red')
+    buf = BytesIO()
+    img.save(buf, format='JPEG')
     buf.seek(0)
     return buf
 
-def test_same_event_cover():
-    """Test same-event cover photo backend behavior."""
-    print("=" * 80)
-    print("BACKEND TEST: Same-Event Cover Photo")
-    print("=" * 80)
+def create_test_pdf():
+    """Create a minimal test PDF (7 pages for album)"""
+    # Minimal PDF with 7 pages
+    pdf_content = b"""%PDF-1.4
+1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj
+2 0 obj<</Type/Pages/Count 7/Kids[3 0 R 4 0 R 5 0 R 6 0 R 7 0 R 8 0 R 9 0 R]>>endobj
+3 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj
+4 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj
+5 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj
+6 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj
+7 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj
+8 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj
+9 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]>>endobj
+xref
+0 10
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000145 00000 n 
+0000000218 00000 n 
+0000000291 00000 n 
+0000000364 00000 n 
+0000000437 00000 n 
+0000000510 00000 n 
+0000000583 00000 n 
+trailer<</Size 10/Root 1 0 R>>
+startxref
+656
+%%EOF"""
+    return BytesIO(pdf_content)
+
+def main():
+    log("=== MULTI-TENANT ISOLATION AUDIT TEST ===")
     
-    admin_token = None
-    client_token = None
-    event1_id = None
-    event2_id = None
-    event3_id = None
-    photo1_id = None
-    photo2_id = None
-    photo3_id = None
-    client_phone = "+919876540001"
+    # Track resources for cleanup
+    admin_b_token = None
+    admin_b_user_id = None
+    admin_a_event_id = None
+    admin_a_album_id = None
+    admin_a_client_id = None
+    admin_a_contact_id = None
+    admin_a_visitor_id = None
+    admin_a_grant_id = None
     
     try:
-        # ===== TEST 1: Admin login =====
-        print("\n[TEST 1] Admin login...")
+        # ===== STEP 1: Login as Admin A (existing admin) =====
+        log("\n--- STEP 1: Login as Admin A (existing admin) ---")
         resp = requests.post(f"{BASE_URL}/auth/admin/login", json={
-            "email": ADMIN_EMAIL,
-            "password": ADMIN_PASSWORD
+            "email": ADMIN_A_EMAIL,
+            "password": ADMIN_A_PASSWORD
         })
-        assert resp.status_code == 200, f"Admin login failed: {resp.status_code} {resp.text}"
-        admin_token = resp.json()["session_token"]
-        print(f"✅ Admin login successful")
+        assert resp.status_code == 200, f"Admin A login failed: {resp.status_code} {resp.text}"
+        admin_a_token = resp.json()["session_token"]
+        admin_a_user_id = resp.json()["user"]["user_id"]
+        log(f"✅ Admin A logged in: {admin_a_user_id}")
         
-        headers = {"Authorization": f"Bearer {admin_token}"}
-        
-        # ===== TEST 2: Create event WITH explicit cover_path =====
-        print("\n[TEST 2] Create event with explicit cover_path...")
-        resp = requests.post(f"{BASE_URL}/events", headers=headers, json={
-            "name": "QA Event With Cover",
-            "category": "wedding",
-            "date": "2026-03-15"
+        # ===== STEP 2: Register throwaway Admin B =====
+        log("\n--- STEP 2: Register throwaway Admin B ---")
+        resp = requests.post(f"{BASE_URL}/auth/admin/register", json={
+            "email": ADMIN_B_EMAIL,
+            "password": ADMIN_B_PASSWORD,
+            "name": ADMIN_B_NAME
         })
-        assert resp.status_code == 200, f"Create event failed: {resp.status_code} {resp.text}"
-        event1_id = resp.json()["event_id"]
-        print(f"✅ Created event1: {event1_id}")
+        assert resp.status_code == 200, f"Admin B registration failed: {resp.status_code} {resp.text}"
+        admin_b_token = resp.json()["session_token"]
+        admin_b_user_id = resp.json()["user"]["user_id"]
+        log(f"✅ Admin B registered: {admin_b_user_id}")
         
-        # Upload a photo to event1 and set it as cover
-        print("   Uploading photo to event1...")
-        img_buf = create_test_image(color=(255, 0, 0))  # Red image
-        resp = requests.post(
-            f"{BASE_URL}/events/{event1_id}/photos",
-            headers=headers,
-            files={"file": ("test1.jpg", img_buf, "image/jpeg")}
-        )
-        assert resp.status_code == 200, f"Upload photo failed: {resp.status_code} {resp.text}"
-        photo1_id = resp.json()["photo_id"]
-        photo1_storage_path = resp.json().get("storage_path")
-        photo1_thumb_path = resp.json().get("thumb_path")
-        print(f"✅ Uploaded photo1: {photo1_id}")
-        print(f"   storage_path: {photo1_storage_path}")
-        print(f"   thumb_path: {photo1_thumb_path}")
+        # ===== STEP 3: As Admin A, create resources =====
+        log("\n--- STEP 3: As Admin A, create event, album, CRM client ---")
         
-        # Set explicit cover_path for event1
-        print("   Setting explicit cover_path for event1...")
-        cover_path_to_set = photo1_thumb_path or photo1_storage_path
-        resp = requests.patch(f"{BASE_URL}/events/{event1_id}", headers=headers, json={
-            "cover_path": cover_path_to_set
-        })
-        assert resp.status_code == 200, f"Set cover_path failed: {resp.status_code} {resp.text}"
-        print(f"✅ Set cover_path: {cover_path_to_set}")
+        # 3a. Create event
+        resp = requests.post(f"{BASE_URL}/events", 
+            headers={"Authorization": f"Bearer {admin_a_token}"},
+            json={
+                "name": "Admin A Test Event",
+                "category": "wedding",
+                "date": "2026-12-01"
+            })
+        assert resp.status_code == 200, f"Event creation failed: {resp.status_code} {resp.text}"
+        admin_a_event_id = resp.json()["event_id"]
+        log(f"✅ Admin A created event: {admin_a_event_id}")
         
-        # ===== TEST 3: Create event WITHOUT cover_path but WITH photos =====
-        print("\n[TEST 3] Create event without cover_path but with photos...")
-        resp = requests.post(f"{BASE_URL}/events", headers=headers, json={
-            "name": "QA Event No Cover",
-            "category": "portrait",
-            "date": "2026-04-20"
-        })
-        assert resp.status_code == 200, f"Create event failed: {resp.status_code} {resp.text}"
-        event2_id = resp.json()["event_id"]
-        print(f"✅ Created event2: {event2_id}")
+        # 3b. Upload photo to event
+        img_buf = create_test_image()
+        resp = requests.post(f"{BASE_URL}/events/{admin_a_event_id}/photos",
+            headers={"Authorization": f"Bearer {admin_a_token}"},
+            files={"file": ("test.jpg", img_buf, "image/jpeg")})
+        assert resp.status_code == 200, f"Photo upload failed: {resp.status_code} {resp.text}"
+        admin_a_photo_id = resp.json()["photo_id"]
+        log(f"✅ Admin A uploaded photo: {admin_a_photo_id}")
         
-        # Upload two photos to event2 (no explicit cover)
-        print("   Uploading photo 2a to event2...")
-        img_buf = create_test_image(color=(0, 255, 0))  # Green image
-        resp = requests.post(
-            f"{BASE_URL}/events/{event2_id}/photos",
-            headers=headers,
-            files={"file": ("test2a.jpg", img_buf, "image/jpeg")}
-        )
-        assert resp.status_code == 200, f"Upload photo failed: {resp.status_code} {resp.text}"
-        photo2_id = resp.json()["photo_id"]
-        photo2_storage_path = resp.json().get("storage_path")
-        photo2_thumb_path = resp.json().get("thumb_path")
-        print(f"✅ Uploaded photo2a: {photo2_id}")
-        print(f"   storage_path: {photo2_storage_path}")
-        print(f"   thumb_path: {photo2_thumb_path}")
+        # 3c. Create album
+        resp = requests.post(f"{BASE_URL}/albums",
+            headers={"Authorization": f"Bearer {admin_a_token}"},
+            json={"title": "Admin A Test Album"})
+        assert resp.status_code == 200, f"Album creation failed: {resp.status_code} {resp.text}"
+        admin_a_album_id = resp.json()["album_id"]
+        log(f"✅ Admin A created album: {admin_a_album_id}")
         
-        print("   Uploading photo 2b to event2...")
-        img_buf = create_test_image(color=(0, 0, 255))  # Blue image
-        resp = requests.post(
-            f"{BASE_URL}/events/{event2_id}/photos",
-            headers=headers,
-            files={"file": ("test2b.jpg", img_buf, "image/jpeg")}
-        )
-        assert resp.status_code == 200, f"Upload photo failed: {resp.status_code} {resp.text}"
-        photo3_id = resp.json()["photo_id"]
-        print(f"✅ Uploaded photo2b: {photo3_id}")
+        # 3d. Upload PDF to album
+        pdf_buf = create_test_pdf()
+        resp = requests.post(f"{BASE_URL}/albums/{admin_a_album_id}/pdf",
+            headers={"Authorization": f"Bearer {admin_a_token}"},
+            files={"file": ("test.pdf", pdf_buf, "application/pdf")})
+        assert resp.status_code == 200, f"Album PDF upload failed: {resp.status_code} {resp.text}"
+        log(f"✅ Admin A uploaded PDF to album")
         
-        # ===== TEST 4: Create event WITHOUT cover_path and WITHOUT photos =====
-        print("\n[TEST 4] Create event without cover_path and without photos...")
-        resp = requests.post(f"{BASE_URL}/events", headers=headers, json={
-            "name": "QA Event Empty",
-            "category": "event",
-            "date": "2026-05-10"
-        })
-        assert resp.status_code == 200, f"Create event failed: {resp.status_code} {resp.text}"
-        event3_id = resp.json()["event_id"]
-        print(f"✅ Created event3 (empty): {event3_id}")
+        # 3e. Publish album
+        resp = requests.post(f"{BASE_URL}/albums/{admin_a_album_id}/publish",
+            headers={"Authorization": f"Bearer {admin_a_token}"})
+        assert resp.status_code == 200, f"Album publish failed: {resp.status_code} {resp.text}"
+        log(f"✅ Admin A published album")
         
-        # ===== TEST 5: Grant client access to all three events =====
-        print("\n[TEST 5] Grant client access to all three events...")
-        for event_id in [event1_id, event2_id, event3_id]:
-            resp = requests.post(
-                f"{BASE_URL}/events/{event_id}/access",
-                headers=headers,
-                json={
-                    "channel": "phone",
-                    "phone": client_phone,
-                    "full_gallery_access": True
-                }
-            )
-            assert resp.status_code == 200, f"Grant access failed: {resp.status_code} {resp.text}"
-            print(f"✅ Granted access to {event_id}")
+        # 3f. Create CRM client with contacts
+        resp = requests.post(f"{BASE_URL}/clients",
+            headers={"Authorization": f"Bearer {admin_a_token}"},
+            json={
+                "name": "Admin A Test Family",
+                "contacts": [
+                    {
+                        "name": "Contact Alpha",
+                        "role": "bride",
+                        "email": "contact.alpha@adminatest.example",
+                        "phone": "+919876543100"
+                    }
+                ]
+            })
+        assert resp.status_code == 200, f"CRM client creation failed: {resp.status_code} {resp.text}"
+        admin_a_client_id = resp.json()["client_id"]
+        admin_a_contact_id = resp.json()["contacts"][0]["contact_id"]
+        log(f"✅ Admin A created CRM client: {admin_a_client_id} with contact: {admin_a_contact_id}")
         
-        # ===== TEST 6: Client OTP login =====
-        print("\n[TEST 6] Client OTP login...")
-        resp = requests.post(f"{BASE_URL}/auth/client/request-otp", json={
-            "channel": "phone",
-            "phone": client_phone
-        })
-        assert resp.status_code == 200, f"Request OTP failed: {resp.status_code} {resp.text}"
-        dev_code = resp.json().get("dev_code")
-        print(f"✅ OTP requested, dev_code: {dev_code}")
+        # 3g. Add important date to CRM client
+        resp = requests.post(f"{BASE_URL}/clients/{admin_a_client_id}/important-dates",
+            headers={"Authorization": f"Bearer {admin_a_token}"},
+            json={
+                "person_label": "Contact Alpha",
+                "occasion": "Birthday",
+                "date": "2026-09-15"
+            })
+        assert resp.status_code == 200, f"Important date creation failed: {resp.status_code} {resp.text}"
+        admin_a_date_id = resp.json()["date_id"]
+        log(f"✅ Admin A added important date: {admin_a_date_id}")
         
-        resp = requests.post(f"{BASE_URL}/auth/client/verify-otp", json={
-            "channel": "phone",
-            "phone": client_phone,
-            "code": dev_code
-        })
-        assert resp.status_code == 200, f"Verify OTP failed: {resp.status_code} {resp.text}"
-        client_token = resp.json()["session_token"]
-        print(f"✅ Client logged in successfully")
+        # 3h. Assign CRM client to event (client-group assignment)
+        resp = requests.post(f"{BASE_URL}/events/{admin_a_event_id}/client-assignments",
+            headers={"Authorization": f"Bearer {admin_a_token}"},
+            json={
+                "client_id": admin_a_client_id,
+                "full_gallery_access": True
+            })
+        assert resp.status_code == 200, f"Event client assignment failed: {resp.status_code} {resp.text}"
+        log(f"✅ Admin A assigned CRM client to event")
         
-        client_headers = {"Authorization": f"Bearer {client_token}"}
+        # 3i. Assign CRM client to album
+        resp = requests.post(f"{BASE_URL}/albums/{admin_a_album_id}/client-assignments",
+            headers={"Authorization": f"Bearer {admin_a_token}"},
+            json={"client_id": admin_a_client_id})
+        assert resp.status_code == 200, f"Album client assignment failed: {resp.status_code} {resp.text}"
+        log(f"✅ Admin A assigned CRM client to album")
         
-        # ===== TEST 7: GET /api/me/dashboard and validate cover fields =====
-        print("\n[TEST 7] GET /api/me/dashboard and validate cover fields...")
-        resp = requests.get(f"{BASE_URL}/me/dashboard", headers=client_headers)
-        assert resp.status_code == 200, f"Dashboard failed: {resp.status_code} {resp.text}"
-        dashboard = resp.json()
-        print(f"✅ Dashboard retrieved successfully")
+        # 3j. Create direct grant (via public access endpoint to create visitor)
+        resp = requests.post(f"{BASE_URL}/public/events/{admin_a_event_id}/access",
+            json={
+                "name": "Direct Visitor",
+                "phone": "+919876543199"
+            })
+        assert resp.status_code == 200, f"Direct visitor creation failed: {resp.status_code} {resp.text}"
+        visitor_token = resp.json()["session_token"]
+        log(f"✅ Admin A created direct visitor via public access")
         
-        memories = dashboard.get("memories", [])
-        print(f"   Found {len(memories)} memories")
+        # Get visitor ID from admin's visitor list
+        resp = requests.get(f"{BASE_URL}/events/{admin_a_event_id}/visitors",
+            headers={"Authorization": f"Bearer {admin_a_token}"})
+        assert resp.status_code == 200, f"Get visitors failed: {resp.status_code} {resp.text}"
+        visitors = resp.json()  # Returns list directly
+        admin_a_visitor_id = visitors[0]["visitor_id"] if visitors else None
+        log(f"✅ Admin A visitor ID: {admin_a_visitor_id}")
         
-        # Find our test events in memories
-        event1_memory = None
-        event2_memory = None
-        event3_memory = None
+        # 3k. Create direct album grant
+        resp = requests.post(f"{BASE_URL}/albums/{admin_a_album_id}/access",
+            headers={"Authorization": f"Bearer {admin_a_token}"},
+            json={
+                "channel": "email",
+                "email": "directgrant@adminatest.example"
+            })
+        assert resp.status_code == 200, f"Direct album grant failed: {resp.status_code} {resp.text}"
+        admin_a_grant_id = resp.json()["grant_id"]
+        log(f"✅ Admin A created direct album grant: {admin_a_grant_id}")
         
-        for mem in memories:
-            if mem.get("event_id") == event1_id:
-                event1_memory = mem
-            elif mem.get("event_id") == event2_id:
-                event2_memory = mem
-            elif mem.get("event_id") == event3_id:
-                event3_memory = mem
+        log("\n✅ Admin A setup complete with all resources created")
         
-        # ===== TEST 8: Validate event1 (WITH explicit cover_path) =====
-        print("\n[TEST 8] Validate event1 cover (explicit cover_path)...")
-        assert event1_memory is not None, "Event1 not found in memories"
-        print(f"   Event1 memory: {event1_memory}")
+        # ===== STEP 4: As Admin B, attempt to access Admin A's resources =====
+        log("\n--- STEP 4: As Admin B, verify CANNOT access Admin A's resources ---")
         
-        event1_cover_path = event1_memory.get("cover_path")
-        event1_cover_url = event1_memory.get("cover_url")
-        event1_cover_drive_id = event1_memory.get("cover_drive_id")
+        test_results = []
         
-        print(f"   cover_path: {event1_cover_path}")
-        print(f"   cover_url: {event1_cover_url}")
-        print(f"   cover_drive_id: {event1_cover_drive_id}")
+        # 4a. Try to list Admin A's event
+        log("\n4a. Admin B tries to list events (should only see own, not Admin A's)")
+        resp = requests.get(f"{BASE_URL}/events",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        assert resp.status_code == 200, f"List events failed: {resp.status_code} {resp.text}"
+        events = resp.json()  # Returns list directly
+        admin_a_event_visible = any(e["event_id"] == admin_a_event_id for e in events)
+        if admin_a_event_visible:
+            test_results.append("❌ FAIL: Admin B can see Admin A's event in list")
+            log("❌ FAIL: Admin B can see Admin A's event in list")
+        else:
+            test_results.append("✅ PASS: Admin B cannot see Admin A's event in list")
+            log("✅ PASS: Admin B cannot see Admin A's event in list")
         
-        assert event1_cover_path == cover_path_to_set, \
-            f"Event1 cover_path mismatch: expected {cover_path_to_set}, got {event1_cover_path}"
-        print(f"✅ Event1 cover_path matches explicit cover: {event1_cover_path}")
+        # 4b. Try to GET Admin A's event directly
+        log("\n4b. Admin B tries to GET Admin A's event directly")
+        resp = requests.get(f"{BASE_URL}/events/{admin_a_event_id}",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot GET Admin A's event ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot GET Admin A's event ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can GET Admin A's event ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can GET Admin A's event ({resp.status_code})")
         
-        # ===== TEST 9: Validate event2 (NO cover_path, fallback to first photo) =====
-        print("\n[TEST 9] Validate event2 cover (fallback to first photo)...")
-        assert event2_memory is not None, "Event2 not found in memories"
-        print(f"   Event2 memory: {event2_memory}")
+        # 4c. Try to UPDATE Admin A's event
+        log("\n4c. Admin B tries to UPDATE Admin A's event")
+        resp = requests.patch(f"{BASE_URL}/events/{admin_a_event_id}",
+            headers={"Authorization": f"Bearer {admin_b_token}"},
+            json={"name": "Hacked by Admin B"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot UPDATE Admin A's event ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot UPDATE Admin A's event ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can UPDATE Admin A's event ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can UPDATE Admin A's event ({resp.status_code})")
         
-        event2_cover_path = event2_memory.get("cover_path")
-        event2_cover_url = event2_memory.get("cover_url")
-        event2_cover_drive_id = event2_memory.get("cover_drive_id")
+        # 4d. Try to DELETE Admin A's event
+        log("\n4d. Admin B tries to DELETE Admin A's event")
+        resp = requests.delete(f"{BASE_URL}/events/{admin_a_event_id}",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot DELETE Admin A's event ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot DELETE Admin A's event ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can DELETE Admin A's event ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can DELETE Admin A's event ({resp.status_code})")
         
-        print(f"   cover_path: {event2_cover_path}")
-        print(f"   cover_url: {event2_cover_url}")
-        print(f"   cover_drive_id: {event2_cover_drive_id}")
+        # 4e. Try to list Admin A's event photos
+        log("\n4e. Admin B tries to list Admin A's event photos")
+        resp = requests.get(f"{BASE_URL}/events/{admin_a_event_id}/photos",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot list Admin A's photos ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot list Admin A's photos ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can list Admin A's photos ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can list Admin A's photos ({resp.status_code})")
         
-        # Should fallback to first photo's thumb_path or storage_path
-        expected_cover = photo2_thumb_path or photo2_storage_path
-        assert event2_cover_path == expected_cover, \
-            f"Event2 cover_path mismatch: expected {expected_cover}, got {event2_cover_path}"
-        print(f"✅ Event2 cover_path correctly falls back to first photo: {event2_cover_path}")
+        # 4f. Try to upload photo to Admin A's event
+        log("\n4f. Admin B tries to upload photo to Admin A's event")
+        img_buf = create_test_image()
+        resp = requests.post(f"{BASE_URL}/events/{admin_a_event_id}/photos",
+            headers={"Authorization": f"Bearer {admin_b_token}"},
+            files={"file": ("hack.jpg", img_buf, "image/jpeg")})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot upload to Admin A's event ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot upload to Admin A's event ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can upload to Admin A's event ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can upload to Admin A's event ({resp.status_code})")
         
-        # Verify it's from event2, not event1 or event3
-        assert event1_id not in (event2_cover_path or ""), \
-            f"Event2 cover_path incorrectly references event1"
-        assert event3_id not in (event2_cover_path or ""), \
-            f"Event2 cover_path incorrectly references event3"
-        assert event2_id in (event2_cover_path or ""), \
-            f"Event2 cover_path does not reference event2"
-        print(f"✅ Event2 cover is from same event (event2_id in path)")
+        # 4g. Try to archive Admin A's event
+        log("\n4g. Admin B tries to archive Admin A's event")
+        resp = requests.post(f"{BASE_URL}/events/{admin_a_event_id}/archive",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot archive Admin A's event ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot archive Admin A's event ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can archive Admin A's event ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can archive Admin A's event ({resp.status_code})")
         
-        # ===== TEST 10: Validate event3 (NO cover_path, NO photos) =====
-        print("\n[TEST 10] Validate event3 cover (no cover, no photos)...")
-        assert event3_memory is not None, "Event3 not found in memories"
-        print(f"   Event3 memory: {event3_memory}")
+        # 4h. Try to access Admin A's event visitors
+        log("\n4h. Admin B tries to access Admin A's event visitors")
+        resp = requests.get(f"{BASE_URL}/events/{admin_a_event_id}/visitors",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot access Admin A's visitors ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot access Admin A's visitors ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can access Admin A's visitors ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can access Admin A's visitors ({resp.status_code})")
         
-        event3_cover_path = event3_memory.get("cover_path")
-        event3_cover_url = event3_memory.get("cover_url")
-        event3_cover_drive_id = event3_memory.get("cover_drive_id")
+        # 4i. Try to access Admin A's event access grants
+        log("\n4i. Admin B tries to access Admin A's event access grants")
+        resp = requests.get(f"{BASE_URL}/events/{admin_a_event_id}/access",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot access Admin A's grants ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot access Admin A's grants ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can access Admin A's grants ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can access Admin A's grants ({resp.status_code})")
         
-        print(f"   cover_path: {event3_cover_path}")
-        print(f"   cover_url: {event3_cover_url}")
-        print(f"   cover_drive_id: {event3_cover_drive_id}")
+        # 4j. Try to access Admin A's event client-assignments
+        log("\n4j. Admin B tries to access Admin A's event client-assignments")
+        resp = requests.get(f"{BASE_URL}/events/{admin_a_event_id}/client-assignments",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot access Admin A's client-assignments ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot access Admin A's client-assignments ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can access Admin A's client-assignments ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can access Admin A's client-assignments ({resp.status_code})")
         
-        assert event3_cover_path is None, \
-            f"Event3 cover_path should be None, got {event3_cover_path}"
-        assert event3_cover_drive_id is None, \
-            f"Event3 cover_drive_id should be None, got {event3_cover_drive_id}"
-        assert event3_cover_url is None, \
-            f"Event3 cover_url should be None, got {event3_cover_url}"
-        print(f"✅ Event3 correctly has no cover (all fields None)")
+        # 4k. Try to list Admin A's albums
+        log("\n4k. Admin B tries to list albums (should only see own, not Admin A's)")
+        resp = requests.get(f"{BASE_URL}/albums",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        assert resp.status_code == 200, f"List albums failed: {resp.status_code} {resp.text}"
+        albums = resp.json()  # Returns list directly
+        admin_a_album_visible = any(a["album_id"] == admin_a_album_id for a in albums)
+        if admin_a_album_visible:
+            test_results.append("❌ FAIL: Admin B can see Admin A's album in list")
+            log("❌ FAIL: Admin B can see Admin A's album in list")
+        else:
+            test_results.append("✅ PASS: Admin B cannot see Admin A's album in list")
+            log("✅ PASS: Admin B cannot see Admin A's album in list")
         
-        # ===== TEST 11: Verify existing auth and event APIs remain 200 =====
-        print("\n[TEST 11] Verify existing auth and event APIs remain 200...")
+        # 4l. Try to GET Admin A's album directly
+        log("\n4l. Admin B tries to GET Admin A's album directly")
+        resp = requests.get(f"{BASE_URL}/albums/{admin_a_album_id}",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot GET Admin A's album ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot GET Admin A's album ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can GET Admin A's album ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can GET Admin A's album ({resp.status_code})")
         
-        # Health check
-        resp = requests.get(f"{BASE_URL}/")
-        assert resp.status_code == 200, f"Health check failed: {resp.status_code}"
-        print(f"✅ GET /api/ → 200")
+        # 4m. Try to UPDATE Admin A's album
+        log("\n4m. Admin B tries to UPDATE Admin A's album")
+        resp = requests.patch(f"{BASE_URL}/albums/{admin_a_album_id}",
+            headers={"Authorization": f"Bearer {admin_b_token}"},
+            json={"title": "Hacked by Admin B"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot UPDATE Admin A's album ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot UPDATE Admin A's album ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can UPDATE Admin A's album ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can UPDATE Admin A's album ({resp.status_code})")
         
-        # List events (admin)
-        resp = requests.get(f"{BASE_URL}/events", headers=headers)
-        assert resp.status_code == 200, f"List events failed: {resp.status_code}"
-        print(f"✅ GET /api/events (admin) → 200")
+        # 4n. Try to DELETE Admin A's album
+        log("\n4n. Admin B tries to DELETE Admin A's album")
+        resp = requests.delete(f"{BASE_URL}/albums/{admin_a_album_id}",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot DELETE Admin A's album ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot DELETE Admin A's album ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can DELETE Admin A's album ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can DELETE Admin A's album ({resp.status_code})")
         
-        # Get event detail (admin)
-        resp = requests.get(f"{BASE_URL}/events/{event1_id}", headers=headers)
-        assert resp.status_code == 200, f"Get event failed: {resp.status_code}"
-        print(f"✅ GET /api/events/{event1_id} (admin) → 200")
+        # 4o. Try to access Admin A's album access grants
+        log("\n4o. Admin B tries to access Admin A's album access grants")
+        resp = requests.get(f"{BASE_URL}/albums/{admin_a_album_id}/access",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot access Admin A's album grants ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot access Admin A's album grants ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can access Admin A's album grants ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can access Admin A's album grants ({resp.status_code})")
         
-        # List client events
-        resp = requests.get(f"{BASE_URL}/client/events", headers=client_headers)
-        assert resp.status_code == 200, f"List client events failed: {resp.status_code}"
-        print(f"✅ GET /api/client/events (client) → 200")
+        # 4p. Try to access Admin A's album client-assignments
+        log("\n4p. Admin B tries to access Admin A's album client-assignments")
+        resp = requests.get(f"{BASE_URL}/albums/{admin_a_album_id}/client-assignments",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot access Admin A's album client-assignments ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot access Admin A's album client-assignments ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can access Admin A's album client-assignments ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can access Admin A's album client-assignments ({resp.status_code})")
         
-        # Get client event photos
-        resp = requests.get(f"{BASE_URL}/client/events/{event1_id}/photos", headers=client_headers)
-        assert resp.status_code == 200, f"Get client photos failed: {resp.status_code}"
-        print(f"✅ GET /api/client/events/{event1_id}/photos (client) → 200")
+        # 4q. Try to list Admin A's CRM clients
+        log("\n4q. Admin B tries to list CRM clients (should only see own, not Admin A's)")
+        resp = requests.get(f"{BASE_URL}/clients",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        assert resp.status_code == 200, f"List clients failed: {resp.status_code} {resp.text}"
+        clients = resp.json()  # Returns list directly
+        admin_a_client_visible = any(c["client_id"] == admin_a_client_id for c in clients)
+        if admin_a_client_visible:
+            test_results.append("❌ FAIL: Admin B can see Admin A's CRM client in list")
+            log("❌ FAIL: Admin B can see Admin A's CRM client in list")
+        else:
+            test_results.append("✅ PASS: Admin B cannot see Admin A's CRM client in list")
+            log("✅ PASS: Admin B cannot see Admin A's CRM client in list")
         
-        print("\n" + "=" * 80)
-        print("ALL TESTS PASSED ✅")
-        print("=" * 80)
+        # 4r. Try to GET Admin A's CRM client directly
+        log("\n4r. Admin B tries to GET Admin A's CRM client directly")
+        resp = requests.get(f"{BASE_URL}/clients/{admin_a_client_id}",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot GET Admin A's CRM client ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot GET Admin A's CRM client ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can GET Admin A's CRM client ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can GET Admin A's CRM client ({resp.status_code})")
         
-    except AssertionError as e:
-        print(f"\n❌ TEST FAILED: {e}")
-        raise
-    except Exception as e:
-        print(f"\n❌ UNEXPECTED ERROR: {e}")
-        raise
+        # 4s. Try to UPDATE Admin A's CRM client
+        log("\n4s. Admin B tries to UPDATE Admin A's CRM client")
+        resp = requests.patch(f"{BASE_URL}/clients/{admin_a_client_id}",
+            headers={"Authorization": f"Bearer {admin_b_token}"},
+            json={"client_name": "Hacked by Admin B"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot UPDATE Admin A's CRM client ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot UPDATE Admin A's CRM client ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can UPDATE Admin A's CRM client ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can UPDATE Admin A's CRM client ({resp.status_code})")
+        
+        # 4t. Try to DELETE Admin A's CRM client
+        log("\n4t. Admin B tries to DELETE Admin A's CRM client")
+        resp = requests.delete(f"{BASE_URL}/clients/{admin_a_client_id}",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404]:
+            test_results.append(f"✅ PASS: Admin B cannot DELETE Admin A's CRM client ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot DELETE Admin A's CRM client ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can DELETE Admin A's CRM client ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can DELETE Admin A's CRM client ({resp.status_code})")
+        
+        # 4u. Try to access Admin A's CRM client contacts
+        log("\n4u. Admin B tries to access Admin A's CRM client contacts")
+        resp = requests.get(f"{BASE_URL}/clients/{admin_a_client_id}/contacts/{admin_a_contact_id}",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404, 405]:  # 405 = endpoint doesn't exist
+            test_results.append(f"✅ PASS: Admin B cannot access Admin A's contact ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot access Admin A's contact ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can access Admin A's contact ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can access Admin A's contact ({resp.status_code})")
+        
+        # 4v. Try to access Admin A's CRM client important dates
+        log("\n4v. Admin B tries to access Admin A's CRM client important dates")
+        resp = requests.get(f"{BASE_URL}/clients/{admin_a_client_id}/important-dates/{admin_a_date_id}",
+            headers={"Authorization": f"Bearer {admin_b_token}"})
+        if resp.status_code in [403, 404, 405]:  # 405 = endpoint doesn't exist
+            test_results.append(f"✅ PASS: Admin B cannot access Admin A's important date ({resp.status_code})")
+            log(f"✅ PASS: Admin B cannot access Admin A's important date ({resp.status_code})")
+        else:
+            test_results.append(f"❌ FAIL: Admin B can access Admin A's important date ({resp.status_code})")
+            log(f"❌ FAIL: Admin B can access Admin A's important date ({resp.status_code})")
+        
+        # ===== STEP 5: Verify public share tokens only reveal own resources =====
+        log("\n--- STEP 5: Verify public share tokens isolation ---")
+        
+        # 5a. Get Admin A's event share token
+        resp = requests.get(f"{BASE_URL}/events/{admin_a_event_id}/share",
+            headers={"Authorization": f"Bearer {admin_a_token}"})
+        assert resp.status_code == 200, f"Get event share failed: {resp.status_code} {resp.text}"
+        admin_a_event_share_token = resp.json()["share_url"].split("/g/")[-1]
+        log(f"✅ Admin A event share token: {admin_a_event_share_token}")
+        
+        # 5b. Get Admin A's album share token
+        resp = requests.get(f"{BASE_URL}/albums/{admin_a_album_id}/share",
+            headers={"Authorization": f"Bearer {admin_a_token}"})
+        assert resp.status_code == 200, f"Get album share failed: {resp.status_code} {resp.text}"
+        admin_a_album_share_token = resp.json()["share_url"].split("/a/")[-1]
+        log(f"✅ Admin A album share token: {admin_a_album_share_token}")
+        
+        # 5c. Verify public event access (no auth) works for Admin A's event
+        log("\n5c. Verify public event access works for Admin A's event")
+        resp = requests.get(f"{BASE_URL}/public/events/{admin_a_event_id}")
+        if resp.status_code == 200:
+            test_results.append("✅ PASS: Public event access works for Admin A's event")
+            log("✅ PASS: Public event access works for Admin A's event")
+        else:
+            test_results.append(f"❌ FAIL: Public event access failed for Admin A's event ({resp.status_code})")
+            log(f"❌ FAIL: Public event access failed for Admin A's event ({resp.status_code})")
+        
+        # 5d. Verify public album manifest (published) works for Admin A's album
+        log("\n5d. Verify public album manifest works for Admin A's album")
+        resp = requests.get(f"{BASE_URL}/albums/public/{admin_a_album_share_token}")
+        if resp.status_code == 200:
+            test_results.append("✅ PASS: Public album manifest works for Admin A's album")
+            log("✅ PASS: Public album manifest works for Admin A's album")
+        else:
+            test_results.append(f"❌ FAIL: Public album manifest failed for Admin A's album ({resp.status_code})")
+            log(f"❌ FAIL: Public album manifest failed for Admin A's album ({resp.status_code})")
+        
+        # ===== STEP 6: Check backend logs for 5xx errors =====
+        log("\n--- STEP 6: Check backend logs for 5xx errors ---")
+        # This will be done via bash command after test
+        
+        # ===== SUMMARY =====
+        log("\n=== TEST SUMMARY ===")
+        passed = sum(1 for r in test_results if r.startswith("✅"))
+        failed = sum(1 for r in test_results if r.startswith("❌"))
+        log(f"Total tests: {len(test_results)}")
+        log(f"Passed: {passed}")
+        log(f"Failed: {failed}")
+        
+        if failed > 0:
+            log("\n❌ FAILED TESTS:")
+            for r in test_results:
+                if r.startswith("❌"):
+                    log(f"  {r}")
+        
+        log("\nAll test results:")
+        for r in test_results:
+            log(f"  {r}")
+        
     finally:
-        # ===== CLEANUP =====
-        print("\n" + "=" * 80)
-        print("CLEANUP: Deleting throwaway resources...")
-        print("=" * 80)
+        # ===== CLEANUP: Delete all throwaway resources =====
+        log("\n--- CLEANUP: Deleting all throwaway resources ---")
         
-        if admin_token:
-            headers = {"Authorization": f"Bearer {admin_token}"}
-            
-            # Delete events (this also deletes photos and grants)
-            for event_id in [event1_id, event2_id, event3_id]:
-                if event_id:
-                    try:
-                        resp = requests.delete(f"{BASE_URL}/events/{event_id}", headers=headers)
-                        if resp.status_code == 200:
-                            print(f"✅ Deleted event: {event_id}")
-                        else:
-                            print(f"⚠️  Failed to delete event {event_id}: {resp.status_code}")
-                    except Exception as e:
-                        print(f"⚠️  Error deleting event {event_id}: {e}")
-            
-            # Delete client user (created via OTP)
-            if client_phone:
-                try:
-                    # Find and delete the client user
-                    # Note: There's no direct API to delete client users, but deleting events
-                    # should clean up access grants. The user record may remain but that's OK.
-                    print(f"ℹ️  Client user for {client_phone} may remain (no delete API)")
-                except Exception as e:
-                    print(f"⚠️  Error with client cleanup: {e}")
+        # Cleanup Admin A's resources
+        if admin_a_event_id:
+            try:
+                resp = requests.delete(f"{BASE_URL}/events/{admin_a_event_id}",
+                    headers={"Authorization": f"Bearer {admin_a_token}"})
+                if resp.status_code == 200:
+                    log(f"✅ Deleted Admin A's event: {admin_a_event_id}")
+                else:
+                    log(f"⚠️  Failed to delete Admin A's event: {resp.status_code}")
+            except Exception as e:
+                log(f"⚠️  Error deleting Admin A's event: {e}")
         
-        print("\n" + "=" * 80)
-        print("CLEANUP COMPLETE")
-        print("=" * 80)
+        if admin_a_album_id:
+            try:
+                resp = requests.delete(f"{BASE_URL}/albums/{admin_a_album_id}",
+                    headers={"Authorization": f"Bearer {admin_a_token}"})
+                if resp.status_code == 200:
+                    log(f"✅ Deleted Admin A's album: {admin_a_album_id}")
+                else:
+                    log(f"⚠️  Failed to delete Admin A's album: {resp.status_code}")
+            except Exception as e:
+                log(f"⚠️  Error deleting Admin A's album: {e}")
+        
+        if admin_a_client_id:
+            try:
+                resp = requests.delete(f"{BASE_URL}/clients/{admin_a_client_id}",
+                    headers={"Authorization": f"Bearer {admin_a_token}"})
+                if resp.status_code == 200:
+                    log(f"✅ Deleted Admin A's CRM client: {admin_a_client_id}")
+                else:
+                    log(f"⚠️  Failed to delete Admin A's CRM client: {resp.status_code}")
+            except Exception as e:
+                log(f"⚠️  Error deleting Admin A's CRM client: {e}")
+        
+        # Cleanup Admin B account
+        if admin_b_user_id:
+            try:
+                # Delete Admin B's user account directly from DB
+                log(f"⚠️  Note: Admin B account cleanup requires manual DB deletion or admin endpoint")
+                log(f"   Admin B user_id: {admin_b_user_id}, email: {ADMIN_B_EMAIL}")
+            except Exception as e:
+                log(f"⚠️  Error noting Admin B cleanup: {e}")
+        
+        log("\n✅ Cleanup complete (Admin B account may need manual DB cleanup)")
 
 if __name__ == "__main__":
-    test_same_event_cover()
+    main()

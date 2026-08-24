@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useRef, useState } from 
 import {
   ActivityIndicator,
   Animated,
+  Easing,
   Pressable,
   StyleSheet,
   Text,
@@ -73,6 +74,62 @@ export function Button({
     </Pressable>
   );
 }
+
+// ---------------- Luxe loading screen ----------------
+export function LuxeLoader({
+  title = "Loading PIK Connect",
+  subtitle = "Preparing your experience…",
+  progress,
+}: {
+  title?: string;
+  subtitle?: string;
+  progress?: number;
+}) {
+  const spin = useRef(new Animated.Value(0)).current;
+  const pulse = useRef(new Animated.Value(0.85)).current;
+
+  React.useEffect(() => {
+    const rotation = Animated.loop(
+      Animated.timing(spin, { toValue: 1, duration: 2400, easing: Easing.linear, useNativeDriver: true })
+    );
+    const breathing = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 900, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.85, duration: 900, useNativeDriver: true }),
+      ])
+    );
+    rotation.start();
+    breathing.start();
+    return () => {
+      rotation.stop();
+      breathing.stop();
+    };
+  }, [pulse, spin]);
+
+  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+  const safeProgress = typeof progress === "number" ? Math.min(100, Math.max(0, progress)) : null;
+
+  return (
+    <View style={styles.loaderScreen} testID="luxe-loader">
+      <View style={styles.loaderVisual}>
+        <Animated.View style={[styles.loaderRingOuter, { transform: [{ rotate }] }]} />
+        <Animated.View style={[styles.loaderRingInner, { opacity: pulse, transform: [{ rotate: "-45deg" }] }]} />
+        <Animated.View style={[styles.loaderLogo, { transform: [{ scale: pulse }] }]}>
+          <Ionicons name="aperture" size={38} color={colors.brand} />
+        </Animated.View>
+      </View>
+      <Text style={styles.loaderTitle}>{title}</Text>
+      <Text style={styles.loaderSubtitle}>{subtitle}</Text>
+      {safeProgress !== null ? (
+        <View style={styles.loaderProgressTrack}>
+          <View style={[styles.loaderProgressFill, { width: `${safeProgress}%` }]} />
+        </View>
+      ) : null}
+      <Text style={styles.loaderBrand}>POWERED BY PIK CONNECT</Text>
+    </View>
+  );
+}
+
 
 // ---------------- TextField ----------------
 export function TextField({
@@ -289,6 +346,17 @@ export function GlassHeader({
 }
 
 const styles = StyleSheet.create({
+  loaderScreen: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, backgroundColor: colors.surface },
+  loaderVisual: { width: 138, height: 138, alignItems: "center", justifyContent: "center", marginBottom: spacing.xl },
+  loaderRingOuter: { position: "absolute", width: 132, height: 132, borderRadius: 66, borderWidth: 4, borderColor: colors.brand, borderLeftColor: "transparent", borderBottomColor: "transparent" },
+  loaderRingInner: { position: "absolute", width: 104, height: 104, borderRadius: 52, borderWidth: 2, borderColor: colors.onSurfaceTertiary, borderRightColor: "transparent", borderTopColor: "transparent" },
+  loaderLogo: { width: 72, height: 72, borderRadius: 36, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center" },
+  loaderTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, textAlign: "center" },
+  loaderSubtitle: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.base, textAlign: "center", marginTop: spacing.sm },
+  loaderProgressTrack: { width: "100%", maxWidth: 280, height: 6, borderRadius: radius.pill, backgroundColor: colors.surfaceTertiary, overflow: "hidden", marginTop: spacing.lg },
+  loaderProgressFill: { height: 6, borderRadius: radius.pill, backgroundColor: colors.brand },
+  loaderBrand: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, letterSpacing: 2, marginTop: spacing["2xl"] },
+
   btn: {
     height: 52,
     borderRadius: radius.md,

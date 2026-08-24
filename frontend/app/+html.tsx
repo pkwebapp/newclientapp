@@ -12,6 +12,8 @@ const STUDIO_SITE = "https://www.pkphotography.in";
 const OG_IMAGE = "https://pkphotography.in/pricing/PKP_0763%20cover.jpg";
 const REVIEW_URL = "https://g.page/r/CVhvUcwRhP2GEAE/review";
 
+const FAVICON = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTYiIGZpbGw9IiMwRTBEMEMiLz48Y2lyY2xlIGN4PSIzMiIgY3k9IjMyIiByPSIyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjRjQ3QjRBIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1kYXNoYXJyYXk9IjIyIDciLz48cGF0aCBkPSJNMzIgMTZsMTEgNnYxM0wzMiA0MiAyMSAzNVYyMnpNMzIgMjRsNiAzdjdsLTYgMy02LTN2LTd6IiBmaWxsPSIjRjQ3QjRBIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiLz48Y2lyY2xlIGN4PSIzMiIgY3k9IjMyIiByPSIzIiBmaWxsPSIjMEUwRDBDIi8+PC9zdmc+";
+
 const schema = {
   "@context": "https://schema.org",
   "@graph": [
@@ -137,7 +139,8 @@ export default function Root({ children }: PropsWithChildren) {
         />
         <meta name="twitter:image" content={OG_IMAGE} />
         <link rel="canonical" href={SITE + "/"} />
-        <link rel="icon" href="/favicon.png" />
+        <link rel="icon" type="image/svg+xml" href={FAVICON} />
+        <link rel="alternate icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/favicon.png" />
         <link rel="preconnect" href="https://pkphotography.in" />
         <script

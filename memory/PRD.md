@@ -168,6 +168,24 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - Offline restored galleries show the cached photo count and offline status.
 
 
+## Refinement: Branded web favicon (2026-08)
+- Added a compact orange PIK Connect aperture favicon as an inline base64 SVG.
+- Retained the existing PNG alternate favicon and Apple touch icon for compatibility.
+
+
+## Refinement: Footer social destinations (2026-08)
+- Updated Instagram, YouTube, Facebook, LinkedIn, and X footer links to the user's supplied profiles.
+- WhatsApp and email footer actions remain unchanged.
+
+
+
+
+## Feature: Luxe loading animation (2026-08)
+- Added an animated aperture/ring loader inspired by the supplied PIK Connect visual.
+- It appears during auth bootstrap and full client-gallery preloading, with optional fetched/total progress.
+
+
+
 ## Refinement: Complete gallery preloading (2026-08)
 - Full-access client galleries now fetch and cache every accessible photo preview before rendering the grid, with a live fetched/total counter during loading.
 - If a later page fails, already fetched photos remain available and pagination can retry the remainder.

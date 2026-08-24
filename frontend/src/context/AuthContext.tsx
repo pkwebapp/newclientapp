@@ -4,6 +4,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 
 import { api, setAuthToken } from "@/src/api/client";
+import { LuxeLoader } from "@/src/components/ui";
 import { storage } from "@/src/utils/storage";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -147,6 +148,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       sub.remove();
     }
   }, [exchangeGoogle]);
+
+  if (loading) return <LuxeLoader title="Loading PIK Connect" subtitle="Preparing your galleries…" />;
+
 
   return (
     <AuthContext.Provider

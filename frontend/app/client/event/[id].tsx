@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
-  ActivityIndicator,
   AppState,
   Platform,
   Pressable,
@@ -24,7 +23,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Clipboard from "expo-clipboard";
 
 import { api, downloadPhoto, ApiError } from "@/src/api/client";
-import { EmptyState, GlassHeader, Button, useToast } from "@/src/components/ui";
+import { EmptyState, GlassHeader, Button, LuxeLoader, useToast } from "@/src/components/ui";
 import { PhotoGrid } from "@/src/components/PhotoGrid";
 import { sharePhotoFile } from "@/src/utils/share-photo";
 
@@ -334,12 +333,11 @@ export default function ClientEventDetail() {
         topInset={insets.top}
       />
       {loading ? (
-        <View style={styles.loadingState}>
-          <ActivityIndicator color={colors.brand} />
-          {totalGalleryPhotos > 0 ? (
-            <Text style={styles.fetchLoadingText}>Fetching photos {fetchedPhotos} of {totalGalleryPhotos}</Text>
-          ) : null}
-        </View>
+        <LuxeLoader
+          title={detail?.name ? `Opening ${detail.name}` : "Opening your gallery"}
+          subtitle={totalGalleryPhotos > 0 ? `Fetching photos ${fetchedPhotos} of ${totalGalleryPhotos}` : "Preparing your photos…"}
+          progress={totalGalleryPhotos > 0 ? fetchProgress : undefined}
+        />
       ) : tab === "mine" && !searched ? (
         <View style={{ flex: 1 }}>
           {header}
@@ -413,8 +411,6 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
     backgroundColor: colors.surfaceSecondary,
   },
-  loadingState: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.md },
-  fetchLoadingText: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.base },
   fetchProgress: { marginTop: spacing.md, marginHorizontal: spacing.lg, padding: spacing.md, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   fetchProgressHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: spacing.sm },
   fetchProgressLabel: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm },
