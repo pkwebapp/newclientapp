@@ -3,6 +3,7 @@ import { useRouter } from "expo-router";
 import Head from "expo-router/head";
 import { ImageBackground, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { H1, H2, H3, P, A, Section, Footer } from "@expo/html-elements";
 
@@ -52,6 +53,7 @@ export default function Home() {
   const router = useRouter();
   const { user } = useAuth();
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const isWide = width >= 900;
 
   // Logged-in users are sent to their dashboard (client-only; crawlers never run this).
@@ -83,14 +85,14 @@ export default function Home() {
         <ImageBackground
           source={{ uri: HERO }}
           resizeMode="cover"
-          style={[styles.hero, { minHeight: isWide ? Math.max(600, height * 0.9) : Math.max(560, height * 0.82) }]}
+          style={[styles.hero, { minHeight: isWide ? Math.max(600, height * 0.9) : height }]}
         >
           <LinearGradient
             colors={["rgba(14,13,12,0.20)", "rgba(14,13,12,0.52)", "rgba(14,13,12,0.95)"]}
             locations={[0, 0.5, 1]}
             style={StyleSheet.absoluteFill}
           />
-          <View style={[styles.heroInner, isWide && styles.heroInnerWide]}>
+          <View style={[styles.heroInner, { paddingTop: insets.top + spacing.xl }, isWide && styles.heroInnerWide]}>
             <View style={styles.logoRow}>
               <Ionicons name="aperture-outline" size={24} color={colors.brand} />
               <Text style={styles.logo}>PIK CONNECT</Text>
@@ -122,7 +124,6 @@ export default function Home() {
                   <View style={styles.stepIcon}>
                     <Ionicons name={s.icon as any} size={20} color={colors.brand} />
                   </View>
-                  <Text style={styles.stepNum}>{`0${i + 1}`}</Text>
                   <H3 style={styles.stepTitle}>{s.title}</H3>
                   <P style={styles.stepText}>{s.text}</P>
                 </View>
@@ -205,7 +206,6 @@ const styles = StyleSheet.create({
   stepCard: { backgroundColor: colors.surfaceSecondary, borderWidth: StyleSheet.hairlineWidth, borderColor: colors.border, borderRadius: radius.lg, padding: spacing.xl, gap: spacing.xs },
   stepCardWide: { flex: 1 },
   stepIcon: { width: 44, height: 44, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center", marginBottom: spacing.sm },
-  stepNum: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.xs, fontWeight: "700", letterSpacing: 2 },
   stepTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, fontWeight: "700", margin: 0 },
   stepText: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 21, margin: 0 },
 
