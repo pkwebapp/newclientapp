@@ -13,7 +13,7 @@ const TOKEN_KEY = "lumiere_session_token";
 
 export type User = {
   user_id: string;
-  role: "admin" | "client";
+  role: "admin" | "client" | "superadmin";
   name?: string;
   email?: string;
   phone?: string;

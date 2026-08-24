@@ -59,7 +59,7 @@ export default function Home() {
 
   // Logged-in users are sent to their dashboard (client-only; crawlers never run this).
   useEffect(() => {
-    if (user) router.replace(user.role === "admin" ? "/admin" : "/client");
+    if (user) router.replace(user.role === "superadmin" ? "/superadmin" : user.role === "admin" ? "/admin" : "/client");
   }, [user, router]);
 
   return (

@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from config import db, APP_NAME, PUBLIC_BASE_URL
 from storage_service import get_storage
-from auth_utils import require_admin, require_client
+from auth_utils import require_admin, require_admin_uploads, require_client
 import album_service
 
 logger = logging.getLogger(__name__)
@@ -245,7 +245,7 @@ async def update_album(album_id: str, body: AlbumUpdate, admin: dict = Depends(r
 
 @album_router.post("/{album_id}/pdf")
 async def upload_pdf(album_id: str, file: UploadFile = File(...),
-                     admin: dict = Depends(require_admin)):
+                     admin: dict = Depends(require_admin_uploads)):
     a = await _admin_album_or_404(album_id, admin)
     data = await file.read()
     if not data:
@@ -346,7 +346,7 @@ MUSIC_MAX_BYTES = 25 * 1024 * 1024
 
 @album_router.post("/{album_id}/music")
 async def upload_music(album_id: str, file: UploadFile = File(...),
-                       admin: dict = Depends(require_admin)):
+                       admin: dict = Depends(require_admin_uploads)):
     a = await _admin_album_or_404(album_id, admin)
     data = await file.read()
     if not data:

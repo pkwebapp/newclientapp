@@ -20,7 +20,7 @@ from PIL import Image, ImageOps
 
 from config import (
     db, client, APP_NAME, DEFAULT_SIMILARITY_THRESHOLD, OTP_DEV_MODE, SMS_PROVIDER,
-    ADMIN_SEED_EMAIL, ADMIN_SEED_PASSWORD, PUBLIC_BASE_URL,
+    ADMIN_SEED_EMAIL, ADMIN_SEED_PASSWORD, SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD, PUBLIC_BASE_URL,
 )
 from storage_service import get_storage
 from face_engine import get_face_engine, NotIndexedError
@@ -29,7 +29,7 @@ from gdrive_service import DriveError
 from email_service import send_otp_email
 from auth_utils import (
     hash_password, verify_password, new_user_id, create_session,
-    get_current_user, require_admin, require_client, user_from_token_or_header,
+    get_current_user, require_admin, require_admin_uploads, require_client, user_from_token_or_header,
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -571,7 +571,7 @@ async def _sync_gdrive_event(event: dict, images: Optional[list] = None) -> dict
 
 
 @api_router.post("/events/gdrive")
-async def create_gdrive_event(body: GDriveEventCreate, admin: dict = Depends(require_admin)):
+async def create_gdrive_event(body: GDriveEventCreate, admin: dict = Depends(require_admin_uploads)):
     """Create a gallery from a public Google Drive folder link. Originals stay
     on Drive; we index web previews for face search."""
     if body.category not in CATEGORIES:
@@ -913,7 +913,7 @@ async def _indexing_loop():
 
 
 @api_router.post("/events/{event_id}/photos")
-async def upload_photo(event_id: str, file: UploadFile = File(...), admin: dict = Depends(require_admin)):
+async def upload_photo(event_id: str, file: UploadFile = File(...), admin: dict = Depends(require_admin_uploads)):
     event = await admin_event_or_404(event_id, admin)
     data = await file.read()
     if not data:
@@ -929,7 +929,7 @@ async def upload_photo(event_id: str, file: UploadFile = File(...), admin: dict 
 
 @api_router.post("/events/{event_id}/photos/bulk")
 async def upload_photos_bulk(event_id: str, files: list[UploadFile] = File(...),
-                             admin: dict = Depends(require_admin)):
+                             admin: dict = Depends(require_admin_uploads)):
     """Store many photos in a single request; face indexing is queued in the
     background. Returns per-file results so the client can drive a progress bar."""
     event = await admin_event_or_404(event_id, admin)
@@ -957,7 +957,7 @@ class S3ImportBody(BaseModel):
 
 
 @api_router.post("/events/{event_id}/import-s3")
-async def import_from_s3(event_id: str, body: S3ImportBody, admin: dict = Depends(require_admin)):
+async def import_from_s3(event_id: str, body: S3ImportBody, admin: dict = Depends(require_admin_uploads)):
     """Pull image objects from a configured S3-compatible bucket into this event."""
     event = await admin_event_or_404(event_id, admin)
     bucket = body.bucket or os.environ.get("S3_IMPORT_BUCKET")
@@ -2067,6 +2067,10 @@ app.include_router(album_router)
 from crm_routes import crm_router  # noqa: E402
 app.include_router(crm_router)
 
+from superadmin_routes import superadmin_router  # noqa: E402
+app.include_router(superadmin_router)
+
+
 app.add_middleware(
     CORSMiddleware,
     allow_credentials=True,
@@ -2135,6 +2139,27 @@ async def on_startup():
         await db.photos.update_many({"indexing_status": "indexing"}, {"$set": {"indexing_status": "pending"}})
     except Exception as e:
         logger.error(f"Indexing recovery failed: {e}")
+
+    # Seed platform super admin (idempotent). Credentials are backend-only.
+    if SUPERADMIN_PASSWORD:
+        try:
+            existing_superadmin = await db.users.find_one({"email": SUPERADMIN_EMAIL})
+            if not existing_superadmin:
+                await db.users.insert_one({
+                    "user_id": new_user_id(),
+                    "role": "superadmin",
+                    "name": "PIK Connect Super Admin",
+                    "email": SUPERADMIN_EMAIL,
+                    "phone": None,
+                    "password_hash": hash_password(SUPERADMIN_PASSWORD),
+                    "auth_provider": "password",
+                    "created_at": now_iso(),
+                })
+                logger.info(f"Seeded superadmin {SUPERADMIN_EMAIL}")
+        except Exception as e:
+            logger.error(f"Superadmin seed failed: {e}")
+
+
     global _indexer_task
     _indexer_task = asyncio.create_task(_indexing_loop())
 

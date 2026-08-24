@@ -71,6 +71,23 @@ async def require_admin(authorization: str | None = Header(default=None)):
     user = await get_current_user(authorization)
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
+    if user.get("status") == "suspended":
+        raise HTTPException(status_code=403, detail="Account suspended")
+    return user
+
+
+async def require_admin_uploads(authorization: str | None = Header(default=None)):
+    user = await require_admin(authorization)
+    if user.get("uploads_disabled"):
+        raise HTTPException(status_code=403, detail="Uploads are disabled for this photographer account")
+    return user
+
+
+
+async def require_superadmin(authorization: str | None = Header(default=None)):
+    user = await get_current_user(authorization)
+    if user.get("role") != "superadmin":
+        raise HTTPException(status_code=403, detail="Super admin access required")
     return user
 
 

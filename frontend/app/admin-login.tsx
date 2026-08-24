@@ -133,6 +133,13 @@ export default function AdminLogin() {
               {mode === "login" ? "New studio? Create an account" : "Already have an account? Sign in"}
             </Text>
           </Pressable>
+          <Pressable
+            testID="superadmin-login-link"
+            onPress={() => router.push("/superadmin-login")}
+            style={{ marginTop: spacing.lg, alignItems: "center", minHeight: 44, justifyContent: "center" }}
+          >
+            <Text style={styles.superadminLink}>Platform owner sign in</Text>
+          </Pressable>
         </View>
       </KeyboardAwareScrollView>
     </View>
@@ -158,4 +165,5 @@ const styles = StyleSheet.create({
   line: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.borderStrong },
   or: { color: colors.muted, marginHorizontal: spacing.md, fontFamily: fonts.text, fontSize: fontSize.sm },
   toggle: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base },
+  superadminLink: { color: "#98A2B3", fontFamily: fonts.text, fontSize: fontSize.sm },
 });

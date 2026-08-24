@@ -173,6 +173,13 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - Retained the existing PNG alternate favicon and Apple touch icon for compatibility.
 
 
+
+## Feature: Super Admin Dashboard V1 (2026-08)
+- Added protected Super Admin login and a responsive dashboard for platform statistics, photographers, memberships, galleries, storage, activity logs, and basic settings.
+- Photographer controls include upload disable/enable and suspend/restore with confirmation; disabling uploads preserves existing galleries and images.
+- V1 uses live platform counts plus simple plan metadata; complex billing, RBAC, and advanced analytics are intentionally deferred.
+
+
 ## Refinement: Footer social destinations (2026-08)
 - Updated Instagram, YouTube, Facebook, LinkedIn, and X footer links to the user's supplied profiles.
 - WhatsApp and email footer actions remain unchanged.

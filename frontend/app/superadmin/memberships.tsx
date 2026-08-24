@@ -1,0 +1,16 @@
+import { useCallback, useState } from "react";
+import { useFocusEffect } from "expo-router";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { api } from "@/src/api/client";
+import { SuperAdminHeader } from "@/src/components/SuperAdminShell";
+import { colors, fonts, radius, spacing } from "@/src/theme";
+
+export default function Memberships() {
+  const [plans, setPlans] = useState<any[]>([]);
+  const load = useCallback(async () => setPlans(await api.get("/superadmin/memberships")), []);
+  useFocusEffect(useCallback(() => { load().catch(() => setPlans([])); }, [load]));
+  if (!plans.length) return <View style={styles.loading}><ActivityIndicator color={colors.brand} /></View>;
+  return <ScrollView testID="superadmin-memberships" contentContainerStyle={styles.page}><SuperAdminHeader title="Memberships" subtitle="Simple plans and platform distribution" /><View style={styles.grid}>{plans.map((plan) => <View key={plan.key} style={styles.card}><View style={styles.cardTop}><Text style={styles.plan}>{plan.name}</Text><Text style={styles.count}>{plan.photographers} studios</Text></View><Text style={styles.price}>₹{plan.price.toLocaleString("en-IN")}<Text style={styles.period}>{plan.price ? "/month" : ""}</Text></Text><View style={styles.divider} /><Text style={styles.detail}>Storage <Text style={styles.detailStrong}>{plan.storage_limit >= 1024 ? `${plan.storage_limit / 1024} TB` : `${plan.storage_limit} GB`}</Text></Text><Text style={styles.detail}>Galleries <Text style={styles.detailStrong}>{plan.gallery_limit || "Unlimited"}</Text></Text><Pressable testID={`membership-edit-${plan.key}`} style={styles.edit}><Text style={styles.editText}>Edit plan</Text></Pressable></View>)}</View><Text style={styles.note}>Pricing and limits are intentionally simple in V1 and can be connected to billing later.</Text></ScrollView>;
+}
+
+const styles = StyleSheet.create({ page: { paddingBottom: spacing["3xl"] }, loading: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#F7F8FA" }, grid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, paddingHorizontal: spacing["2xl"] }, card: { flex: 1, minWidth: 210, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#EAECF0", borderRadius: radius.lg, padding: spacing.xl }, cardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" }, plan: { color: "#101828", fontFamily: fonts.display, fontSize: 20, fontWeight: "700" }, count: { color: colors.brand, fontFamily: fonts.text, fontSize: 11, fontWeight: "700" }, price: { color: colors.brand, fontFamily: fonts.display, fontSize: 28, fontWeight: "700", marginTop: spacing.lg }, period: { color: "#667085", fontFamily: fonts.text, fontSize: 13, fontWeight: "400" }, divider: { height: 1, backgroundColor: "#EAECF0", marginVertical: spacing.lg }, detail: { color: "#667085", fontFamily: fonts.text, fontSize: 13, paddingVertical: spacing.xs }, detailStrong: { color: "#344054", fontWeight: "700" }, edit: { minHeight: 44, justifyContent: "center", marginTop: spacing.lg }, editText: { color: colors.brand, fontFamily: fonts.text, fontSize: 13, fontWeight: "700" }, note: { color: "#667085", fontFamily: fonts.text, fontSize: 13, lineHeight: 19, paddingHorizontal: spacing["2xl"], marginTop: spacing.xl } });
