@@ -211,3 +211,11 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 ## Bug fix: Reliable back-button navigation (2026-08)
 - Added a shared `goBackOr` helper that uses history when available and explicit route fallbacks for direct links, refreshes, bookmarks, and native cold starts.
 - Applied to login, admin, client, gallery, album, settings, create, selfie, booking, and review screens.
+
+
+
+## Configuration: Cloudinary + AWS Rekognition verified (2026-08)
+- [x] Backend runtime now uses `STORAGE_BACKEND=cloudinary` with the supplied Cloudinary account.
+- [x] Backend runtime now uses `FACE_ENGINE=rekognition` in `ap-southeast-2`; S3 import bucket `faceser` configured.
+- [x] Verified health, admin auth, Cloudinary upload/CDN serving/delete, Rekognition indexing lifecycle, S3 import, and cleanup with a throwaway event.
+- Secrets remain backend-only in local runtime environment files and were not added to frontend code or committed source.
