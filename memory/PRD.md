@@ -219,3 +219,9 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - [x] Backend runtime now uses `FACE_ENGINE=rekognition` in `ap-southeast-2`; S3 import bucket `faceser` configured.
 - [x] Verified health, admin auth, Cloudinary upload/CDN serving/delete, Rekognition indexing lifecycle, S3 import, and cleanup with a throwaway event.
 - Secrets remain backend-only in local runtime environment files and were not added to frontend code or committed source.
+
+
+
+## Bug fix: Super Admin password rejected (2026-08)
+- Root cause: repository bootstrap recreated `backend/.env` without `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD`, so the idempotent seed did not create the platform-owner account.
+- Added the backend-only Super Admin credentials, restarted the API, and verified login, overview access, wrong-password rejection, and normal-admin role isolation.

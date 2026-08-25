@@ -5342,3 +5342,130 @@ agent_communication:
       All cloud integrations (Cloudinary + AWS Rekognition + S3) are fully functional.
       Backend is production-ready. 0 failures.
 
+
+
+
+#====================================================================================================
+# BUG FIX TASK — Super Admin password rejected
+#====================================================================================================
+
+user_problem_statement: |
+  Super Admin password SuperAdmin@3214 was not working on the Super Admin login.
+
+backend:
+  - task: "Restore Super Admin seed configuration and password authentication"
+    implemented: true
+    working: true
+    file: "backend/.env"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "main"
+        comment: |
+          Reproduced POST /api/superadmin/login with prabhakar@pkphotography.in / SuperAdmin@3214 and received
+          HTTP 401. Root cause: the local backend .env recreated during repository bootstrap did not include
+          SUPERADMIN_EMAIL or SUPERADMIN_PASSWORD, so the idempotent startup seed did not create the configured
+          superadmin account. Added those backend-only variables, updated test_credentials.md, restarted backend,
+          and a direct API retry now returns HTTP 200 with a superadmin session token. Testing agent verification
+          is required before marking this bug fixed.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL 4 TESTS PASSED - Super Admin authentication bug is FIXED.
+          
+          Tested comprehensive Super Admin authentication flow using credentials from /app/memory/test_credentials.md:
+          • Super Admin: prabhakar@pkphotography.in / SuperAdmin@3214
+          • Normal Admin: admin@lumiere.studio / Admin@12345
+          
+          TEST RESULTS:
+          
+          1. ✅ POST /api/superadmin/login (correct password) → 200 OK
+             • Returns session_token ✓
+             • Returns user with role=superadmin ✓
+             • Login successful with correct credentials
+          
+          2. ✅ GET /api/superadmin/overview (with Super Admin token) → 200 OK
+             • Overview accessible with valid Super Admin token ✓
+             • Response contains 'stats' ✓
+             • Response contains 'attention' ✓
+             • Response contains 'recent_activity' ✓
+          
+          3. ✅ POST /api/superadmin/login (wrong password) → 401 Unauthorized
+             • Wrong password correctly rejected ✓
+             • Security validation working correctly
+          
+          4. ✅ Normal admin authentication and role-based access control:
+             • 4a. POST /api/auth/admin/login → 200 OK
+               - Normal admin login successful ✓
+               - Returns session_token ✓
+               - Returns user with role=admin (not superadmin) ✓
+             • 4b. GET /api/superadmin/overview (with admin token) → 403 Forbidden
+               - Normal admin correctly blocked from Super Admin overview ✓
+               - Role-based access control working correctly ✓
+          
+          BACKEND LOGS CHECK:
+          ✅ Superadmin seed confirmed: "Seeded superadmin prabhakar@pkphotography.in"
+          ✅ Recent successful Super Admin logins (200 OK) after fix
+          ✅ Previous 401 Unauthorized attempts visible (before fix)
+          ✅ No auth/config errors detected in recent logs
+          ✅ Role-based access control working (403 for admin trying superadmin endpoints)
+          
+          ROOT CAUSE CONFIRMED:
+          The bug was caused by missing SUPERADMIN_EMAIL and SUPERADMIN_PASSWORD environment variables
+          in backend/.env after repository bootstrap. Main agent correctly identified and fixed the issue
+          by adding these variables, which triggered the idempotent superadmin seed on backend restart.
+          
+          VERIFICATION COMPLETE:
+          • Super Admin credentials (prabhakar@pkphotography.in / SuperAdmin@3214) now work correctly
+          • Super Admin can access /api/superadmin/overview and other superadmin endpoints
+          • Wrong password is correctly rejected with 401
+          • Normal admin login still works and is correctly blocked from superadmin endpoints (403)
+          • No configuration or authentication errors in backend logs
+          
+          The Super Admin authentication bug is completely FIXED. Backend is production-ready. 0 failures.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 10
+  run_ui: false
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      The rejected password was caused by missing SUPERADMIN_PASSWORD in backend runtime configuration, not by
+      bcrypt verification. Backend env was corrected and the direct login retry returned 200; testing agent must
+      confirm the fix and regression behavior.
+  - agent: "testing"
+    message: |
+      ✅ SUPER ADMIN AUTHENTICATION BUG FIX VERIFICATION COMPLETE - ALL 4 TESTS PASSED
+      
+      Verified the reported bug fix using credentials from /app/memory/test_credentials.md:
+      
+      TEST SUMMARY:
+      1. ✅ Super Admin login (correct password) → 200 with session_token and role=superadmin
+      2. ✅ Super Admin overview access → 200 with stats, attention, and recent_activity
+      3. ✅ Super Admin login (wrong password) → 401 Unauthorized (security working)
+      4. ✅ Normal admin login works → 200 with role=admin
+      5. ✅ Normal admin blocked from Super Admin overview → 403 Forbidden (RBAC working)
+      
+      BACKEND LOGS:
+      ✅ Superadmin seed confirmed in logs: "Seeded superadmin prabhakar@pkphotography.in"
+      ✅ Recent successful Super Admin logins (200 OK) after fix
+      ✅ No auth/config errors detected
+      
+      ROOT CAUSE:
+      Missing SUPERADMIN_EMAIL and SUPERADMIN_PASSWORD in backend/.env after repository bootstrap.
+      Main agent correctly added these variables, triggering idempotent superadmin seed on restart.
+      
+      The bug is completely FIXED. Super Admin credentials (prabhakar@pkphotography.in / SuperAdmin@3214)
+      now work correctly. Backend is production-ready. 0 failures.
+
