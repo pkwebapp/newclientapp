@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Dimensions,
@@ -59,7 +59,7 @@ export function PhotoGrid({
   onEndReached?: () => void;
   loadingMore?: boolean;
 }) {
-  const [viewerIndex, setViewerIndex] = useState<number | null>(null);
+  const [viewerPhotoId, setViewerPhotoId] = useState<string | null>(null);
   const [containerW, setContainerW] = useState(Dimensions.get("window").width);
   const [captionsOn, setCaptionsOn] = useState(showCaption);
 
@@ -78,7 +78,7 @@ export function PhotoGrid({
           testID={`photo-${item.photo_id}`}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
-            setViewerIndex(index);
+            setViewerPhotoId(item.photo_id);
           }}
           style={[styles.card, { height: h }]}
         >
@@ -177,8 +177,8 @@ export function PhotoGrid({
       />
       <FullscreenViewer
         photos={photos}
-        index={viewerIndex}
-        onClose={() => setViewerIndex(null)}
+        photoId={viewerPhotoId}
+        onClose={() => setViewerPhotoId(null)}
         onToggleLike={onToggleLike}
         onDownload={onDownload}
         onShare={onShare}
@@ -253,37 +253,47 @@ function ZoomablePhoto({
 }
 function FullscreenViewer({
   photos,
-  index,
+  photoId,
   onClose,
   onToggleLike,
   onDownload,
   onShare,
 }: {
   photos: Photo[];
-  index: number | null;
+  photoId: string | null;
   onClose: () => void;
   onToggleLike?: (photo: Photo) => void;
   onDownload?: (photo: Photo) => void;
   onShare?: (photo: Photo) => void;
 }) {
   const [current, setCurrent] = useState(0);
+  const listRef = useRef<FlatList<Photo>>(null);
   const screenW = Dimensions.get("window").width;
   const screenH = Dimensions.get("window").height;
+  const selectedIndex = photoId ? photos.findIndex((photo) => photo.photo_id === photoId) : -1;
+  const safeIndex = selectedIndex >= 0 ? selectedIndex : 0;
+
   useEffect(() => {
-    if (index != null) setCurrent(index);
-  }, [index]);
-  if (index == null) return null;
-  const active = photos[current] || photos[index];
+    if (!photoId || selectedIndex < 0) return;
+    setCurrent(selectedIndex);
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToIndex({ index: selectedIndex, animated: false });
+    });
+  }, [photoId, selectedIndex]);
+
+  if (!photoId || selectedIndex < 0) return null;
+  const active = photos[current] || photos[safeIndex];
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.viewer}>
         <FlatList
           data={photos}
-          key={`viewer-${index}`}
+          key={`viewer-${photoId}`}
+          ref={listRef}
           horizontal
           pagingEnabled
-          initialScrollIndex={index}
+          initialScrollIndex={safeIndex}
           onMomentumScrollEnd={(e) => setCurrent(Math.round(e.nativeEvent.contentOffset.x / screenW))}
           getItemLayout={(_, i) => ({ length: screenW, offset: screenW * i, index: i })}
           keyExtractor={(p) => p.photo_id}

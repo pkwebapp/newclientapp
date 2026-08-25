@@ -4856,3 +4856,225 @@ agent_communication:
       The Super Admin login flow is production-ready and fully functional. The credentials work correctly
       when used on the dedicated /superadmin-login route. 0 failures.
 
+
+
+#====================================================================================================
+# NEW TASK — 30-second gallery preload fallback
+#====================================================================================================
+
+user_problem_statement: |
+  If fetching gallery photos takes more than 30 seconds, open the gallery as it is and continue fetching in
+  the background. Make the fetching screen attractive with a simple animation so people can wait.
+
+frontend:
+  - task: "Timed preload fallback with animated loader and background continuation"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/client/event/[id].tsx, frontend/src/components/ui.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added a 30-second preload deadline for full-access galleries. Before the deadline, the animated
+          LuxeLoader remains visible with “Loading all photos” and fetched/total progress. If the deadline
+          is reached, already-fetched photos render immediately, a compact “Gallery open · loading remaining”
+          progress card stays visible, and remaining pages/previews continue loading in the background with
+          live counts. A load-in-flight guard prevents duplicate foreground/background refreshes. Successful
+          completion removes the progress card; partial failure leaves pagination available. TypeScript and
+          targeted lint pass; frontend testing is pending permission.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Animated loader visible during gallery preload"
+    - "Gallery opens after 30-second timeout with partial photos"
+    - "Background fetching advances fetched/total counter"
+    - "Normal fast gallery opening and offline cache regression"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Added the 30-second gallery preload fallback: wait with animated progress, then open partial gallery
+      and continue loading in background. Expo restart and frontend testing remain opt-in.
+
+
+
+
+#====================================================================================================
+# NEW BUG — Face-search results open the same photo repeatedly
+#====================================================================================================
+
+user_problem_statement: |
+  After uploading a photo from the gallery for image search, results appear, but tapping different result
+  photos opens the same photo every time.
+
+frontend:
+  - task: "Reproduce repeated same-photo full-screen viewer result"
+    implemented: false
+    working: false
+    file: "frontend/src/components/PhotoGrid.tsx, frontend/app/client/event/[id].tsx, frontend/app/client/selfie/[id].tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: false
+        agent: "main"
+        comment: |
+          User reported the bug after gallery-uploaded selfie search. Current viewer uses the tapped FlashList
+          index as FlatList initialScrollIndex and keeps a separate current state; reproduce result order and
+          selected photo identity before changing code.
+      - working: false
+        agent: "testing"
+        comment: |
+          REPRODUCTION ATTEMPT - SYSTEM LIMITATIONS ENCOUNTERED
+          
+          Attempted to reproduce the face-search viewer bug using browser automation on Expo web preview.
+          
+          APPROACH TAKEN:
+          1. Navigated to public event gallery (evt_42558fd2040a with 429 photos)
+          2. Attempted to access gallery via public access form (name + phone)
+          3. Planned to navigate to selfie screen, upload test image, and test result viewer
+          
+          SYSTEM LIMITATIONS ENCOUNTERED:
+          ❌ File upload not possible: Browser automation cannot access file picker to upload selfie image
+             for face search. This is a fundamental limitation of headless browser automation.
+          ❌ React Native web button clicks: Encountered timeout issues clicking the "View gallery" button
+             (React Native Pressable components don't always work with standard Playwright selectors)
+          ❌ Auth session injection: Attempted to inject API session token into browser storage, but Expo web
+             uses AsyncStorage/IndexedDB which requires different approach than localStorage
+          
+          CODE ANALYSIS FINDINGS:
+          Analyzed PhotoGrid.tsx FullscreenViewer implementation (lines 254-345):
+          • Line 62: `const [viewerIndex, setViewerIndex] = useState<number | null>(null);` - tracks tapped card index
+          • Line 269: `const [current, setCurrent] = useState(0);` - separate state for current photo in viewer
+          • Line 272-274: `useEffect(() => { if (index != null) setCurrent(index); }, [index]);` - syncs current with index
+          • Line 276: `const active = photos[current] || photos[index];` - determines which photo to show
+          • Line 286: `initialScrollIndex={index}` - FlatList starts at tapped photo
+          • Line 287: `onMomentumScrollEnd` updates current based on scroll position
+          
+          POTENTIAL BUG CAUSES (CODE INSPECTION):
+          1. The viewer has TWO separate states: `index` (prop from parent) and `current` (internal state)
+          2. The `active` photo uses `photos[current] || photos[index]` - if `current` is stale, wrong photo shows
+          3. The `key={`viewer-${index}`}` on line 283 should force FlatList remount when index changes, but
+             if the photos array reference is stale or the index calculation is wrong, the viewer could show
+             the wrong photo
+          4. The FlashList in the grid uses `index` from renderItem, but if the photos array changes between
+             taps (e.g., after face search results update), the index might not match the expected photo
+          
+          REPRODUCTION EVIDENCE:
+          Unable to complete full reproduction due to system limitations (file upload required for face search).
+          However, the code structure suggests the bug could occur if:
+          - Photos array changes between opening viewer instances
+          - The `current` state doesn't reset properly between viewer opens
+          - The `initialScrollIndex` is calculated from a stale photos array
+          
+          RECOMMENDATION FOR MAIN AGENT:
+          Since browser automation cannot upload files for face search testing, recommend:
+          1. Manual testing on actual device/emulator with face search flow
+          2. Add console.log statements to track: tapped index, photos array length, current state, active photo ID
+          3. Investigate if photos array reference changes between My Photos/All Photos tabs
+          4. Check if viewer's `current` state persists incorrectly between opens
+          5. Consider adding a `key` prop to FullscreenViewer that includes photo_id to force proper remount
+          
+          ROUTE FOR REPRODUCTION:
+          /client/event/[id] → Selfie search → Upload image → Results appear → Tap different result cards
+          → Check if fullscreen viewer shows same photo for different cards
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Reproduce by tapping multiple face-search result photos"
+    - "Verify tapped photo identity vs fullscreen image"
+    - "Check viewer index/current state and photo list keys"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Reproduce this face-search viewer bug before editing. Focus on opening different result cards and
+      recording filenames/photo IDs shown in fullscreen.
+  - agent: "testing"
+    message: |
+      REPRODUCTION INCOMPLETE - SYSTEM LIMITATIONS
+      
+      Cannot complete full reproduction via browser automation due to:
+      1. File upload required for selfie search (not possible in headless browser)
+      2. React Native web component interaction issues
+      
+      CODE ANALYSIS COMPLETED:
+      Identified potential bug in PhotoGrid.tsx FullscreenViewer:
+      - Viewer uses separate `current` state that may not sync correctly with tapped `index`
+      - Photos array reference may change between tabs/searches causing index mismatch
+      - The `active` photo calculation uses `photos[current] || photos[index]` which could show wrong photo
+      
+      RECOMMENDATION:
+      Main agent should either:
+      1. Perform manual testing on device/emulator with actual face search
+      2. Add debug logging to track index/current/photo_id correlation
+      3. Investigate code logic for viewer state management and photos array stability
+      
+      The bug is likely in the viewer's state synchronization, not in the API or data fetching.
+
+
+#====================================================================================================
+# BUG FIX TASK — Face-search result viewer opening the same photo
+#====================================================================================================
+
+frontend:
+  - task: "Open the tapped face-search result in full-screen viewer"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/PhotoGrid.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Replaced viewer index selection with stable photo_id selection. The fullscreen viewer now resolves
+          the tapped photo's current index from the active result array, resets its current item on open,
+          remounts its FlatList per selected photo_id, and explicitly scrolls to that index after mount. This
+          prevents stale current state/initialScrollIndex behavior from repeatedly showing one photo. Existing
+          pinch zoom, paging, Like, Download, Share, and Close controls remain. TypeScript and lint pass;
+          mandatory frontend verification is pending.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 0
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Tap multiple face-search result cards and verify matching fullscreen image"
+    - "All Photos viewer selection regression"
+    - "Paging, zoom, Like, Download, Share, Close regression"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Fixed the viewer selection using photo IDs and explicit FlatList scrolling. Testing agent must verify
+      different search results open their matching photos and no stale same-photo behavior remains.
+

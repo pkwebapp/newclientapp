@@ -176,6 +176,12 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 
 ## Feature: Super Admin Dashboard V1 (2026-08)
 - Added protected Super Admin login and a responsive dashboard for platform statistics, photographers, memberships, galleries, storage, activity logs, and basic settings.
+
+
+## Refinement: 30-second gallery preload fallback (2026-08)
+- Client galleries wait up to 30 seconds while the animated loader shows fetched/total progress, then open with available photos and continue fetching in the background.
+- The progress card remains visible after opening until remaining pages are loaded; users can interact with already fetched photos immediately.
+
 - Photographer controls include upload disable/enable and suspend/restore with confirmation; disabling uploads preserves existing galleries and images.
 - V1 uses live platform counts plus simple plan metadata; complex billing, RBAC, and advanced analytics are intentionally deferred.
 

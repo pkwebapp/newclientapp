@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import {
   AppState,
@@ -33,6 +33,8 @@ import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/th
 
 export default function ClientEventDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
+const PRELOAD_TIMEOUT_MS = 30_000;
+
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const toast = useToast();
@@ -40,6 +42,8 @@ export default function ClientEventDetail() {
   const [detail, setDetail] = useState<any>(null);
   const [tab, setTab] = useState<"mine" | "liked" | "all">("mine");
   const [myPhotos, setMyPhotos] = useState<any[]>([]);
+  const loadingRef = useRef(false);
+
   const [likedPhotos, setLikedPhotos] = useState<any[]>([]);
   const [allPhotos, setAllPhotos] = useState<any[]>([]);
   const [searched, setSearched] = useState(false);
@@ -51,6 +55,8 @@ export default function ClientEventDetail() {
   const [sharing, setSharing] = useState(false);
   const [offlineMode, setOfflineMode] = useState(false);
   const [fetchingGallery, setFetchingGallery] = useState(false);
+  const [preloadTimedOut, setPreloadTimedOut] = useState(false);
+
   const [fetchedPhotos, setFetchedPhotos] = useState(0);
   const [totalGalleryPhotos, setTotalGalleryPhotos] = useState(0);
 
@@ -97,6 +103,9 @@ export default function ClientEventDetail() {
   }, [id]);
 
   const loadDetail = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
+    setPreloadTimedOut(false);
     try {
       const d = await api.get(`/client/events/${id}`);
       setTotalGalleryPhotos(Number(d.photo_count || 0));
@@ -117,6 +126,18 @@ export default function ClientEventDetail() {
       let all = firstPage.items || [];
       let offset = all.length;
       let hasMore = !!firstPage.has_more;
+      let releasedEarly = false;
+      const releaseTimer = d.full_gallery_access && hasMore
+        ? setTimeout(() => {
+            releasedEarly = true;
+            setPreloadTimedOut(true);
+            setAllPhotos(all);
+            setAllOffset(all.length);
+            setAllHasMore(hasMore);
+            setLoading(false);
+          }, PRELOAD_TIMEOUT_MS)
+        : null;
+
       setFetchedPhotos(all.length);
       await cacheGallery(
         String(id),
@@ -134,6 +155,11 @@ export default function ClientEventDetail() {
           offset = all.length;
           hasMore = !!page.has_more;
           setFetchedPhotos(all.length);
+          if (releasedEarly) {
+            setAllPhotos(all);
+            setAllOffset(all.length);
+            setAllHasMore(hasMore);
+          }
           await cacheGallery(
             String(id),
             d,
@@ -147,6 +173,7 @@ export default function ClientEventDetail() {
         }
       }
 
+      if (releaseTimer) clearTimeout(releaseTimer);
       setAllPhotos(all);
       setAllOffset(all.length);
       setAllHasMore(hasMore);
@@ -156,6 +183,7 @@ export default function ClientEventDetail() {
       const restored = await applyCachedGallery();
       if (!restored) toast.show("This gallery is unavailable offline and has no saved previews", "error");
     } finally {
+      loadingRef.current = false;
       setLoading(false);
     }
   }, [applyCachedGallery, id, syncPendingLikes, toast]);
@@ -298,7 +326,7 @@ export default function ClientEventDetail() {
       {fetchingGallery && (
         <View style={styles.fetchProgress} testID="gallery-fetch-progress">
           <View style={styles.fetchProgressHeader}>
-            <Text style={styles.fetchProgressLabel}>Fetching photos</Text>
+            <Text style={styles.fetchProgressLabel}>{preloadTimedOut ? "Gallery open · loading remaining" : "Loading all photos"}</Text>
             <Text style={styles.fetchProgressCount}>{fetchedPhotos} of {totalGalleryPhotos}</Text>
           </View>
           <View style={styles.fetchTrack}>
@@ -335,7 +363,7 @@ export default function ClientEventDetail() {
       {loading ? (
         <LuxeLoader
           title={detail?.name ? `Opening ${detail.name}` : "Opening your gallery"}
-          subtitle={totalGalleryPhotos > 0 ? `Fetching photos ${fetchedPhotos} of ${totalGalleryPhotos}` : "Preparing your photos…"}
+          subtitle={totalGalleryPhotos > 0 ? `Loading all photos · ${fetchedPhotos} of ${totalGalleryPhotos}` : "Preparing your photos…"}
           progress={totalGalleryPhotos > 0 ? fetchProgress : undefined}
         />
       ) : tab === "mine" && !searched ? (
