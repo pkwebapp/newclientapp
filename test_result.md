@@ -4706,7 +4706,7 @@ frontend:
           
           SUPER ADMIN LOGIN VERIFICATION (Tests 1-5):
           1. ✅ Direct /superadmin-login route accessible on desktop (1440x900)
-             • URL: https://newclient-app-1.preview.emergentagent.com/superadmin-login
+             • URL: https://client-hub-434.preview.emergentagent.com/superadmin-login
              • Page renders correctly with PIK CONNECT branding
              • "Platform control" heading visible
              • "Sign in to manage photographers, galleries and platform usage" subtitle
@@ -4721,7 +4721,7 @@ frontend:
              • Filled password (credentials from /app/memory/test_credentials.md)
              • Clicked "Sign in as Super Admin" button
              • Successfully navigated to /superadmin dashboard
-             • URL after login: https://newclient-app-1.preview.emergentagent.com/superadmin ✓
+             • URL after login: https://client-hub-434.preview.emergentagent.com/superadmin ✓
           
           4. ✅ Super Admin Dashboard visible:
              • "Dashboard" heading: "A quick view of platform health"
@@ -4788,14 +4788,14 @@ frontend:
           ✅ No navigation errors
           
           EXACT URLs VERIFIED:
-          • Login page: https://newclient-app-1.preview.emergentagent.com/superadmin-login
-          • Dashboard: https://newclient-app-1.preview.emergentagent.com/superadmin
-          • Photographers: https://newclient-app-1.preview.emergentagent.com/superadmin/photographers
-          • Memberships: https://newclient-app-1.preview.emergentagent.com/superadmin/memberships
-          • Galleries: https://newclient-app-1.preview.emergentagent.com/superadmin/galleries
-          • Storage: https://newclient-app-1.preview.emergentagent.com/superadmin/storage
-          • Activity: https://newclient-app-1.preview.emergentagent.com/superadmin/activity
-          • Settings: https://newclient-app-1.preview.emergentagent.com/superadmin/settings
+          • Login page: https://client-hub-434.preview.emergentagent.com/superadmin-login
+          • Dashboard: https://client-hub-434.preview.emergentagent.com/superadmin
+          • Photographers: https://client-hub-434.preview.emergentagent.com/superadmin/photographers
+          • Memberships: https://client-hub-434.preview.emergentagent.com/superadmin/memberships
+          • Galleries: https://client-hub-434.preview.emergentagent.com/superadmin/galleries
+          • Storage: https://client-hub-434.preview.emergentagent.com/superadmin/storage
+          • Activity: https://client-hub-434.preview.emergentagent.com/superadmin/activity
+          • Settings: https://client-hub-434.preview.emergentagent.com/superadmin/settings
           
           RESPONSIVE BEHAVIOR:
           ✅ Desktop (1440x900): Light SaaS shell with left sidebar, centered content, all nav links visible
@@ -5077,4 +5077,116 @@ agent_communication:
     message: |
       Fixed the viewer selection using photo IDs and explicit FlatList scrolling. Testing agent must verify
       different search results open their matching photos and no stale same-photo behavior remains.
+
+
+
+
+#====================================================================================================
+# WORKSPACE BOOTSTRAP — REPOSITORY IMPORT
+#====================================================================================================
+
+user_problem_statement: |
+  Pull https://github.com/pkwebapp/newclientapp into the workspace so the owner can continue refinement.
+
+backend:
+  - task: "Repository runtime bootstrap and backend health"
+    implemented: true
+    working: true
+    file: "backend/.env, backend/requirements.txt"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Confirmed the workspace is already on origin/main at commit 841cdef. Verified the existing backend
+          code and dependency manifest, installed the pinned Python dependencies, recreated the missing local
+          runtime .env with local MongoDB plus mock/emergent development defaults, restarted backend, and
+          confirmed GET http://127.0.0.1:8001/api/ returns status ok.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL BOOTSTRAP HEALTH CHECKS PASSED - Backend runtime fully operational.
+          
+          SUPERVISOR PROCESS:
+          • Backend process running: pid 1955, uptime 0:01:51 ✅
+          
+          HEALTH ENDPOINT:
+          • GET http://127.0.0.1:8001/api/ → HTTP 200 ✅
+          • Response: {"service":"Lumiere Gallery API","status":"ok"} ✅
+          
+          MONGODB CONFIGURATION:
+          • MONGO_URL loaded: mongodb://localhost:27017 ✅
+          • DB_NAME: lumiere_gallery ✅
+          • MongoDB connection working ✅
+          • Admin user seeded successfully: admin@lumiere.studio ✅
+          
+          STARTUP LOGS:
+          • Application startup complete ✅
+          • Face-indexing worker started ✅
+          • No critical errors blocking backend operation ✅
+          
+          ADMIN LOGIN VERIFICATION:
+          • POST /api/auth/admin/login (admin@lumiere.studio / Admin@12345) → HTTP 200 ✅
+          • Returns session_token and user object with role="admin" ✅
+          
+          MINOR OBSERVATION:
+          • Storage init warning for Emergent storage (400 Bad Request) - expected in development mode
+          • Does not block backend operation or API serving
+          
+          Backend is production-ready for local development. 0 failures.
+
+frontend:
+  - task: "Repository runtime bootstrap and Expo preview health"
+    implemented: true
+    working: true
+    file: "frontend/.env, frontend/package.json"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Verified Expo Router package.json entry and existing app routes, installed frontend dependencies without
+          changing the lockfile, recreated the missing local Expo backend URL env, restarted Expo, and confirmed
+          the preview responds on port 3000.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 8
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Backend health after repository bootstrap"
+    - "Expo preview health after repository bootstrap"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Repository origin is already configured as https://github.com/pkwebapp/newclientapp and the checked-out
+      commit matches the existing origin/main ref. Runtime dependencies and missing local env files were restored;
+      services were restarted. No application functionality was changed. Existing unrelated working-tree changes
+      were preserved.
+  - agent: "testing"
+    message: |
+      ✅ BACKEND BOOTSTRAP HEALTH CHECK COMPLETE - All tests passed.
+      
+      Verified:
+      • Backend supervisor process running (pid 1955)
+      • Health endpoint GET /api/ returns HTTP 200 with status ok
+      • MongoDB configuration loaded correctly (mongodb://localhost:27017)
+      • Admin user seeded successfully (admin@lumiere.studio)
+      • Admin login working (returns session_token)
+      • No critical startup errors
+      
+      Minor: Emergent storage init warning (expected in dev mode, does not block operation)
+      
+      Backend is ready for development work. No action items.
 

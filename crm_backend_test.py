@@ -8,7 +8,7 @@ import sys
 import time
 
 # Backend URL from environment
-BASE_URL = "https://newclient-app-1.preview.emergentagent.com/api"
+BASE_URL = "https://client-hub-434.preview.emergentagent.com/api"
 
 # Test credentials
 ADMIN_EMAIL = "admin@lumiere.studio"
