@@ -242,7 +242,7 @@ export function PhotoGrid({
         contentContainerStyle={{ paddingHorizontal: contentPadding - GAP / 2, paddingBottom: spacing["3xl"] }}
         renderItem={renderItem}
         onEndReached={onEndReached}
-        onEndReachedThreshold={0.6}
+        onEndReachedThreshold={1.2}
         ListFooterComponent={
           loadingMore ? (
             <View style={styles.footer}>

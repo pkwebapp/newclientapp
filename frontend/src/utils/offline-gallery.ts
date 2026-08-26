@@ -158,3 +158,26 @@ export async function removeLikeActions(eventId: string, photoIds: string[]): Pr
     // Best effort cleanup.
   }
 }
+
+// --- Lightweight per-tab cache for the public share-link gallery ---
+// Stores just the photo metadata for the last view so returning visitors see
+// the grid instantly while fresh data is fetched in the background.
+const PUBLIC_TAB_PREFIX = "pik-public-tab-v1:";
+const publicTabKey = (eventId: string, tab: string) => `${PUBLIC_TAB_PREFIX}${eventId}:${tab}`;
+
+export async function cachePublicTab(eventId: string, tab: string, photos: CachedPhoto[]): Promise<void> {
+  try {
+    await AsyncStorage.setItem(publicTabKey(eventId, tab), JSON.stringify(photos.slice(0, 120)));
+  } catch {
+    // Warm-up cache is best effort and must never block the gallery.
+  }
+}
+
+export async function restorePublicTab(eventId: string, tab: string): Promise<CachedPhoto[]> {
+  try {
+    const raw = await AsyncStorage.getItem(publicTabKey(eventId, tab));
+    return raw ? (JSON.parse(raw) as CachedPhoto[]) : [];
+  } catch {
+    return [];
+  }
+}

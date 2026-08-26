@@ -19,6 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api, publicApi, setAuthToken, ApiError } from "@/src/api/client";
 import { storage } from "@/src/utils/storage";
+import { cachePublicTab, restorePublicTab } from "@/src/utils/offline-gallery";
 import { Button, TextField, EmptyState, useToast } from "@/src/components/ui";
 import { PhotoGrid, Photo } from "@/src/components/PhotoGrid";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
@@ -63,24 +64,33 @@ export default function PublicGallery() {
   // --- Data loading helpers ---
   const loadTab = useCallback(
     async (which: Tab) => {
-      setLoadingPhotos(true);
       setOpenedEarly(false);
+      // Warm-up: show the last cached photos for this tab instantly, then refresh.
+      const cached = await restorePublicTab(String(id), which);
+      if (cached.length) setPhotos(cached as Photo[]);
+      setLoadingPhotos(true);
       // Open the gallery UI after 10s even if photos are still loading;
       // remaining photos keep streaming in the background.
       const releaseTimer = setTimeout(() => setOpenedEarly(true), 10_000);
       try {
         if (which === "all") {
           const r = await api.get(`/client/events/${id}/photos?limit=${PAGE}&offset=0`);
-          setPhotos(r.items || []);
-          setAllOffset((r.items || []).length);
+          const items = r.items || [];
+          setPhotos(items);
+          setAllOffset(items.length);
           setAllHasMore(!!r.has_more);
+          void cachePublicTab(String(id), "all", items);
         } else if (which === "liked") {
           const r = await api.get(`/client/events/${id}/liked`);
-          setPhotos(r.photos || []);
+          const items = r.photos || [];
+          setPhotos(items);
+          void cachePublicTab(String(id), "liked", items);
         } else {
           const r = await api.get(`/client/events/${id}/my-photos`);
-          setPhotos(r.photos || []);
+          const items = r.photos || [];
+          setPhotos(items);
           setSearched(!!r.searched);
+          void cachePublicTab(String(id), "mine", items);
         }
       } catch (e: any) {
         if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {

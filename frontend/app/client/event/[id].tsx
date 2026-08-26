@@ -62,6 +62,24 @@ const PRELOAD_TIMEOUT_MS = 10_000;
 
 
 
+  // Warm-up: paint the last cached gallery instantly for returning visitors,
+  // then keep the fresh network load running in the background (stays online).
+  const warmStart = useCallback(async () => {
+    const cached = await restoreCachedGallery(String(id));
+    if (!cached) return false;
+    const matchedSet = new Set(cached.matchedIds || []);
+    const likedSet = new Set(cached.likedIds || []);
+    const cachedPhotos = cached.photos || [];
+    setDetail((prev: any) => prev || cached.event);
+    setMyPhotos(cachedPhotos.filter((photo) => matchedSet.has(photo.photo_id)));
+    setLikedPhotos(cachedPhotos.filter((photo) => likedSet.has(photo.photo_id)).map((photo) => ({ ...photo, liked: true })));
+    setAllPhotos(cachedPhotos);
+    setAllOffset(cachedPhotos.length);
+    setSearched(!!cached.searched);
+    setLoading(false);
+    return true;
+  }, [id]);
+
   const applyCachedGallery = useCallback(async () => {
     const cached = await restoreCachedGallery(String(id));
     if (!cached) return false;
@@ -106,6 +124,7 @@ const PRELOAD_TIMEOUT_MS = 10_000;
     if (loadingRef.current) return;
     loadingRef.current = true;
     setPreloadTimedOut(false);
+    const warmed = await warmStart();
     try {
       const d = await api.get(`/client/events/${id}`);
       setTotalGalleryPhotos(Number(d.photo_count || 0));
@@ -127,7 +146,7 @@ const PRELOAD_TIMEOUT_MS = 10_000;
       let offset = all.length;
       let hasMore = !!firstPage.has_more;
       let releasedEarly = false;
-      const releaseTimer = d.full_gallery_access && hasMore
+      const releaseTimer = d.full_gallery_access && hasMore && !warmed
         ? setTimeout(() => {
             releasedEarly = true;
             setPreloadTimedOut(true);
@@ -186,7 +205,7 @@ const PRELOAD_TIMEOUT_MS = 10_000;
       loadingRef.current = false;
       setLoading(false);
     }
-  }, [applyCachedGallery, id, syncPendingLikes, toast]);
+  }, [applyCachedGallery, id, syncPendingLikes, toast, warmStart]);
 
   const loadMoreAll = useCallback(async () => {
     if (tab !== "all" || !allHasMore || loadingMore) return;

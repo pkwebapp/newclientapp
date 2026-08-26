@@ -255,3 +255,17 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
   now only blocks for up to 10s; after that the header + an inline "Loading photos…" loader
   appear while the first batch finishes. Once photos exist, PhotoGrid shows a bottom
   "loading more…" indicator and scroll drives pagination (onEndReached → loadMoreAll).
+
+
+## Cache Warm-Up + Scroll Prefetch (June 2026 fork)
+- Scroll Prefetch: PhotoGrid FlashList onEndReachedThreshold 0.6 → 1.2, so the next
+  batch starts loading ~1 screen earlier (smoother infinite scroll in both galleries).
+- Cache Warm-Up (client gallery `app/client/event/[id].tsx`): added `warmStart()` that
+  paints the last cached gallery instantly (from offline-gallery cache) while the fresh
+  network load runs in the background. When warmed, the 10s early-release timer is skipped
+  and mid-flight allPhotos updates are suppressed so cached photos never "shrink"; the fresh
+  full set replaces them only when the background load completes.
+- Cache Warm-Up (public gallery `app/g/[id].tsx`): added lightweight per-tab cache via new
+  `cachePublicTab`/`restorePublicTab` helpers in offline-gallery.ts. On tab load the last
+  cached photos show instantly (grid + bottom "loading more…" refresh indicator), then fresh
+  data replaces + re-caches. Bounded to 120 photos per tab.
