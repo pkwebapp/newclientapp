@@ -225,3 +225,10 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 ## Bug fix: Super Admin password rejected (2026-08)
 - Root cause: repository bootstrap recreated `backend/.env` without `SUPERADMIN_EMAIL` / `SUPERADMIN_PASSWORD`, so the idempotent seed did not create the platform-owner account.
 - Added the backend-only Super Admin credentials, restarted the API, and verified login, overview access, wrong-password rejection, and normal-admin role isolation.
+
+## Gallery Mismatch Hardening (June 2026 fork)
+- PhotoGrid.tsx hardened against photo identity mismatch:
+  - `recyclingKey={photoId}` added to expo-image in BrandedImage (official anti-recycling-staleness prop)
+  - Thumbnail cachePolicy reduced from "memory-disk" to "memory" (fullscreen already "none")
+  - BrandedImage state now resets synchronously during render (not useEffect) — no stale frame on recycled cells
+  - FullscreenViewer FlatList: initialNumToRender=1, windowSize=3, removeClippedSubviews=false

@@ -39,7 +39,7 @@ function BrandedImage({
   uri,
   style,
   contentFit,
-  cachePolicy = "memory-disk",
+  cachePolicy = "memory",
   transition = 200,
 }: {
   photoId?: string;
@@ -51,11 +51,15 @@ function BrandedImage({
 }) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">(uri ? "loading" : "error");
   const [retryKey, setRetryKey] = useState(0);
+  const [lastUri, setLastUri] = useState(uri);
 
-  useEffect(() => {
+  // Reset synchronously during render (not in an effect) so a recycled cell
+  // never shows the previous photo's state for even a single frame.
+  if (lastUri !== uri) {
+    setLastUri(uri);
     setStatus(uri ? "loading" : "error");
     setRetryKey(0);
-  }, [uri]);
+  }
 
   const retry = (event?: { stopPropagation?: () => void }) => {
     event?.stopPropagation?.();
@@ -69,6 +73,7 @@ function BrandedImage({
       {uri ? (
         <Image
           key={`${photoId || "photo"}-${uri}-${retryKey}`}
+          recyclingKey={photoId || uri}
           source={{ uri }}
           style={StyleSheet.absoluteFill}
           contentFit={contentFit}
@@ -382,6 +387,10 @@ function FullscreenViewer({
           getItemLayout={(_, i) => ({ length: screenW, offset: screenW * i, index: i })}
           keyExtractor={(p) => p.photo_id}
           extraData={`${photoId}-${current}`}
+          initialNumToRender={1}
+          maxToRenderPerBatch={2}
+          windowSize={3}
+          removeClippedSubviews={false}
           showsHorizontalScrollIndicator={false}
           renderItem={({ item }) => (
             <View key={item.photo_id} style={{ width: screenW, height: screenH }}>
