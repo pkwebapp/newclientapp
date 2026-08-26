@@ -35,14 +35,18 @@ export type Photo = {
 const GAP = spacing.sm;
 
 function BrandedImage({
+  photoId,
   uri,
   style,
   contentFit,
+  cachePolicy = "memory-disk",
   transition = 200,
 }: {
+  photoId?: string;
   uri?: string;
   style?: any;
   contentFit: "cover" | "contain";
+  cachePolicy?: "memory" | "disk" | "memory-disk" | "none";
   transition?: number;
 }) {
   const [status, setStatus] = useState<"loading" | "ready" | "error">(uri ? "loading" : "error");
@@ -64,12 +68,12 @@ function BrandedImage({
     <View style={style}>
       {uri ? (
         <Image
-          key={`${uri}-${retryKey}`}
+          key={`${photoId || "photo"}-${uri}-${retryKey}`}
           source={{ uri }}
           style={StyleSheet.absoluteFill}
           contentFit={contentFit}
           transition={transition}
-          cachePolicy="memory-disk"
+          cachePolicy={cachePolicy}
           onLoadStart={() => setStatus("loading")}
           onLoad={() => setStatus("ready")}
           onError={() => setStatus("error")}
@@ -151,6 +155,7 @@ export function PhotoGrid({
           style={[styles.card, { height: h }]}
         >
           <BrandedImage
+            photoId={item.photo_id}
             uri={imgUrl(item.thumb_url || item.url, item.thumb_path || item.storage_path)}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
@@ -266,6 +271,11 @@ function ZoomablePhoto({
 }) {
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
+
+  useEffect(() => {
+    scale.value = 1;
+    savedScale.value = 1;
+  }, [photo.photo_id, savedScale, scale]);
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [{ scale: scale.value }],
   }));
@@ -306,9 +316,11 @@ function ZoomablePhoto({
       <View style={[styles.zoomStage, { width: screenW, height: screenH }]}>
         <Animated.View style={[styles.zoomImage, { width: screenW, height: screenH }, animatedStyle]}>
           <BrandedImage
+            photoId={photo.photo_id}
             uri={imgUrl(photo.url || photo.thumb_url, photo.storage_path || photo.thumb_path)}
             style={StyleSheet.absoluteFill}
             contentFit="contain"
+            cachePolicy="none"
             transition={150}
           />
         </Animated.View>
@@ -336,35 +348,43 @@ function FullscreenViewer({
   const screenW = Dimensions.get("window").width;
   const screenH = Dimensions.get("window").height;
   const selectedIndex = photoId ? photos.findIndex((photo) => photo.photo_id === photoId) : -1;
-  const safeIndex = selectedIndex >= 0 ? selectedIndex : 0;
+  const selectedPhoto = selectedIndex >= 0 ? photos[selectedIndex] : null;
+  const selectedPhotoId = selectedPhoto?.photo_id;
+  // Put the tapped photo first. React Native Web can ignore/restore FlatList's
+  // initialScrollIndex inside a Modal, so making the selected item index 0
+  // guarantees the first rendered image matches the card that was tapped.
+  const viewerPhotos = selectedPhoto
+    ? [selectedPhoto, ...photos.filter((photo) => photo.photo_id !== selectedPhoto.photo_id)]
+    : [];
 
   useEffect(() => {
-    if (!photoId || selectedIndex < 0) return;
-    setCurrent(selectedIndex);
+    if (!photoId || !selectedPhotoId) return;
+    setCurrent(0);
     requestAnimationFrame(() => {
-      listRef.current?.scrollToIndex({ index: selectedIndex, animated: false });
+      listRef.current?.scrollToOffset({ offset: 0, animated: false });
     });
-  }, [photoId, selectedIndex]);
+  }, [photoId, selectedPhotoId]);
 
-  if (!photoId || selectedIndex < 0) return null;
-  const active = photos[current] || photos[safeIndex];
+  if (!photoId || !selectedPhoto) return null;
+  const active = viewerPhotos[current] || selectedPhoto;
 
   return (
     <Modal visible transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.viewer}>
         <FlatList
-          data={photos}
+          data={viewerPhotos}
           key={`viewer-${photoId}`}
           ref={listRef}
           horizontal
           pagingEnabled
-          initialScrollIndex={safeIndex}
+          initialScrollIndex={0}
           onMomentumScrollEnd={(e) => setCurrent(Math.round(e.nativeEvent.contentOffset.x / screenW))}
           getItemLayout={(_, i) => ({ length: screenW, offset: screenW * i, index: i })}
           keyExtractor={(p) => p.photo_id}
+          extraData={`${photoId}-${current}`}
           showsHorizontalScrollIndicator={false}
           renderItem={({ item }) => (
-            <View style={{ width: screenW, height: screenH }}>
+            <View key={item.photo_id} style={{ width: screenW, height: screenH }}>
               <ZoomablePhoto
                 photo={item}
                 screenW={screenW}
