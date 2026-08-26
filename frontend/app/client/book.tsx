@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
+import DatePickerField, { todayIso } from "@/src/components/DatePickerField";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { goBackOr } from "@/src/navigation/back";
 
@@ -28,7 +29,7 @@ export default function BookPhotographer() {
   const toast = useToast();
 
   const [service, setService] = useState("Wedding");
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(todayIso());
   const [location, setLocation] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
@@ -84,7 +85,12 @@ export default function BookPhotographer() {
           ))}
         </View>
         <View style={{ marginTop: spacing.xl }}>
-          <TextField testID="book-date" label="Preferred date" value={date} onChangeText={setDate} placeholder="2026-12-06" autoCapitalize="none" />
+          <DatePickerField
+            testID="book-date"
+            label="Preferred date"
+            value={date}
+            onChange={setDate}
+          />
           <TextField testID="book-location" label="Location" value={location} onChangeText={setLocation} placeholder="City / venue" />
           <TextField testID="book-message" label="Message" value={message} onChangeText={setMessage} placeholder="Tell us what you have in mind…" multiline />
           <Button testID="book-submit" title="Submit inquiry" loading={loading} onPress={submit} icon="send" />

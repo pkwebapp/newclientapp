@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, Pill, GlassHeader, useToast } from "@/src/components/ui";
+import DatePickerField, { todayIso } from "@/src/components/DatePickerField";
 import { formatINR } from "@/src/utils/format";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
@@ -410,7 +411,7 @@ function DateModal({ clientId, date, onClose, onSaved }: any) {
   const editing = !!date;
   const [person, setPerson] = useState(date?.person_label || "");
   const [occasion, setOccasion] = useState(date?.occasion || "Birthday");
-  const [value, setValue] = useState(date?.date || "");
+  const [value, setValue] = useState(date?.date || todayIso());
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
@@ -431,7 +432,7 @@ function DateModal({ clientId, date, onClose, onSaved }: any) {
     <ModalShell title={editing ? "Edit date" : "Add important date"} onClose={onClose}>
       <TextField label="Person" value={person} onChangeText={setPerson} testID="date-modal-person" placeholder="Priya" />
       <TextField label="Occasion" value={occasion} onChangeText={setOccasion} placeholder="Birthday / Anniversary" />
-      <TextField label="Date (YYYY-MM-DD)" value={value} onChangeText={setValue} testID="date-modal-date" placeholder="2026-09-12" autoCapitalize="none" />
+      <DatePickerField testID="date-modal-date" label="Date" value={value} onChange={setValue} />
       <Button title={editing ? "Save" : "Add date"} loading={busy} onPress={save} testID="date-modal-save" icon="checkmark" />
     </ModalShell>
   );

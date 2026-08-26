@@ -232,3 +232,16 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
   - Thumbnail cachePolicy reduced from "memory-disk" to "memory" (fullscreen already "none")
   - BrandedImage state now resets synchronously during render (not useEffect) — no stale frame on recycled cells
   - FullscreenViewer FlatList: initialNumToRender=1, windowSize=3, removeClippedSubviews=false
+
+
+## Universal Calendar Date Picker (June 2026 fork)
+- Extracted the working calendar UI from `admin/new-event.tsx` into a reusable component
+  `/app/frontend/src/components/DatePickerField.tsx` (exports `DatePickerField`, `todayIso`,
+  `toIsoDate`, `formatDateLabel`).
+- Replaced ALL remaining `TextField` date inputs with the calendar picker, defaulting to today:
+  - `app/client/book.tsx` — Preferred date (initial value = today)
+  - `app/admin/new-client.tsx` — Important Dates rows (new rows initialised to today)
+  - `app/admin/client/[id].tsx` — DateModal for adding/editing important dates
+- Data contract unchanged: still stores ISO `YYYY-MM-DD` strings; back-end untouched.
+- Behaviour: taps open a full-screen glass modal with month navigation, "Jump to today"
+  shortcut, tap-a-day to select. Weekly grid with proper padding.

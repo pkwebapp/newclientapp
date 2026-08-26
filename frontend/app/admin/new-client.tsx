@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
+import DatePickerField, { todayIso } from "@/src/components/DatePickerField";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { goBackOr } from "@/src/navigation/back";
 
@@ -51,7 +52,7 @@ export default function NewClient() {
 
   const updateDate = (i: number, patch: Partial<ImpDate>) =>
     setDates((prev) => prev.map((d, idx) => (idx === i ? { ...d, ...patch } : d)));
-  const addDate = () => setDates((prev) => [...prev, { person_label: "", occasion: "Birthday", date: "" }]);
+  const addDate = () => setDates((prev) => [...prev, { person_label: "", occasion: "Birthday", date: todayIso() }]);
   const removeDate = (i: number) => setDates((prev) => prev.filter((_, idx) => idx !== i));
 
   const save = async () => {
@@ -174,7 +175,12 @@ export default function NewClient() {
             </View>
             <TextField testID={`date-person-${i}`} label="Person" value={d.person_label} onChangeText={(v) => updateDate(i, { person_label: v })} placeholder="Priya" />
             <TextField testID={`date-occasion-${i}`} label="Occasion" value={d.occasion} onChangeText={(v) => updateDate(i, { occasion: v })} placeholder="Birthday / Anniversary" />
-            <TextField testID={`date-date-${i}`} label="Date (YYYY-MM-DD)" value={d.date} onChangeText={(v) => updateDate(i, { date: v })} placeholder="2026-09-12" autoCapitalize="none" />
+            <DatePickerField
+              testID={`date-date-${i}`}
+              label="Date"
+              value={d.date}
+              onChange={(v) => updateDate(i, { date: v })}
+            />
           </View>
         ))}
 
