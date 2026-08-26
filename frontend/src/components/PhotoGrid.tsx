@@ -34,6 +34,74 @@ export type Photo = {
 
 const GAP = spacing.sm;
 
+function BrandedImage({
+  uri,
+  style,
+  contentFit,
+  transition = 200,
+}: {
+  uri?: string;
+  style?: any;
+  contentFit: "cover" | "contain";
+  transition?: number;
+}) {
+  const [status, setStatus] = useState<"loading" | "ready" | "error">(uri ? "loading" : "error");
+  const [retryKey, setRetryKey] = useState(0);
+
+  useEffect(() => {
+    setStatus(uri ? "loading" : "error");
+    setRetryKey(0);
+  }, [uri]);
+
+  const retry = (event?: { stopPropagation?: () => void }) => {
+    event?.stopPropagation?.();
+    if (!uri) return;
+    setStatus("loading");
+    setRetryKey((key) => key + 1);
+  };
+
+  return (
+    <View style={style}>
+      {uri ? (
+        <Image
+          key={`${uri}-${retryKey}`}
+          source={{ uri }}
+          style={StyleSheet.absoluteFill}
+          contentFit={contentFit}
+          transition={transition}
+          cachePolicy="memory-disk"
+          onLoadStart={() => setStatus("loading")}
+          onLoad={() => setStatus("ready")}
+          onError={() => setStatus("error")}
+        />
+      ) : null}
+      {status !== "ready" && (
+        <View style={styles.imageStateOverlay} pointerEvents={status === "error" ? "auto" : "none"}>
+          <View style={styles.imageStateMark}>
+            <Ionicons name="aperture-outline" size={22} color={colors.brand} />
+          </View>
+          {status === "loading" ? (
+            <>
+              <ActivityIndicator color={colors.brand} size="small" />
+              <Text style={styles.imageStateBrand}>PIK CONNECT</Text>
+              <Text style={styles.imageStateLabel}>Loading photo</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.imageStateBrand}>PIK CONNECT</Text>
+              <Text style={styles.imageStateLabel}>Photo unavailable</Text>
+              <Pressable testID="photo-retry" onPress={retry} style={styles.imageRetry}>
+                <Ionicons name="refresh-outline" size={15} color={colors.onBrand} />
+                <Text style={styles.imageRetryText}>Tap to retry</Text>
+              </Pressable>
+            </>
+          )}
+        </View>
+      )}
+    </View>
+  );
+}
+
 /** Virtualized masonry grid (2 → 3 → 4 columns) with captions + like/download
  *  and built-in infinite scroll. Powered by @shopify/flash-list. */
 export function PhotoGrid({
@@ -82,12 +150,10 @@ export function PhotoGrid({
           }}
           style={[styles.card, { height: h }]}
         >
-          <Image
-            source={{ uri: imgUrl(item.thumb_url || item.url, item.thumb_path || item.storage_path) }}
+          <BrandedImage
+            uri={imgUrl(item.thumb_url || item.url, item.thumb_path || item.storage_path)}
             style={StyleSheet.absoluteFill}
             contentFit="cover"
-            transition={200}
-            cachePolicy="memory-disk"
           />
           {showScore && item.similarity != null && (
             <View style={styles.scoreTag}>
@@ -239,12 +305,11 @@ function ZoomablePhoto({
     <GestureDetector gesture={gesture}>
       <View style={[styles.zoomStage, { width: screenW, height: screenH }]}>
         <Animated.View style={[styles.zoomImage, { width: screenW, height: screenH }, animatedStyle]}>
-          <Image
-            source={{ uri: imgUrl(photo.url || photo.thumb_url, photo.storage_path || photo.thumb_path) }}
+          <BrandedImage
+            uri={imgUrl(photo.url || photo.thumb_url, photo.storage_path || photo.thumb_path)}
             style={StyleSheet.absoluteFill}
             contentFit="contain"
             transition={150}
-            cachePolicy="memory-disk"
           />
         </Animated.View>
       </View>
@@ -420,4 +485,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
   },
   viewerScoreText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base },
+  imageStateOverlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary, padding: spacing.sm },
+  imageStateMark: { width: 42, height: 42, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandTertiary, marginBottom: spacing.sm },
+  imageStateBrand: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: 10, fontWeight: "800", letterSpacing: 1.4, marginTop: spacing.sm, textAlign: "center" },
+  imageStateLabel: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: spacing.xs, textAlign: "center" },
+  imageRetry: { minHeight: 44, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs, backgroundColor: colors.brand, borderRadius: radius.pill, paddingHorizontal: spacing.md, marginTop: spacing.md },
+  imageRetryText: { color: colors.onBrand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "700" },
 });

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,15 +12,47 @@ import { goBackOr } from "@/src/navigation/back";
 
 
 const CATEGORIES = ["portrait", "wedding", "event"];
+const MONTH_NAMES = [
+  "January", "February", "March", "April", "May", "June",
+  "July", "August", "September", "October", "November", "December",
+];
+const WEEKDAY_NAMES = ["S", "M", "T", "W", "T", "F", "S"];
+
+function toIsoDate(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, "0");
+  const day = String(value.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDateLabel(isoDate: string) {
+  const [year, month, day] = isoDate.split("-").map(Number);
+  if (!year || !month || !day) return "Choose a date";
+  return `${day} ${MONTH_NAMES[month - 1]} ${year}`;
+}
+
+function calendarWeeks(month: Date) {
+  const year = month.getFullYear();
+  const monthIndex = month.getMonth();
+  const firstDay = new Date(year, monthIndex, 1).getDay();
+  const totalDays = new Date(year, monthIndex + 1, 0).getDate();
+  const cells: (number | null)[] = Array(firstDay).fill(null);
+  for (let day = 1; day <= totalDays; day += 1) cells.push(day);
+  while (cells.length % 7 !== 0) cells.push(null);
+  return Array.from({ length: cells.length / 7 }, (_, index) => cells.slice(index * 7, index * 7 + 7));
+}
 
 export default function NewEvent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const toast = useToast();
 
+  const today = new Date();
   const [name, setName] = useState("");
-  const [date, setDate] = useState("");
-  const [photographer, setPhotographer] = useState("");
+  const [date, setDate] = useState(toIsoDate(today));
+  const [calendarOpen, setCalendarOpen] = useState(false);
+  const [calendarMonth, setCalendarMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
+  const [photographer, setPhotographer] = useState("Ritik");
   const [category, setCategory] = useState("portrait");
   const [mode, setMode] = useState<"upload" | "gdrive">("upload");
   const [driveLink, setDriveLink] = useState("");
@@ -123,8 +155,30 @@ export default function NewEvent() {
 
         <View style={{ marginTop: spacing.xl }}>
           <TextField testID="event-name-input" label="Event name" value={name} onChangeText={setName} placeholder="Sharma Wedding" />
-          <TextField testID="event-date-input" label="Date" value={date} onChangeText={setDate} placeholder="2026-05-01" autoCapitalize="none" />
-          <TextField testID="event-photographer-input" label="Photographer" value={photographer} onChangeText={setPhotographer} placeholder="Ravi Kapoor" />
+          <View style={styles.dateFieldWrap}>
+            <Text style={styles.label}>Date</Text>
+            <Pressable
+              testID="event-date-input"
+              accessibilityRole="button"
+              accessibilityLabel={`Event date ${formatDateLabel(date)}`}
+              onPress={() => {
+                const [year, month] = date.split("-").map(Number);
+                setCalendarMonth(new Date(year, month - 1, 1));
+                setCalendarOpen(true);
+              }}
+              style={styles.dateField}
+            >
+              <View style={styles.dateIcon}>
+                <Ionicons name="calendar-outline" size={20} color={colors.brand} />
+              </View>
+              <View style={styles.dateCopy}>
+                <Text style={styles.dateValue}>{formatDateLabel(date)}</Text>
+                <Text style={styles.dateHint}>Tap to choose a date</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+            </Pressable>
+          </View>
+          <TextField testID="event-photographer-input" label="Photographer" value={photographer} onChangeText={setPhotographer} placeholder="Ritik" />
           <TextField testID="event-value-input" label="Booking value (₹)" value={value} onChangeText={setValue} placeholder="120000" keyboardType="numeric" />
 
           <Text style={styles.label}>Attach to client (optional)</Text>
@@ -149,6 +203,83 @@ export default function NewEvent() {
           </View>
         </View>
       </KeyboardAwareScrollView>
+      <Modal visible={calendarOpen} transparent animationType="fade" onRequestClose={() => setCalendarOpen(false)} statusBarTranslucent>
+        <View style={styles.modalBackdrop}>
+          <View style={styles.calendarCard}>
+            <View style={styles.calendarTopRow}>
+              <View>
+                <Text style={styles.calendarEyebrow}>SELECT DATE</Text>
+                <Text style={styles.calendarSelected}>{formatDateLabel(date)}</Text>
+              </View>
+              <Pressable testID="event-date-close" accessibilityLabel="Close calendar" onPress={() => setCalendarOpen(false)} style={styles.calendarClose}>
+                <Ionicons name="close" size={22} color={colors.onSurfaceTertiary} />
+              </Pressable>
+            </View>
+            <View style={styles.calendarMonthRow}>
+              <Pressable
+                testID="event-calendar-prev"
+                accessibilityLabel="Previous month"
+                onPress={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1))}
+                style={styles.calendarArrow}
+              >
+                <Ionicons name="chevron-back" size={20} color={colors.onSurface} />
+              </Pressable>
+              <Text style={styles.calendarMonthTitle}>{MONTH_NAMES[calendarMonth.getMonth()]} {calendarMonth.getFullYear()}</Text>
+              <Pressable
+                testID="event-calendar-next"
+                accessibilityLabel="Next month"
+                onPress={() => setCalendarMonth(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1))}
+                style={styles.calendarArrow}
+              >
+                <Ionicons name="chevron-forward" size={20} color={colors.onSurface} />
+              </Pressable>
+            </View>
+            <View style={styles.weekdayRow}>
+              {WEEKDAY_NAMES.map((day, index) => <Text key={`${day}-${index}`} style={styles.weekday}>{day}</Text>)}
+            </View>
+            <View style={styles.calendarGrid}>
+              {calendarWeeks(calendarMonth).map((week, weekIndex) => (
+                <View key={`week-${weekIndex}`} style={styles.calendarWeek}>
+                  {week.map((day, dayIndex) => {
+                    const value = day ? toIsoDate(new Date(calendarMonth.getFullYear(), calendarMonth.getMonth(), day)) : "";
+                    const selected = value === date;
+                    return (
+                      <Pressable
+                        key={`day-${weekIndex}-${dayIndex}`}
+                        disabled={!day}
+                        testID={day ? `event-calendar-day-${day}` : undefined}
+                        accessibilityRole={day ? "button" : undefined}
+                        accessibilityLabel={day ? formatDateLabel(value) : undefined}
+                        onPress={() => {
+                          if (!day) return;
+                          setDate(value);
+                          setCalendarOpen(false);
+                        }}
+                        style={[styles.calendarDay, selected && styles.calendarDaySelected]}
+                      >
+                        <Text style={[styles.calendarDayText, selected && styles.calendarDayTextSelected]}>{day || ""}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              ))}
+            </View>
+            <Pressable
+              testID="event-calendar-today"
+              onPress={() => {
+                const current = new Date();
+                setDate(toIsoDate(current));
+                setCalendarMonth(new Date(current.getFullYear(), current.getMonth(), 1));
+                setCalendarOpen(false);
+              }}
+              style={styles.todayButton}
+            >
+              <Ionicons name="today-outline" size={17} color={colors.brand} />
+              <Text style={styles.todayButtonText}>Jump to today</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -170,4 +301,29 @@ const styles = StyleSheet.create({
   driveBox: { marginTop: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, borderWidth: 1, borderColor: colors.brandTertiary },
   hintRow: { flexDirection: "row", gap: 6, alignItems: "flex-start", marginTop: spacing.xs },
   hint: { flex: 1, color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 18 },
+  dateFieldWrap: { marginBottom: spacing.lg },
+  dateField: { minHeight: 64, flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, paddingHorizontal: spacing.lg },
+  dateIcon: { width: 40, height: 40, borderRadius: radius.sm, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center", marginRight: spacing.md },
+  dateCopy: { flex: 1 },
+  dateValue: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.lg, fontWeight: "600" },
+  dateHint: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
+  modalBackdrop: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.72)", alignItems: "center", justifyContent: "center", padding: spacing.xl },
+  calendarCard: { width: "100%", maxWidth: 420, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.borderStrong, padding: spacing.xl },
+  calendarTopRow: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
+  calendarEyebrow: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "700", letterSpacing: 1.2 },
+  calendarSelected: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"], fontWeight: "700", marginTop: spacing.xs },
+  calendarClose: { width: 44, height: 44, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary },
+  calendarMonthRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xl, marginBottom: spacing.md },
+  calendarArrow: { width: 44, height: 44, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary },
+  calendarMonthTitle: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.lg, fontWeight: "700" },
+  weekdayRow: { flexDirection: "row", marginBottom: spacing.xs },
+  weekday: { flex: 1, color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "700", textAlign: "center", paddingVertical: spacing.sm },
+  calendarGrid: { gap: spacing.xs },
+  calendarWeek: { flexDirection: "row", gap: spacing.xs },
+  calendarDay: { flex: 1, minHeight: 44, borderRadius: radius.sm, alignItems: "center", justifyContent: "center" },
+  calendarDaySelected: { backgroundColor: colors.brand },
+  calendarDayText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
+  calendarDayTextSelected: { color: colors.onBrand, fontWeight: "700" },
+  todayButton: { minHeight: 48, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, marginTop: spacing.lg, paddingTop: spacing.lg },
+  todayButtonText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
 });

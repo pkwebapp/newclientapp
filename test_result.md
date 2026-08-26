@@ -5469,3 +5469,54 @@ agent_communication:
       The bug is completely FIXED. Super Admin credentials (prabhakar@pkphotography.in / SuperAdmin@3214)
       now work correctly. Backend is production-ready. 0 failures.
 
+
+
+
+#====================================================================================================
+# NEW FEATURE — Branded photo loading and retry states
+#====================================================================================================
+
+user_problem_statement: |
+  While gallery images are loading, display an in-progress image state with PIK Connect branding. If an image
+  fails to load, show a branded error state with a retry action instead of a broken/blank tile.
+
+frontend:
+  - task: "PIK Connect branded image loading and error placeholders"
+    implemented: true
+    working: "NA"
+    file: "frontend/src/components/PhotoGrid.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+      - working: "NA"
+        agent: "main"
+        comment: |
+          Added a shared BrandedImage wrapper used by gallery tiles and the full-screen viewer. It shows a
+          PIK Connect aperture mark, activity indicator, and loading label during downloads. Failed or missing
+          image URLs now show an opaque branded Photo unavailable state with a 44px+ Tap to retry button. Retry
+          remounts the image request without changing photo selection, likes, downloads, sharing, or pagination.
+          Frontend ESLint and TypeScript checks pass; browser verification is pending user permission.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 11
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Loading state appears inside each photo tile"
+    - "Failed image shows PIK Connect branded error state"
+    - "Retry re-requests the image"
+    - "Full-screen viewer image states and existing controls regression"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: |
+      Shared PhotoGrid image rendering now has branded loading and retryable error states. Lint and TypeScript
+      checks pass. Frontend testing requires explicit user permission.
+
