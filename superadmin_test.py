@@ -11,7 +11,7 @@ from io import BytesIO
 from PIL import Image
 
 # Backend URL
-BASE_URL = "https://client-hub-434.preview.emergentagent.com/api"
+BASE_URL = "https://newclient-app-2.preview.emergentagent.com/api"
 
 # Test credentials from /app/memory/test_credentials.md
 SUPERADMIN_EMAIL = "prabhakar@pkphotography.in"
