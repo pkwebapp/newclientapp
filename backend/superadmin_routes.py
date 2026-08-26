@@ -8,14 +8,19 @@ from pydantic import BaseModel, EmailStr
 
 from config import db, SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD
 from auth_utils import hash_password, verify_password, create_session, require_superadmin, new_user_id
+import plans
 
 superadmin_router = APIRouter(prefix="/api/superadmin")
 
+# Public-facing plan catalogue derived from the single source of truth in plans.py.
 PLANS = [
-    {"key": "free", "name": "Free", "price": 0, "storage_limit": 5, "gallery_limit": 5},
-    {"key": "basic", "name": "Basic", "price": 499, "storage_limit": 100, "gallery_limit": 50},
-    {"key": "pro", "name": "Pro", "price": 999, "storage_limit": 500, "gallery_limit": None},
-    {"key": "business", "name": "Business", "price": 1999, "storage_limit": 2048, "gallery_limit": None},
+    {
+        "key": p["key"], "name": p["name"], "price": p["price"],
+        "storage_limit_gb": None if p["storage_bytes"] is None else round(p["storage_bytes"] / (1024 ** 3), 2),
+        "gallery_limit": p["galleries"], "gdrive_limit": p["gdrive_galleries"],
+        "album_limit": p["albums"], "client_limit": p["clients"], "image_limit": p["images"],
+    }
+    for p in plans.PLAN_LIMITS.values()
 ]
 
 
@@ -24,8 +29,13 @@ def now_iso() -> str:
 
 
 def _plan_for(user: dict) -> dict:
-    key = (user.get("membership_plan") or "pro").lower()
-    return next((p for p in PLANS if p["key"] == key), PLANS[2])
+    limits = plans.plan_limits(user)
+    return {
+        "key": limits["key"], "name": limits["name"], "price": limits["price"],
+        "storage_limit_gb": None if limits["storage_bytes"] is None else round(limits["storage_bytes"] / (1024 ** 3), 2),
+        "gallery_limit": limits["galleries"], "gdrive_limit": limits["gdrive_galleries"],
+        "album_limit": limits["albums"], "client_limit": limits["clients"], "image_limit": limits["images"],
+    }
 
 
 def _photo_bytes(photo: dict) -> int:
@@ -38,13 +48,13 @@ def _photo_bytes(photo: dict) -> int:
 
 
 async def _usage_for(studio_id: str) -> dict:
-    events = await db.events.find({"created_by": studio_id}, {"_id": 0, "event_id": 1, "name": 1, "created_at": 1, "status": 1}).to_list(5000)
+    events = await db.events.find({"created_by": studio_id}, {"_id": 0, "event_id": 1, "name": 1, "created_at": 1, "status": 1, "source": 1, "photo_count": 1}).to_list(5000)
     event_ids = [e["event_id"] for e in events]
-    photos = await db.photos.find({"event_id": {"$in": event_ids}}, {"_id": 0, "bytes": 1, "size_bytes": 1, "width": 1, "height": 1, "uploaded_at": 1}).to_list(100000) if event_ids else []
+    photos = await db.photos.find({"event_id": {"$in": event_ids}}, {"_id": 0, "bytes": 1, "size_bytes": 1, "width": 1, "height": 1, "source": 1}).to_list(100000) if event_ids else []
     return {
         "galleries": len(events),
         "images": len(photos),
-        "storage_bytes": sum(_photo_bytes(p) for p in photos),
+        "storage_bytes": sum(_photo_bytes(p) for p in photos if p.get("source") != "gdrive"),
         "event_ids": event_ids,
         "events": events,
     }
@@ -53,21 +63,36 @@ async def _usage_for(studio_id: str) -> dict:
 async def _photographer_row(user: dict) -> dict:
     usage = await _usage_for(user["user_id"])
     plan = _plan_for(user)
+    state = plans.plan_state(user)
+    counters = user.get("usage") or {}
     clients = await db.clients.count_documents({"studio_id": user["user_id"]})
+    albums = await db.albums.count_documents({"created_by": user["user_id"]})
     last_event = max((e.get("created_at") or "" for e in usage["events"]), default=None)
     return {
         "photographer_id": user["user_id"],
         "name": user.get("name") or user.get("email", "Photographer").split("@")[0],
         "email": user.get("email"),
+        "phone": user.get("phone"),
         "membership": plan["name"],
         "membership_key": plan["key"],
+        "plan_status": state["status"],
+        "locked": state["locked"],
+        "days_left": state["days_left"],
+        "plan_expires_at": state["expires_at"],
         "status": user.get("status", "active"),
         "uploads_disabled": bool(user.get("uploads_disabled", False)),
         "galleries": usage["galleries"],
+        "galleries_created": int(counters.get("galleries_created", 0)),
+        "gdrive_created": int(counters.get("gdrive_created", 0)),
+        "albums": albums,
+        "albums_created": int(counters.get("albums_created", 0)),
         "images": usage["images"],
         "storage_bytes": usage["storage_bytes"],
-        "storage_limit_gb": plan["storage_limit"],
+        "storage_limit_gb": plan["storage_limit_gb"],
+        "gallery_limit": plan["gallery_limit"],
         "clients": clients,
+        "client_limit": plan["client_limit"],
+        "revenue": plan["price"] if plan["key"] != "trial" and not state["locked"] else 0,
         "last_active": user.get("last_active_at") or last_event,
         "created_at": user.get("created_at"),
     }
@@ -106,6 +131,10 @@ async def overview(admin: dict = Depends(require_superadmin)):
     today = datetime.now(timezone.utc).date().isoformat()
     uploads_today = await db.photos.count_documents({"uploaded_at": {"$regex": f"^{today}"}})
     storage_bytes = sum(row["storage_bytes"] for row in rows)
+    mrr = sum(row["revenue"] for row in rows)
+    plan_distribution = {}
+    for row in rows:
+        plan_distribution[row["membership_key"]] = plan_distribution.get(row["membership_key"], 0) + 1
     return {
         "stats": {
             "total_photographers": len(rows),
@@ -114,10 +143,14 @@ async def overview(admin: dict = Depends(require_superadmin)):
             "total_images": image_count,
             "storage_bytes": storage_bytes,
             "uploads_today": uploads_today,
+            "mrr": mrr,
+            "paying_studios": sum(1 for row in rows if row["membership_key"] != "trial" and not row["locked"]),
         },
+        "plan_distribution": plan_distribution,
         "attention": {
             "storage_warnings": sum(1 for row in rows if row["storage_limit_gb"] and row["storage_bytes"] / (1024**3) >= row["storage_limit_gb"] * 0.85),
-            "expiring_memberships": 0,
+            "expiring_memberships": sum(1 for row in rows if row["days_left"] is not None and not row["locked"] and row["days_left"] <= 3),
+            "expired_trials": sum(1 for row in rows if row["membership_key"] == "trial" and row["locked"]),
             "uploads_disabled": sum(1 for row in rows if row["uploads_disabled"]),
         },
         "recent_activity": await _recent_activity(rows),

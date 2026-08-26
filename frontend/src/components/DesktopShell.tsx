@@ -78,6 +78,12 @@ export function DesktopShell({
 
         <View style={styles.sidebarFooter}>
           {role === "admin" ? (
+            <Pressable testID="nav-billing" onPress={() => router.push("/admin/billing" as any)} style={[styles.navItem, isActive("/admin/billing") && styles.navItemActive]}>
+              <Ionicons name="card-outline" size={20} color={isActive("/admin/billing") ? colors.onBrand : colors.onSurfaceTertiary} />
+              <Text style={[styles.navText, isActive("/admin/billing") && styles.navTextActive]}>Plan & Billing</Text>
+            </Pressable>
+          ) : null}
+          {role === "admin" ? (
             <Pressable testID="nav-settings" onPress={() => router.push("/admin/settings" as any)} style={[styles.navItem, isActive("/admin/settings") && styles.navItemActive]}>
               <Ionicons name="settings-outline" size={20} color={isActive("/admin/settings") ? colors.onBrand : colors.onSurfaceTertiary} />
               <Text style={[styles.navText, isActive("/admin/settings") && styles.navTextActive]}>Settings</Text>

@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from config import db, PUBLIC_BASE_URL
 from auth_utils import require_admin, require_client
+import plans
 
 crm_router = APIRouter(prefix="/api")
 
@@ -265,6 +266,7 @@ async def create_client(body: ClientCreate, admin: dict = Depends(require_admin)
         raise HTTPException(status_code=400, detail=f"type must be one of {sorted(CLIENT_TYPES)}")
     if body.status not in CLIENT_STATUSES:
         raise HTTPException(status_code=400, detail=f"status must be one of {sorted(CLIENT_STATUSES)}")
+    await plans.check_can_add_client(admin, 1)
 
     studio_id = admin["user_id"]
     client_id = _new_id("cli")

@@ -3,6 +3,8 @@ import io
 import os
 import csv
 import uuid
+import hmac
+import hashlib
 import base64
 import random
 import asyncio
@@ -31,6 +33,7 @@ from auth_utils import (
     hash_password, verify_password, new_user_id, create_session,
     get_current_user, require_admin, require_admin_uploads, require_client, user_from_token_or_header,
 )
+import plans
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -225,6 +228,7 @@ async def admin_register(body: AdminRegister):
         "password_hash": hash_password(body.password),
         "auth_provider": "password",
         "created_at": now_iso(),
+        **plans.new_studio_plan_fields(),
     }
     await db.users.insert_one(user)
     token = await create_session(user["user_id"])
@@ -268,6 +272,7 @@ async def google_session(body: SessionExchange):
             "picture": data.get("picture"),
             "auth_provider": "google",
             "created_at": now_iso(),
+            **plans.new_studio_plan_fields(),
         }
         await db.users.insert_one(user)
     token = await create_session(user["user_id"])
@@ -440,7 +445,115 @@ def _public_user(user: dict) -> dict:
         "picture": user.get("picture"),
         "profile_complete": bool(user.get("profile_complete")),
         "studio_profile": user.get("studio_profile"),
+        "plan": user.get("plan"),
+        "plan_expires_at": user.get("plan_expires_at"),
     }
+
+
+@api_router.get("/billing/status")
+async def billing_status_endpoint(admin: dict = Depends(require_admin)):
+    """Current plan, quota limits, live usage and days left for the studio."""
+    return await plans.billing_status(admin)
+
+
+# ---------------------------------------------------------------------------
+# Payments — Razorpay (mock now, real contract preserved for later)
+# ---------------------------------------------------------------------------
+PLAN_PRICING = {
+    "standard": {"amount": 49900, "name": "Standard"},
+    "pro": {"amount": 99900, "name": "Pro"},
+}
+RAZORPAY_MODE = os.environ.get("RAZORPAY_MODE", "mock")
+RAZORPAY_KEY_ID = os.environ.get("RAZORPAY_KEY_ID", "")
+RAZORPAY_KEY_SECRET = os.environ.get("RAZORPAY_KEY_SECRET", "")
+
+
+def _is_mock() -> bool:
+    return RAZORPAY_MODE == "mock" or not RAZORPAY_KEY_ID or not RAZORPAY_KEY_SECRET
+
+
+class CreateOrderIn(BaseModel):
+    plan: str  # standard | pro
+
+
+class VerifyIn(BaseModel):
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+
+
+class MockCompleteIn(BaseModel):
+    order_id: str
+
+
+async def _activate_plan(studio_id: str, plan_key: str, order_id: str, payment_id: str) -> None:
+    fields = plans.apply_subscription_fields(plan_key)
+    await db.users.update_one({"user_id": studio_id}, {"$set": fields})
+    await db.payments.update_one(
+        {"order_id": order_id},
+        {"$set": {"status": "paid", "payment_id": payment_id, "verified_at": now_iso()}},
+    )
+
+
+@api_router.post("/payments/create-order")
+async def create_order(body: CreateOrderIn, admin: dict = Depends(require_admin)):
+    if body.plan not in PLAN_PRICING:
+        raise HTTPException(status_code=400, detail="Invalid plan")
+    plan = PLAN_PRICING[body.plan]
+    local_id = uuid.uuid4().hex
+    mock = _is_mock()
+    if mock:
+        order_id = f"mock_order_{local_id}"
+        public_key = "mock_key_id"
+    else:
+        async with httpx.AsyncClient(timeout=15) as hc:
+            r = await hc.post(
+                "https://api.razorpay.com/v1/orders",
+                auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET),
+                json={"amount": plan["amount"], "currency": "INR", "receipt": f"rcpt_{local_id[:24]}",
+                      "notes": {"plan": body.plan, "studio_id": admin["user_id"]}, "payment_capture": 1},
+            )
+        if r.status_code >= 400:
+            raise HTTPException(status_code=502, detail="Could not start payment. Please try again.")
+        order_id = r.json()["id"]
+        public_key = RAZORPAY_KEY_ID
+    await db.payments.insert_one({
+        "local_id": local_id, "order_id": order_id, "studio_id": admin["user_id"],
+        "plan": body.plan, "amount": plan["amount"], "currency": "INR",
+        "status": "created", "mock": mock, "created_at": now_iso(),
+    })
+    return {"local_id": local_id, "order_id": order_id, "amount": plan["amount"],
+            "currency": "INR", "plan": body.plan, "key_id": public_key, "mock": mock}
+
+
+@api_router.post("/payments/mock-complete")
+async def mock_complete(body: MockCompleteIn, admin: dict = Depends(require_admin)):
+    """Test-only: activate the plan for a mock order (no real Razorpay keys yet)."""
+    if not _is_mock():
+        raise HTTPException(status_code=400, detail="Mock completion is disabled in live mode")
+    record = await db.payments.find_one({"order_id": body.order_id, "studio_id": admin["user_id"]})
+    if not record:
+        raise HTTPException(status_code=404, detail="Unknown order")
+    await _activate_plan(admin["user_id"], record["plan"], body.order_id, f"mock_pay_{uuid.uuid4().hex[:12]}")
+    fresh = await db.users.find_one({"user_id": admin["user_id"]}, {"_id": 0, "password_hash": 0})
+    return await plans.billing_status(fresh)
+
+
+@api_router.post("/payments/verify")
+async def verify_payment(body: VerifyIn, admin: dict = Depends(require_admin)):
+    """Real Razorpay callback verification (used once live keys are configured)."""
+    record = await db.payments.find_one({"order_id": body.razorpay_order_id, "studio_id": admin["user_id"]})
+    if not record:
+        raise HTTPException(status_code=404, detail="Unknown order")
+    if _is_mock():
+        raise HTTPException(status_code=400, detail="Use mock-complete in mock mode")
+    message = f"{body.razorpay_order_id}|{body.razorpay_payment_id}".encode()
+    expected = hmac.new(RAZORPAY_KEY_SECRET.encode(), message, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(expected, body.razorpay_signature):
+        raise HTTPException(status_code=400, detail="Invalid payment signature")
+    await _activate_plan(admin["user_id"], record["plan"], body.razorpay_order_id, body.razorpay_payment_id)
+    fresh = await db.users.find_one({"user_id": admin["user_id"]}, {"_id": 0, "password_hash": 0})
+    return await plans.billing_status(fresh)
 
 
 # ---------------------------------------------------------------------------
@@ -483,6 +596,7 @@ class EventClientAssignmentCreate(BaseModel):
 async def create_event(body: EventCreate, admin: dict = Depends(require_admin)):
     if body.category not in CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Category must be one of {CATEGORIES}")
+    await plans.check_can_create_gallery(admin)
     event_id = f"evt_{uuid.uuid4().hex[:12]}"
     engine = get_face_engine()
     collection_id = engine.create_collection(event_id)
@@ -511,6 +625,7 @@ async def create_event(body: EventCreate, admin: dict = Depends(require_admin)):
         "created_at": now_iso(),
     }
     await db.events.insert_one(event)
+    await plans.increment_usage(admin["user_id"], "galleries_created", 1)
     return public_event(event)
 
 
@@ -633,6 +748,7 @@ async def create_gdrive_event(body: GDriveEventCreate, admin: dict = Depends(req
     on Drive; we index web previews for face search."""
     if body.category not in CATEGORIES:
         raise HTTPException(status_code=400, detail=f"Category must be one of {CATEGORIES}")
+    await plans.check_can_create_gdrive(admin)
     try:
         folder_id = gdrive_service.extract_folder_id(body.drive_link)
     except DriveError as e:
@@ -673,6 +789,7 @@ async def create_gdrive_event(body: GDriveEventCreate, admin: dict = Depends(req
         "created_at": now_iso(),
     }
     await db.events.insert_one(event)
+    await plans.increment_usage(admin["user_id"], "gdrive_created", 1)
     sync = await _sync_gdrive_event(event, images=probe)
     fresh = await get_event_or_404(event_id)
     return {**public_event(fresh), "sync": sync}
@@ -852,6 +969,7 @@ async def _ingest_photo(event: dict, data: bytes, filename: str, content_type: s
         "storage_path": orig_path,
         "thumb_path": thumb_path,
         "filename": filename,
+        "bytes": len(data),
         "width": w,
         "height": h,
         "face_count": 0,
@@ -975,12 +1093,14 @@ async def upload_photo(event_id: str, file: UploadFile = File(...), admin: dict 
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
+    await plans.check_can_upload_images(admin, 1, len(data))
     try:
         photo = await _ingest_photo(event, data, file.filename or "photo.jpg", file.content_type or "image/jpeg")
     except HTTPException:
         raise
     except Exception:
         raise HTTPException(status_code=400, detail="Unsupported or corrupt image")
+    await plans.increment_usage(admin["user_id"], "images_uploaded", 1)
     return public_photo(photo)
 
 
@@ -990,21 +1110,40 @@ async def upload_photos_bulk(event_id: str, files: list[UploadFile] = File(...),
     """Store many photos in a single request; face indexing is queued in the
     background. Returns per-file results so the client can drive a progress bar."""
     event = await admin_event_or_404(event_id, admin)
+    await plans.ensure_plan(admin)
+    plans._assert_active(admin)
+    limits = plans.plan_limits(admin)
+    img_lim = limits["images"]
+    store_lim = limits["storage_bytes"]
+    images_used = int((admin.get("usage") or {}).get("images_uploaded", 0))
+    storage_used = await plans.storage_bytes_for(admin["user_id"])
     results = []
     uploaded = 0
+    quota_hit = None
     for f in files:
         try:
             data = await f.read()
             if not data:
                 results.append({"filename": f.filename, "ok": False, "error": "empty"})
                 continue
+            if img_lim is not None and images_used + uploaded + 1 > img_lim:
+                quota_hit = f"Image limit reached ({img_lim})"
+                results.append({"filename": f.filename, "ok": False, "error": "quota"})
+                continue
+            if store_lim is not None and storage_used + len(data) > store_lim:
+                quota_hit = "Storage limit reached for your plan"
+                results.append({"filename": f.filename, "ok": False, "error": "quota"})
+                continue
             photo = await _ingest_photo(event, data, f.filename or "photo.jpg", f.content_type or "image/jpeg")
             uploaded += 1
+            storage_used += len(data)
             results.append({"filename": f.filename, "ok": True, "photo_id": photo["photo_id"]})
         except Exception as e:
             logger.error(f"bulk upload {getattr(f, 'filename', '?')} failed: {e}")
             results.append({"filename": getattr(f, "filename", None), "ok": False, "error": "unsupported"})
-    return {"uploaded": uploaded, "received": len(files), "results": results}
+    if uploaded:
+        await plans.increment_usage(admin["user_id"], "images_uploaded", uploaded)
+    return {"uploaded": uploaded, "received": len(files), "results": results, "quota_hit": quota_hit}
 
 
 class S3ImportBody(BaseModel):
@@ -1861,6 +2000,8 @@ async def public_event_info(event_id: str):
     if not event:
         raise HTTPException(status_code=404, detail="Gallery not found")
     ensure_event_available(event)
+    if await plans.owner_locked(event.get("created_by")):
+        raise HTTPException(status_code=403, detail="This gallery has expired. Please ask the studio to renew their plan.")
     if not event.get("share_enabled", True):
         raise HTTPException(status_code=403, detail="This gallery is not currently shared")
     return {
@@ -1879,6 +2020,8 @@ async def public_access(event_id: str, body: PublicAccessBody):
     if not event:
         raise HTTPException(status_code=404, detail="Gallery not found")
     ensure_event_available(event)
+    if await plans.owner_locked(event.get("created_by")):
+        raise HTTPException(status_code=403, detail="This gallery has expired. Please ask the studio to renew their plan.")
     if not event.get("share_enabled", True):
         raise HTTPException(status_code=403, detail="This gallery is not currently shared")
 

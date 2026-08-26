@@ -24,6 +24,7 @@ from config import db, APP_NAME, PUBLIC_BASE_URL
 from storage_service import get_storage
 from auth_utils import require_admin, require_admin_uploads, require_client
 import album_service
+import plans
 
 logger = logging.getLogger(__name__)
 
@@ -183,6 +184,7 @@ async def _admin_album_or_404(album_id: str, admin: dict) -> dict:
 
 @album_router.post("")
 async def create_album(body: AlbumCreate, admin: dict = Depends(require_admin)):
+    await plans.check_can_create_album(admin)
     album_id = f"alb_{uuid.uuid4().hex[:12]}"
     doc = {
         "album_id": album_id,
@@ -210,6 +212,7 @@ async def create_album(body: AlbumCreate, admin: dict = Depends(require_admin)):
         "updated_at": now_iso(),
     }
     await db.albums.insert_one(doc)
+    await plans.increment_usage(admin["user_id"], "albums_created", 1)
     return _admin_album_public(doc)
 
 

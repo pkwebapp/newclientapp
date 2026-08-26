@@ -25,17 +25,20 @@ export default function AdminDashboard() {
   const toast = useToast();
   const [events, setEvents] = useState<any[]>([]);
   const [clientCount, setClientCount] = useState<number>(0);
+  const [plan, setPlan] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [ev, cl] = await Promise.all([
+      const [ev, cl, pl] = await Promise.all([
         api.get("/events"),
         api.get("/clients").catch(() => []),
+        api.get("/billing/status").catch(() => null),
       ]);
       setEvents(ev);
       setClientCount(Array.isArray(cl) ? cl.length : 0);
+      setPlan(pl);
     } catch {
       toast.show("Could not load your studio", "error");
     } finally {
@@ -84,6 +87,27 @@ export default function AdminDashboard() {
             <Stat label="Photos" value={totalPhotos} icon="image-outline" />
             <Stat label="Clients" value={clientCount} icon="people-outline" />
           </View>
+
+          {plan && (plan.plan === "trial" || plan.locked) && (
+            <Pressable
+              testID="plan-banner"
+              onPress={() => router.push("/admin/billing")}
+              style={[styles.planBanner, plan.locked && styles.planBannerLocked]}
+            >
+              <Ionicons name={plan.locked ? "lock-closed" : "sparkles"} size={18} color={plan.locked ? colors.onError : colors.brand} />
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.planBannerTitle, plan.locked && { color: colors.onError }]}>
+                  {plan.locked
+                    ? "Your trial has ended"
+                    : `You're on the Trial plan${plan.days_left != null ? ` · ${plan.days_left} day${plan.days_left === 1 ? "" : "s"} left` : ""}`}
+                </Text>
+                <Text style={[styles.planBannerSub, plan.locked && { color: colors.onError }]}>
+                  {plan.locked ? "Subscribe to restore your galleries" : "Upgrade to Standard or Pro for more galleries & storage"}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color={plan.locked ? colors.onError : colors.brand} />
+            </Pressable>
+          )}
 
           <Text style={styles.sectionTitle}>Quick actions</Text>
           <View style={styles.quickGrid}>
@@ -156,6 +180,10 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   statsRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.xl },
+  planBanner: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.brandTertiary, borderWidth: 1, borderColor: colors.brand, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.xl },
+  planBannerLocked: { backgroundColor: colors.error, borderColor: colors.error },
+  planBannerTitle: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
+  planBannerSub: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
   stat: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, alignItems: "flex-start", borderWidth: 1, borderColor: colors.border },
   statValue: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"], marginTop: spacing.sm },
   statLabel: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm },

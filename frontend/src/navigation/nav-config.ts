@@ -77,6 +77,13 @@ export const ADMIN_TAB_ROOTS = [
 // Less-used destinations live in the slide-in drawer to keep the tab bar clean.
 export const ADMIN_DRAWER_ITEMS: DrawerItem[] = [
   {
+    key: "billing",
+    label: "Plan & Billing",
+    sublabel: "Your plan, usage & upgrades",
+    icon: "card-outline",
+    href: "/admin/billing",
+  },
+  {
     key: "settings",
     label: "Studio Settings",
     sublabel: "WhatsApp, call number & review link",
