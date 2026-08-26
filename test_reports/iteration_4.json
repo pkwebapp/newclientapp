@@ -1,0 +1,45 @@
+{
+  "summary": "Studio onboarding gate (Jan 2026) tested end-to-end. Backend: 8/8 pytest passed in /app/backend/tests/test_studio_onboarding.py — POST /api/auth/admin/register returns profile_complete=false; POST /api/auth/admin/profile with valid bearer saves studio_profile, sets profile_complete=true and updates users.name to studio_name and users.phone to profile phone; blank required field returns 400; missing key returns 422; auth missing returns 401; GET /api/auth/me reflects profile_complete=true after save; superadmin (prabhakar@pkphotography.in / SuperAdmin@3214) login unaffected and /api/superadmin/overview works. Frontend: on 390x844 mobile viewport (a) registering a fresh studio via /admin-login (toggle to register, name+email+password) redirects to /studio-onboarding (studio-onboarding-screen), (b) onb-submit aria-disabled=true until all required fields are valid — clicking it while disabled keeps user on onboarding, (c) after filling onb-contact-name, onb-studio-name, onb-phone, tapping onb-purpose-Weddings, onb-city, onb-country the button becomes enabled and submit navigates to /admin with admin-dashboard-screen rendered, and (d) existing admin admin@lumiere.studio / Admin@12345 is correctly redirected to /studio-onboarding on login (profile_complete=false confirmed via /api/auth/admin/login curl). All documented testIDs found: studio-onboarding-screen, onb-contact-name, onb-studio-name, onb-phone, onb-purpose-Weddings (chip), onb-city, onb-country, onb-submit, admin-login-screen, admin-email-input, admin-password-input, admin-submit-btn, admin-toggle-mode, admin-name-input.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": [
+      {
+        "component": "RN Web deprecations (carryover)",
+        "issue": "Console warns 'shadow*' style props are deprecated (use boxShadow) and 'Animated: useNativeDriver is not supported because the native animated module is missing' on admin-login and studio-onboarding screens. Non-blocking. Reference: shared theme (colors/shadows) + KeyboardAwareScrollView animations. Already flagged in iterations 2/3."
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_studio_onboarding.py",
+    "/app/test_reports/pytest/studio_onboarding.xml"
+  ],
+  "action_items": [
+    "(Optional) When existing studios are seeded/migrated, consider back-filling profile_complete=true for admin@lumiere.studio if it should be treated as already onboarded — currently it's correctly gated because its stored user has no studio_profile. Confirm this matches the product intent (spec says 'Applies to ALL studios with an incomplete profile (existing accounts too)' — matches current behaviour)."
+  ],
+  "critical_code_review_comments": [
+    "server.py POST /api/auth/admin/profile: whitespace-only fields are rejected with 400 via `value.strip()` check — good. Consider mirroring the same trim/length validation in Pydantic (constr(min_length=1)) so the error is uniform (400 vs 422). Non-blocking, current UX is fine because the frontend guards with canSubmit.",
+    "_public_user returns profile_complete via bool(user.get('profile_complete')) — safe default for legacy users (undefined -> False), which is exactly what powers the gate for the pre-existing admin@lumiere.studio account.",
+    "admin/_layout.tsx redirect order (loading -> user -> role -> profile_complete -> children) is correct and prevents races before session hydration.",
+    "studio-onboarding.tsx canSubmit uses phone.trim().length >= 6 matching backend requirement; chip selection uses local state so purpose is always a single string that matches backend body.purpose contract.",
+    "Google-signed-in studios also flow through the same gate: /auth/session returns a user via _public_user, so profile_complete defaults to False for new Google users → they will hit the onboarding screen too. Verified by contract (not exercised in UI test)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_studio_onboarding.py (new)",
+    "/app/test_reports/pytest/studio_onboarding.xml (junit)"
+  ],
+  "success_rate": {
+    "backend": "100% (8/8 in test_studio_onboarding.py)",
+    "frontend": "100% of tested UI flows (new-studio registration -> onboarding gate -> disabled submit -> filled submit -> /admin dashboard; existing admin login -> onboarding gate)"
+  },
+  "seed_data_creation": "Each pytest run creates a fresh TEST_studio_<uuid>@test.com admin (module scope) and completes its profile. UI test also registered a studio_ui_<ts>@test.com and completed onboarding. These are safe residuals that do not affect existing seeded data (admin@lumiere.studio, prabhakar@pkphotography.in were untouched).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Reuse /app/backend/tests/test_studio_onboarding.py — fully hermetic (fresh email per module). For UI, key testIDs are: studio-onboarding-screen, onb-{contact-name,studio-name,phone,city,country}, onb-purpose-<Label> (e.g. onb-purpose-Weddings), onb-team-<Label>, onb-volume-<Label>, onb-website, onb-referral, onb-submit, onb-signout. Note: existing admin@lumiere.studio has profile_complete=false in the seed and WILL be redirected to onboarding on login — this is by design ('applies to existing accounts too'). If a future feature needs to skip onboarding for that seeded account, back-fill studio_profile in seed.",
+  "rca_of_issue": "N/A — feature verified working as specified. Backend contract complete, frontend gate + form flow complete."
+}

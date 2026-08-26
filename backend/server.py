@@ -375,6 +375,61 @@ async def logout(user: dict = Depends(get_current_user)):
     return {"status": "ok"}
 
 
+class StudioProfile(BaseModel):
+    contact_name: str
+    studio_name: str
+    phone: str
+    purpose: str
+    city: str
+    country: str
+    website: Optional[str] = None
+    team_size: Optional[str] = None
+    galleries_per_month: Optional[str] = None
+    referral_source: Optional[str] = None
+
+
+@api_router.post("/auth/admin/profile")
+async def save_studio_profile(body: StudioProfile, user: dict = Depends(get_current_user)):
+    """Complete the studio profile before granting access to the dashboard."""
+    if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="A studio account is required")
+    required = {
+        "contact name": body.contact_name,
+        "studio name": body.studio_name,
+        "phone": body.phone,
+        "purpose": body.purpose,
+        "city": body.city,
+        "country": body.country,
+    }
+    missing = [label for label, value in required.items() if not (value and value.strip())]
+    if missing:
+        raise HTTPException(status_code=400, detail="Please complete all required fields")
+    profile = {
+        "contact_name": body.contact_name.strip(),
+        "studio_name": body.studio_name.strip(),
+        "phone": body.phone.strip(),
+        "purpose": body.purpose.strip(),
+        "city": body.city.strip(),
+        "country": body.country.strip(),
+        "website": (body.website or "").strip() or None,
+        "team_size": (body.team_size or "").strip() or None,
+        "galleries_per_month": (body.galleries_per_month or "").strip() or None,
+        "referral_source": (body.referral_source or "").strip() or None,
+        "updated_at": now_iso(),
+    }
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {
+            "studio_profile": profile,
+            "profile_complete": True,
+            "name": profile["studio_name"],
+            "phone": profile["phone"],
+        }},
+    )
+    updated = await db.users.find_one({"user_id": user["user_id"]})
+    return {"user": _public_user(updated)}
+
+
 def _public_user(user: dict) -> dict:
     return {
         "user_id": user["user_id"],
@@ -383,6 +438,8 @@ def _public_user(user: dict) -> dict:
         "email": user.get("email"),
         "phone": user.get("phone"),
         "picture": user.get("picture"),
+        "profile_complete": bool(user.get("profile_complete")),
+        "studio_profile": user.get("studio_profile"),
     }
 
 

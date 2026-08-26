@@ -18,6 +18,8 @@ export type User = {
   email?: string;
   phone?: string;
   picture?: string;
+  profile_complete?: boolean;
+  studio_profile?: Record<string, any> | null;
 };
 
 type AuthState = {

@@ -269,3 +269,19 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
   `cachePublicTab`/`restorePublicTab` helpers in offline-gallery.ts. On tab load the last
   cached photos show instantly (grid + bottom "loading more…" refresh indicator), then fresh
   data replaces + re-caches. Bounded to 120 photos per tab.
+
+
+## Studio Profile Onboarding Gate (June 2026 fork)
+- Studios must complete a profile before reaching the /admin dashboard (create galleries).
+- Backend (server.py): new `StudioProfile` model + `POST /api/auth/admin/profile` (auth,
+  role=admin). Saves studio_profile{contact_name, studio_name, phone, purpose, city, country,
+  website?, team_size?, galleries_per_month?, referral_source?}, sets profile_complete=true,
+  and syncs user.name→studio_name, user.phone→phone. `_public_user` now returns
+  profile_complete + studio_profile. Blank required field → 400; missing key → 422; no auth → 401.
+- Frontend: `/app/frontend/app/studio-onboarding.tsx` (top-level, no admin shell). Gate added in
+  `admin/_layout.tsx`: incomplete admins → Redirect to /studio-onboarding. AuthContext User type
+  extended with profile_complete + studio_profile; onboarding calls refresh() then replace('/admin').
+- Required: name, studio name, phone(>=6), purpose(chips), city, country. Optional: website/IG,
+  team size, galleries/month, referral. Applies to ALL incomplete studios (existing too).
+  Superadmin + client accounts unaffected.
+- Verified: backend 8/8 pytest (tests/test_studio_onboarding.py) + frontend e2e via testing agent.

@@ -33,6 +33,7 @@ export default function AdminLayout() {
 
   if (!user) return <Redirect href="/admin-login" />;
   if (user.role !== "admin") return <Redirect href="/" />;
+  if (!user.profile_complete) return <Redirect href="/studio-onboarding" />;
 
   const stack = <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.surface } }} />;
   const noindex = (
