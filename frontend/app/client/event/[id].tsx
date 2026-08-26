@@ -33,7 +33,7 @@ import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/th
 
 export default function ClientEventDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
-const PRELOAD_TIMEOUT_MS = 30_000;
+const PRELOAD_TIMEOUT_MS = 10_000;
 
   const router = useRouter();
   const insets = useSafeAreaInsets();

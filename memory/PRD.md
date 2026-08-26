@@ -245,3 +245,13 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - Data contract unchanged: still stores ISO `YYYY-MM-DD` strings; back-end untouched.
 - Behaviour: taps open a full-screen glass modal with month navigation, "Jump to today"
   shortcut, tap-a-day to select. Weekly grid with proper padding.
+
+
+## 10s Gallery Early-Open + Background Load (June 2026 fork)
+- Client gallery (`app/client/event/[id].tsx`): reduced PRELOAD_TIMEOUT_MS 30s → 10s.
+  After 10s the gallery opens and the remaining photos keep paginating in the background
+  (progress bar shows "Gallery open · loading remaining"). Scroll triggers loadMoreAll.
+- Public share-link gallery (`app/g/[id].tsx`): added 10s early-open. Full-screen spinner
+  now only blocks for up to 10s; after that the header + an inline "Loading photos…" loader
+  appear while the first batch finishes. Once photos exist, PhotoGrid shows a bottom
+  "loading more…" indicator and scroll drives pagination (onEndReached → loadMoreAll).

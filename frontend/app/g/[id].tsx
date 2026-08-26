@@ -52,6 +52,7 @@ export default function PublicGallery() {
   const [tab, setTab] = useState<Tab>((tabParam as Tab) || "all");
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [loadingPhotos, setLoadingPhotos] = useState(false);
+  const [openedEarly, setOpenedEarly] = useState(false);
   const [searched, setSearched] = useState(false);
   const [allOffset, setAllOffset] = useState(0);
   const [allHasMore, setAllHasMore] = useState(false);
@@ -63,6 +64,10 @@ export default function PublicGallery() {
   const loadTab = useCallback(
     async (which: Tab) => {
       setLoadingPhotos(true);
+      setOpenedEarly(false);
+      // Open the gallery UI after 10s even if photos are still loading;
+      // remaining photos keep streaming in the background.
+      const releaseTimer = setTimeout(() => setOpenedEarly(true), 10_000);
       try {
         if (which === "all") {
           const r = await api.get(`/client/events/${id}/photos?limit=${PAGE}&offset=0`);
@@ -88,6 +93,8 @@ export default function PublicGallery() {
           toast.show("Could not load photos", "error");
         }
       } finally {
+        clearTimeout(releaseTimer);
+        setOpenedEarly(false);
         setLoadingPhotos(false);
       }
     },
@@ -383,10 +390,18 @@ export default function PublicGallery() {
         </Pressable>
       </View>
 
-      {loadingPhotos && photos.length === 0 ? (
+      {loadingPhotos && photos.length === 0 && !openedEarly ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.brand} />
         </View>
+      ) : photos.length === 0 && loadingPhotos && openedEarly ? (
+        <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
+          {header}
+          <View style={styles.inlineLoading} testID="gallery-streaming-loader">
+            <ActivityIndicator color={colors.brand} />
+            <Text style={styles.inlineLoadingText}>Loading photos…</Text>
+          </View>
+        </ScrollView>
       ) : photos.length === 0 ? (
         <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + spacing.xl }}>
           {header}
@@ -398,7 +413,7 @@ export default function PublicGallery() {
           showScore={tab === "mine"}
           onToggleLike={toggleLike}
           onEndReached={loadMoreAll}
-          loadingMore={loadingMore && tab === "all"}
+          loadingMore={(loadingMore && tab === "all") || (loadingPhotos && photos.length > 0)}
           ListHeaderComponent={header}
         />
       )}
@@ -409,6 +424,8 @@ export default function PublicGallery() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", padding: spacing.xl },
+  inlineLoading: { alignItems: "center", justifyContent: "center", gap: spacing.md, paddingVertical: spacing["3xl"] },
+  inlineLoadingText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
   brand: { color: colors.brand, fontFamily: fonts.display, fontSize: fontSize["2xl"], letterSpacing: 2 },
   logoRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   logo: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, letterSpacing: 4, fontWeight: "600" },
