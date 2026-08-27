@@ -85,6 +85,7 @@ export default function ClientDashboard() {
 
   const ACTIONS = [
     { key: "book", label: "Book", icon: "calendar", onPress: () => router.push("/client/book") },
+    { key: "bookings", label: "My Bookings", icon: "clipboard-outline", onPress: () => router.push("/client/bookings") },
     { key: "message", label: "Message", icon: "logo-whatsapp", onPress: openWhatsApp },
     { key: "call", label: "Call", icon: "call", onPress: call },
     { key: "review", label: "Review", icon: "star", onPress: () => router.push("/client/review") },

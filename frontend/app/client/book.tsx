@@ -29,8 +29,13 @@ export default function BookPhotographer() {
   const toast = useToast();
 
   const [service, setService] = useState("Wedding");
+  const [eventName, setEventName] = useState("");
   const [date, setDate] = useState(todayIso());
+  const [startTime, setStartTime] = useState("09:00");
+  const [endTime, setEndTime] = useState("18:00");
   const [location, setLocation] = useState("");
+  const [requirement, setRequirement] = useState("Photo");
+  const [budget, setBudget] = useState("");
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -39,9 +44,14 @@ export default function BookPhotographer() {
     setLoading(true);
     try {
       await api.post("/me/booking-requests", {
+        event_name: eventName.trim() || service,
         service_type: service,
         preferred_date: date.trim() || undefined,
+        start_time: startTime.trim() || undefined,
+        end_time: endTime.trim() || undefined,
         location: location.trim() || undefined,
+        requirement,
+        expected_budget: budget.trim() ? Number(budget) : undefined,
         message: message.trim() || undefined,
       });
       setDone(true);
@@ -75,6 +85,7 @@ export default function BookPhotographer() {
     <View style={styles.container} testID="book-screen">
       <GlassHeader title="Book Us Again" onBack={() => goBackOr(router, "/client")} topInset={insets.top} />
       <KeyboardAwareScrollView contentContainerStyle={[styles.body, { paddingBottom: insets.bottom + spacing["2xl"] }]} bottomOffset={24} keyboardShouldPersistTaps="handled">
+        <TextField testID="book-event-name" label="Event / shoot name" value={eventName} onChangeText={setEventName} placeholder="Rahul & Priya Wedding" />
         <Text style={styles.label}>What do you need?</Text>
         <View style={styles.chipWrap}>
           {SERVICES.map((s) => (
@@ -91,8 +102,21 @@ export default function BookPhotographer() {
             value={date}
             onChange={setDate}
           />
+          <View style={styles.timeRow}>
+            <View style={{ flex: 1 }}><TextField testID="book-start-time" label="Start time" value={startTime} onChangeText={setStartTime} placeholder="09:00" /></View>
+            <View style={{ flex: 1 }}><TextField testID="book-end-time" label="End time" value={endTime} onChangeText={setEndTime} placeholder="18:00" /></View>
+          </View>
           <TextField testID="book-location" label="Location" value={location} onChangeText={setLocation} placeholder="City / venue" />
-          <TextField testID="book-message" label="Message" value={message} onChangeText={setMessage} placeholder="Tell us what you have in mind…" multiline />
+          <Text style={[styles.label, { marginTop: spacing.md }]}>Requirement</Text>
+          <View style={styles.chipWrap}>
+            {["Photo", "Video", "Photo + Video"].map((item) => (
+              <Pressable key={item} testID={`requirement-${item}`} onPress={() => setRequirement(item)} style={[styles.chip, requirement === item && styles.chipActive]}>
+                <Text style={[styles.chipText, requirement === item && styles.chipTextActive]}>{item}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <TextField testID="book-budget" label="Expected budget" value={budget} onChangeText={setBudget} placeholder="₹ 70,000" keyboardType="numeric" />
+          <TextField testID="book-message" label="Additional requirements / notes" value={message} onChangeText={setMessage} placeholder="Tell us what you have in mind…" multiline />
           <Button testID="book-submit" title="Submit inquiry" loading={loading} onPress={submit} icon="send" />
         </View>
       </KeyboardAwareScrollView>
@@ -109,6 +133,7 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
   chipText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
   chipTextActive: { color: colors.onBrand, fontWeight: "600" },
+  timeRow: { flexDirection: "row", gap: spacing.md },
   doneWrap: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl },
   doneIcon: { width: 84, height: 84, borderRadius: radius.pill, backgroundColor: colors.brandTertiary, alignItems: "center", justifyContent: "center", marginBottom: spacing.lg },
   doneTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"] },

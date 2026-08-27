@@ -713,10 +713,54 @@ async def client_dashboard(user: dict = Depends(require_client)):
 
 
 class BookingRequestBody(BaseModel):
+    event_name: Optional[str] = None
     service_type: str = Field(min_length=1)
     preferred_date: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
     location: Optional[str] = None
+    requirement: Optional[str] = None
+    expected_budget: Optional[float] = None
     message: Optional[str] = None
+
+
+class BookingUpdateBody(BaseModel):
+    event_name: Optional[str] = None
+    service_type: Optional[str] = None
+    preferred_date: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    location: Optional[str] = None
+    requirement: Optional[str] = None
+    expected_budget: Optional[float] = None
+    status: Optional[str] = None
+    total_amount: Optional[float] = None
+    advance_amount: Optional[float] = None
+    payment_terms: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class QuoteBody(BaseModel):
+    total_amount: float = Field(ge=0)
+    advance_amount: float = Field(ge=0)
+    payment_terms: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PaymentBody(BaseModel):
+    label: str = Field(min_length=1)
+    amount: float = Field(gt=0)
+    method: str = "cash"
+    status: str = "paid"
+    notes: Optional[str] = None
+
+
+class BookingStatusBody(BaseModel):
+    status: str
+
+
+BOOKING_STATUSES = {"new_request", "quotation", "payment_pending", "confirmed", "completed", "cancelled"}
+
 
 
 @crm_router.post("/me/booking-requests")
@@ -733,14 +777,28 @@ async def create_booking_request(body: BookingRequestBody, user: dict = Depends(
         "request_id": _new_id("bkg"),
         "client_user_id": user["user_id"],
         "studio_id": studio_id,
+        "status": "new_request",
+        "event_name": (body.event_name or body.service_type).strip(),
         "service_type": body.service_type.strip(),
         "preferred_date": (body.preferred_date or "").strip() or None,
+        "start_time": (body.start_time or "").strip() or None,
+        "end_time": (body.end_time or "").strip() or None,
         "location": (body.location or "").strip() or None,
+        "requirement": (body.requirement or "").strip() or None,
+        "expected_budget": body.expected_budget,
         "message": (body.message or "").strip() or None,
-        "contact_name": user.get("name"),
+        "total_amount": None,
+        "advance_amount": None,
+        "payment_terms": None,
+        "quote_revision": 0,
+        "quote_history": [],
+        "payments": [],
+        "booking_id": None,
+        "event_id": None,
+        "notes": None,
+        "contact_name": user.get("name") or "Guest",
         "contact_email": user.get("email"),
         "contact_phone": user.get("phone"),
-        "status": "new",
         "created_at": now_iso(),
     }
     await db.booking_requests.insert_one(doc)
@@ -763,6 +821,117 @@ async def create_booking_request(body: BookingRequestBody, user: dict = Depends(
             "created_at": doc["created_at"],
         })
     return {"status": "ok", "request_id": doc["request_id"]}
+
+
+def _booking_view(doc: dict) -> dict:
+    payments = doc.get("payments") or []
+    paid = sum(float(p.get("amount") or 0) for p in payments if p.get("status") == "paid")
+    total = doc.get("total_amount")
+    return {**{k: v for k, v in doc.items() if k != "_id"}, "paid_amount": paid, "remaining_amount": max(float(total or 0) - paid, 0)}
+
+
+async def _notify_client(user_id: Optional[str], title: str, body: str, kind: str, booking_id: str):
+    if user_id:
+        await db.notifications.insert_one({
+            "notification_id": _new_id("ntf"), "client_user_id": user_id,
+            "type": kind, "title": title, "body": body,
+            "booking_request_id": booking_id, "read": False, "created_at": now_iso(),
+        })
+
+
+@crm_router.get("/me/bookings")
+async def list_client_bookings(user: dict = Depends(require_client)):
+    docs = await db.booking_requests.find({"client_user_id": user["user_id"]}, {"_id": 0}).sort("created_at", -1).to_list(200)
+    return [_booking_view(doc) for doc in docs]
+
+
+@crm_router.get("/me/bookings/{booking_id}")
+async def get_client_booking(booking_id: str, user: dict = Depends(require_client)):
+    doc = await db.booking_requests.find_one({"request_id": booking_id, "client_user_id": user["user_id"]}, {"_id": 0})
+    if not doc: raise HTTPException(status_code=404, detail="Booking not found")
+    return _booking_view(doc)
+
+
+@crm_router.get("/bookings")
+async def list_admin_bookings(status: Optional[str] = None, admin: dict = Depends(require_admin)):
+    query = {"studio_id": admin["user_id"]}
+    if status and status in BOOKING_STATUSES:
+        query["status"] = status
+    docs = await db.booking_requests.find(query, {"_id": 0}).sort("created_at", -1).to_list(500)
+    return [_booking_view(doc) for doc in docs]
+
+
+@crm_router.get("/bookings/{booking_id}")
+async def get_admin_booking(booking_id: str, admin: dict = Depends(require_admin)):
+    doc = await db.booking_requests.find_one({"request_id": booking_id, "studio_id": admin["user_id"]}, {"_id": 0})
+    if not doc: raise HTTPException(status_code=404, detail="Booking not found")
+    return _booking_view(doc)
+
+
+@crm_router.patch("/bookings/{booking_id}")
+async def update_admin_booking(booking_id: str, body: BookingUpdateBody, admin: dict = Depends(require_admin)):
+    doc = await db.booking_requests.find_one({"request_id": booking_id, "studio_id": admin["user_id"]}, {"_id": 0})
+    if not doc: raise HTTPException(status_code=404, detail="Booking not found")
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "status" in updates and updates["status"] not in BOOKING_STATUSES: raise HTTPException(status_code=400, detail="Invalid booking status")
+    await db.booking_requests.update_one({"request_id": booking_id}, {"$set": updates})
+    return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
+
+
+@crm_router.post("/bookings/{booking_id}/quote")
+async def send_booking_quote(booking_id: str, body: QuoteBody, admin: dict = Depends(require_admin)):
+    doc = await db.booking_requests.find_one({"request_id": booking_id, "studio_id": admin["user_id"]}, {"_id": 0})
+    if not doc: raise HTTPException(status_code=404, detail="Booking not found")
+    if body.advance_amount > body.total_amount: raise HTTPException(status_code=400, detail="Advance cannot exceed total")
+    revision = int(doc.get("quote_revision") or 0) + 1
+    quote = {"revision": revision, "total_amount": body.total_amount, "advance_amount": body.advance_amount, "payment_terms": body.payment_terms, "notes": body.notes, "created_at": now_iso()}
+    await db.booking_requests.update_one({"request_id": booking_id}, {"$set": {"total_amount": body.total_amount, "advance_amount": body.advance_amount, "payment_terms": body.payment_terms, "notes": body.notes, "quote_revision": revision, "status": "quotation"}, "$push": {"quote_history": quote}})
+    await _notify_client(doc.get("client_user_id"), "Quotation received", f"Your studio sent quotation revision {revision}.", "quotation", booking_id)
+    return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
+
+
+@crm_router.post("/me/bookings/{booking_id}/quote/accept")
+async def accept_booking_quote(booking_id: str, user: dict = Depends(require_client)):
+    doc = await db.booking_requests.find_one({"request_id": booking_id, "client_user_id": user["user_id"]}, {"_id": 0})
+    if not doc: raise HTTPException(status_code=404, detail="Booking not found")
+    await db.booking_requests.update_one({"request_id": booking_id}, {"$set": {"status": "payment_pending"}})
+    if doc.get("studio_id"): await db.notifications.insert_one({"notification_id": _new_id("ntf"), "studio_id": doc["studio_id"], "type": "booking_update", "title": "Quotation accepted", "body": f"{doc.get('contact_name') or 'A client'} accepted the quotation.", "booking_request_id": booking_id, "read": False, "created_at": now_iso()})
+    return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
+
+
+@crm_router.post("/me/bookings/{booking_id}/quote/changes")
+async def request_booking_changes(booking_id: str, body: dict, user: dict = Depends(require_client)):
+    doc = await db.booking_requests.find_one({"request_id": booking_id, "client_user_id": user["user_id"]}, {"_id": 0})
+    if not doc: raise HTTPException(status_code=404, detail="Booking not found")
+    message = str(body.get("message") or "Client requested quotation changes")
+    await db.booking_requests.update_one({"request_id": booking_id}, {"$set": {"status": "quotation", "client_change_request": message}})
+    if doc.get("studio_id"): await db.notifications.insert_one({"notification_id": _new_id("ntf"), "studio_id": doc["studio_id"], "type": "booking_update", "title": "Quotation changes requested", "body": message, "booking_request_id": booking_id, "read": False, "created_at": now_iso()})
+    return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
+
+
+@crm_router.post("/bookings/{booking_id}/payments")
+async def add_booking_payment(booking_id: str, body: PaymentBody, admin: dict = Depends(require_admin)):
+    doc = await db.booking_requests.find_one({"request_id": booking_id, "studio_id": admin["user_id"]}, {"_id": 0})
+    if not doc: raise HTTPException(status_code=404, detail="Booking not found")
+    payment = {"payment_id": _new_id("pay"), **body.model_dump(), "paid_at": now_iso() if body.status == "paid" else None}
+    payments = (doc.get("payments") or []) + [payment]
+    paid = sum(float(p.get("amount") or 0) for p in payments if p.get("status") == "paid")
+    status = "confirmed" if doc.get("total_amount") and paid >= float(doc["total_amount"]) else ("payment_pending" if doc.get("status") in {"quotation", "payment_pending"} else doc.get("status", "new_request"))
+    updates = {"payments": payments, "status": status}
+    if status == "confirmed" and not doc.get("booking_id"):
+        count = await db.booking_requests.count_documents({"booking_id": {"$ne": None}})
+        updates["booking_id"] = f"PIK-{datetime.now(timezone.utc).year}-{count + 1:05d}"
+    await db.booking_requests.update_one({"request_id": booking_id}, {"$set": updates})
+    if status == "confirmed": await _notify_client(doc.get("client_user_id"), "Booking confirmed", "Your payment was received and your booking is confirmed.", "booking_confirmed", booking_id)
+    return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
+
+
+@crm_router.get("/bookings-calendar")
+async def bookings_calendar(month: Optional[str] = None, admin: dict = Depends(require_admin)):
+    query = {"studio_id": admin["user_id"], "preferred_date": {"$ne": None}}
+    if month: query["preferred_date"] = {"$regex": f"^{month}"}
+    docs = await db.booking_requests.find(query, {"_id": 0}).sort("preferred_date", 1).to_list(500)
+    return [_booking_view(doc) for doc in docs]
 
 
 @crm_router.get("/notifications")

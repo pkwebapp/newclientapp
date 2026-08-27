@@ -68,6 +68,8 @@ export default function AdminDashboard() {
     { key: "gallery", label: "New Gallery", icon: "add-circle", onPress: () => router.push("/admin/new-event") },
     { key: "client", label: "Add Client", icon: "person-add", onPress: () => router.push("/admin/new-client") },
     { key: "album", label: "New Album", icon: "book", onPress: () => router.push("/admin/albums") },
+    { key: "bookings", label: "Bookings", icon: "calendar", onPress: () => router.push("/admin/bookings") },
+    { key: "calendar", label: "Calendar", icon: "calendar-outline", onPress: () => router.push("/admin/calendar") },
     { key: "settings", label: "Settings", icon: "settings", onPress: () => router.push("/admin/settings") },
   ];
 
