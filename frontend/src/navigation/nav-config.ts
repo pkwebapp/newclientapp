@@ -94,6 +94,13 @@ export const ADMIN_DRAWER_ITEMS: DrawerItem[] = [
 // ---- Client (Client Gallery) ----
 export const CLIENT_DRAWER_ITEMS: DrawerItem[] = [
   {
+    key: "profile",
+    label: "My Profile",
+    sublabel: "Your contact & personal details",
+    icon: "person-circle-outline",
+    href: "/client/profile",
+  },
+  {
     key: "services",
     label: "Explore Services",
     sublabel: "Photography, films & creative services",

@@ -62,6 +62,7 @@ export function PhoneField({
   placeholder = "Enter mobile number",
   testID,
   required = true,
+  editable = true,
 }: {
   label?: string;
   value: string;
@@ -69,6 +70,7 @@ export function PhoneField({
   placeholder?: string;
   testID?: string;
   required?: boolean;
+  editable?: boolean;
 }) {
   const parsed = useMemo(() => parseValue(value), [value]);
   const [country, setCountry] = useState<PhoneCountry>(parsed.country);
@@ -106,6 +108,7 @@ export function PhoneField({
           onBlur={() => setTouched(true)}
           placeholder={placeholder}
           placeholderTextColor={colors.muted}
+          editable={editable}
           keyboardType="phone-pad"
           maxLength={maxLength}
           style={styles.input}

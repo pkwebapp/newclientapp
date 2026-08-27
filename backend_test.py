@@ -1,458 +1,442 @@
 #!/usr/bin/env python3
 """
-Backend-only verification after switching to Cloudinary + AWS Rekognition credentials.
-Tests: supervisor/backend startup, health, admin login, event creation, photo upload with Cloudinary CDN,
-AWS Rekognition indexing, photo listing, S3 import, and cleanup.
+Backend test for user-reported booking verification.
+Tests booking for client phone 7506811017 with name Prabhat.
+Verifies fallback routing to DEFAULT_BOOKING_ADMIN_PHONE=8888766739.
 """
-
 import requests
-import time
-import io
-from PIL import Image
+import json
+import sys
+from typing import Optional
 
-# Configuration
-BASE_URL = "https://ab1b5b53-cd84-4df4-bf72-9cc6253f1656.preview.emergentagent.com/api"
+# Backend URL from frontend/.env
+BACKEND_URL = "https://ab1b5b53-cd84-4df4-bf72-9cc6253f1656.preview.emergentagent.com/api"
+
+# Test credentials from /app/memory/test_credentials.md
 ADMIN_EMAIL = "admin@lumiere.studio"
 ADMIN_PASSWORD = "Admin@12345"
 
-# Test state
-session_token = None
-event_id = None
-photo_id = None
+# User-reported booking details
+CLIENT_PHONE = "7506811017"
+CLIENT_NAME = "Prabhat"
+DEFAULT_BOOKING_ADMIN_PHONE = "8888766739"
 
-def log_test(step, description):
-    """Log test step"""
-    print(f"\n{'='*80}")
-    print(f"TEST {step}: {description}")
-    print('='*80)
+def log(msg: str):
+    """Print test log message."""
+    print(f"[TEST] {msg}")
 
-def log_result(status, message, details=None):
-    """Log test result"""
-    symbol = "✅" if status == "PASS" else "❌"
-    print(f"{symbol} {status}: {message}")
-    if details:
-        for key, value in details.items():
-            print(f"   • {key}: {value}")
+def log_error(msg: str):
+    """Print error message."""
+    print(f"[ERROR] {msg}", file=sys.stderr)
 
-def create_test_image():
-    """Create a small valid JPEG with a synthetic face pattern"""
-    img = Image.new('RGB', (200, 200), color='white')
-    pixels = img.load()
-    
-    # Draw a simple face pattern (circle for head, dots for eyes, line for mouth)
-    for x in range(200):
-        for y in range(200):
-            # Head circle
-            if 50 <= x <= 150 and 50 <= y <= 150:
-                dist = ((x-100)**2 + (y-100)**2)**0.5
-                if 40 <= dist <= 50:
-                    pixels[x, y] = (0, 0, 0)
-            # Left eye
-            if 70 <= x <= 80 and 80 <= y <= 90:
-                pixels[x, y] = (0, 0, 0)
-            # Right eye
-            if 120 <= x <= 130 and 80 <= y <= 90:
-                pixels[x, y] = (0, 0, 0)
-            # Mouth
-            if 80 <= x <= 120 and 120 <= y <= 125:
-                pixels[x, y] = (0, 0, 0)
-    
-    # Save to bytes
-    img_bytes = io.BytesIO()
-    img.save(img_bytes, format='JPEG', quality=85)
-    img_bytes.seek(0)
-    return img_bytes.getvalue()
+def log_success(msg: str):
+    """Print success message."""
+    print(f"[✅ PASS] {msg}")
 
-def test_health_check():
-    """Test 1: GET /api/ health check"""
-    log_test(1, "Health Check")
+def log_fail(msg: str):
+    """Print failure message."""
+    print(f"[❌ FAIL] {msg}")
+
+def admin_login() -> Optional[str]:
+    """Login as admin and return session token."""
+    log(f"Logging in as admin: {ADMIN_EMAIL}")
     try:
-        response = requests.get(f"{BASE_URL}/", timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            log_result("PASS", f"Health check returned 200", {
-                "status": data.get("status"),
-                "service": data.get("service")
-            })
-            return True
-        else:
-            log_result("FAIL", f"Health check returned {response.status_code}", {
-                "response": response.text[:200]
-            })
-            return False
-    except Exception as e:
-        log_result("FAIL", f"Health check failed with exception", {"error": str(e)})
-        return False
-
-def test_admin_login():
-    """Test 2: POST /api/auth/admin/login"""
-    global session_token
-    log_test(2, "Admin Login")
-    try:
-        response = requests.post(
-            f"{BASE_URL}/auth/admin/login",
+        resp = requests.post(
+            f"{BACKEND_URL}/auth/admin/login",
             json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
             timeout=10
         )
-        if response.status_code == 200:
-            data = response.json()
-            session_token = data.get("session_token")
-            if session_token:
-                log_result("PASS", "Admin login successful", {
-                    "email": ADMIN_EMAIL,
-                    "token_length": len(session_token),
-                    "user_role": data.get("user", {}).get("role")
-                })
-                return True
+        if resp.status_code == 200:
+            data = resp.json()
+            token = data.get("session_token")
+            if token:
+                log_success(f"Admin login successful → 200 with session_token")
+                return token
             else:
-                log_result("FAIL", "No session_token in response", {"response": data})
-                return False
+                log_fail("Admin login returned 200 but no session_token")
+                return None
         else:
-            log_result("FAIL", f"Admin login returned {response.status_code}", {
-                "response": response.text[:200]
-            })
-            return False
+            log_fail(f"Admin login failed → {resp.status_code}")
+            log_error(f"Response: {resp.text}")
+            return None
     except Exception as e:
-        log_result("FAIL", f"Admin login failed with exception", {"error": str(e)})
-        return False
+        log_error(f"Admin login exception: {e}")
+        return None
 
-def test_create_event():
-    """Test 3: POST /api/events (create throwaway event)"""
-    global event_id
-    log_test(3, "Create Throwaway Event")
+def get_bookings(admin_token: str) -> list:
+    """Get all bookings for the admin."""
+    log("Fetching admin bookings: GET /api/bookings")
     try:
-        headers = {"Authorization": f"Bearer {session_token}"}
-        response = requests.post(
-            f"{BASE_URL}/events",
-            json={
-                "name": "QA Cloudinary AWS Verification",
-                "date": "2027-03-15",
-                "location": "Test Location"
-            },
-            headers=headers,
+        resp = requests.get(
+            f"{BACKEND_URL}/bookings",
+            headers={"Authorization": f"Bearer {admin_token}"},
             timeout=10
         )
-        if response.status_code == 200:
-            data = response.json()
-            event_id = data.get("event_id")
-            if event_id:
-                log_result("PASS", "Event created successfully", {
-                    "event_id": event_id,
-                    "name": data.get("name"),
-                    "status": data.get("status")
-                })
-                return True
-            else:
-                log_result("FAIL", "No event_id in response", {"response": data})
-                return False
+        if resp.status_code == 200:
+            data = resp.json()
+            bookings = data if isinstance(data, list) else []
+            log_success(f"GET /api/bookings → 200 with {len(bookings)} booking(s)")
+            return bookings
         else:
-            log_result("FAIL", f"Create event returned {response.status_code}", {
-                "response": response.text[:200]
-            })
-            return False
+            log_fail(f"GET /api/bookings → {resp.status_code}")
+            log_error(f"Response: {resp.text}")
+            return []
     except Exception as e:
-        log_result("FAIL", f"Create event failed with exception", {"error": str(e)})
-        return False
+        log_error(f"GET /api/bookings exception: {e}")
+        return []
 
-def test_upload_photo():
-    """Test 4: POST /api/events/{id}/photos (upload valid small JPEG)"""
-    global photo_id
-    log_test(4, "Upload Photo with Cloudinary Storage")
-    try:
-        headers = {"Authorization": f"Bearer {session_token}"}
-        img_bytes = create_test_image()
-        files = {"file": ("test_photo.jpg", img_bytes, "image/jpeg")}
+def normalize_phone(phone: str) -> str:
+    """Normalize phone number for comparison (remove +91 prefix if present)."""
+    phone = phone.strip()
+    if phone.startswith("+91"):
+        return phone[3:]
+    if phone.startswith("91") and len(phone) == 12:
+        return phone[2:]
+    return phone
+
+def find_booking_for_client(bookings: list, phone: str, name: str) -> Optional[dict]:
+    """Find booking matching the client phone and/or name."""
+    log(f"Searching for booking with phone={phone} or name={name}")
+    normalized_target = normalize_phone(phone)
+    
+    for booking in bookings:
+        contact_phone = booking.get("contact_phone", "")
+        contact_name = booking.get("contact_name", "")
         
-        response = requests.post(
-            f"{BASE_URL}/events/{event_id}/photos",
-            files=files,
-            headers=headers,
-            timeout=30
+        # Normalize the booking phone for comparison
+        normalized_booking_phone = normalize_phone(contact_phone)
+        
+        # Check if phone matches (with or without +91 prefix)
+        phone_match = (
+            normalized_booking_phone == normalized_target or
+            contact_phone == phone or
+            contact_phone == f"+91{phone}"
         )
         
-        if response.status_code == 200:
-            data = response.json()
-            photo_id = data.get("photo_id")
-            url = data.get("url")
-            thumb_url = data.get("thumb_url")
-            
-            # Verify Cloudinary CDN URLs
-            cloudinary_cdn = "res.cloudinary.com"
-            url_valid = url and cloudinary_cdn in url
-            thumb_valid = thumb_url and cloudinary_cdn in thumb_url
-            
-            if photo_id and url_valid and thumb_valid:
-                log_result("PASS", "Photo uploaded with Cloudinary CDN URLs", {
-                    "photo_id": photo_id,
-                    "url_starts_with": url[:60] + "..." if len(url) > 60 else url,
-                    "thumb_url_starts_with": thumb_url[:60] + "..." if len(thumb_url) > 60 else thumb_url,
-                    "cloudinary_cdn_verified": "✓"
-                })
-                return True
-            else:
-                log_result("FAIL", "Photo uploaded but missing Cloudinary CDN URLs", {
-                    "photo_id": photo_id,
-                    "url": url,
-                    "thumb_url": thumb_url,
-                    "url_has_cloudinary": url_valid,
-                    "thumb_has_cloudinary": thumb_valid
-                })
-                return False
-        else:
-            log_result("FAIL", f"Upload photo returned {response.status_code}", {
-                "response": response.text[:200]
-            })
-            return False
-    except Exception as e:
-        log_result("FAIL", f"Upload photo failed with exception", {"error": str(e)})
-        return False
+        # Check if name matches (case-insensitive)
+        name_match = contact_name.lower() == name.lower()
+        
+        if phone_match or name_match:
+            log_success(f"Found matching booking: request_id={booking.get('request_id')}")
+            log(f"  - contact_name: {contact_name}")
+            log(f"  - contact_phone: {contact_phone}")
+            log(f"  - routing_source: {booking.get('routing_source')}")
+            log(f"  - studio_id: {booking.get('studio_id')}")
+            return booking
+    
+    log_fail(f"No booking found for phone={phone} or name={name}")
+    return None
 
-def test_poll_indexing():
-    """Test 5: GET /api/events/{id}/indexing-status (poll until ready)"""
-    log_test(5, "Poll Indexing Status (AWS Rekognition)")
+def verify_booking_routing(booking: dict, admin_token: str) -> bool:
+    """Verify the booking has correct fallback routing."""
+    log("Verifying booking routing details...")
+    
+    request_id = booking.get("request_id")
+    routing_source = booking.get("routing_source")
+    studio_id = booking.get("studio_id")
+    
+    all_checks_passed = True
+    
+    # Check 1: routing_source should be "default_admin_phone"
+    if routing_source == "default_admin_phone":
+        log_success(f"✓ routing_source = 'default_admin_phone' (correct)")
+    else:
+        log_fail(f"✗ routing_source = '{routing_source}' (expected 'default_admin_phone')")
+        all_checks_passed = False
+    
+    # Check 2: studio_id should not be null
+    if studio_id:
+        log_success(f"✓ studio_id = {studio_id} (not null)")
+    else:
+        log_fail(f"✗ studio_id is null (should be resolved to fallback admin)")
+        all_checks_passed = False
+    
+    # Check 3: Verify notification exists for this booking
+    log(f"Checking for notification for booking {request_id}...")
     try:
-        headers = {"Authorization": f"Bearer {session_token}"}
-        max_attempts = 20
-        poll_interval = 2
-        
-        for attempt in range(1, max_attempts + 1):
-            response = requests.get(
-                f"{BASE_URL}/events/{event_id}/indexing-status",
-                headers=headers,
-                timeout=10
-            )
-            
-            if response.status_code != 200:
-                log_result("FAIL", f"Indexing status returned {response.status_code}", {
-                    "attempt": attempt,
-                    "response": response.text[:200]
-                })
-                return False
-            
-            data = response.json()
-            status = data.get("status")
-            indexed = data.get("indexed", 0)
-            total = data.get("total", 0)
-            faces = data.get("faces", 0)
-            complete = data.get("complete", False)
-            
-            print(f"   Attempt {attempt}/{max_attempts}: status={status}, indexed={indexed}/{total}, faces={faces}, complete={complete}")
-            
-            if status == "ready" and complete:
-                log_result("PASS", "AWS Rekognition indexing completed successfully", {
-                    "status": status,
-                    "indexed": f"{indexed}/{total}",
-                    "faces_detected": faces,
-                    "complete": complete,
-                    "attempts": attempt
-                })
-                return True
-            
-            if status == "error":
-                log_result("FAIL", "Indexing failed with error status", {
-                    "status": status,
-                    "data": data
-                })
-                return False
-            
-            if attempt < max_attempts:
-                time.sleep(poll_interval)
-        
-        log_result("FAIL", f"Indexing did not complete after {max_attempts} attempts", {
-            "last_status": status,
-            "indexed": f"{indexed}/{total}"
-        })
-        return False
-        
-    except Exception as e:
-        log_result("FAIL", f"Poll indexing failed with exception", {"error": str(e)})
-        return False
-
-def test_list_photos():
-    """Test 6: GET /api/events/{id}/photos (list photos)"""
-    log_test(6, "List Photos")
-    try:
-        headers = {"Authorization": f"Bearer {session_token}"}
-        response = requests.get(
-            f"{BASE_URL}/events/{event_id}/photos",
-            headers=headers,
+        resp = requests.get(
+            f"{BACKEND_URL}/notifications",
+            headers={"Authorization": f"Bearer {admin_token}"},
             timeout=10
         )
-        
-        if response.status_code == 200:
-            data = response.json()
-            photos = data if isinstance(data, list) else data.get("items", [])
+        if resp.status_code == 200:
+            data = resp.json()
+            # Handle both list and {"items": [...]} response formats
+            if isinstance(data, dict) and "items" in data:
+                notifications = data["items"]
+            elif isinstance(data, list):
+                notifications = data
+            else:
+                notifications = []
             
-            # Find our uploaded photo
-            uploaded_photo = None
-            for photo in photos:
-                if photo.get("photo_id") == photo_id:
-                    uploaded_photo = photo
+            booking_notification = None
+            for notif in notifications:
+                if isinstance(notif, dict) and notif.get("booking_request_id") == request_id:
+                    booking_notification = notif
                     break
             
-            if uploaded_photo:
-                log_result("PASS", "Uploaded photo found in list", {
-                    "total_photos": len(photos),
-                    "photo_id": photo_id,
-                    "filename": uploaded_photo.get("filename"),
-                    "status": uploaded_photo.get("status")
-                })
-                return True
+            if booking_notification:
+                log_success(f"✓ Notification found for booking {request_id}")
+                log(f"  - notification_id: {booking_notification.get('notification_id')}")
+                log(f"  - type: {booking_notification.get('type')}")
+                log(f"  - title: {booking_notification.get('title')}")
+                log(f"  - studio_id: {booking_notification.get('studio_id')}")
+                
+                # Verify notification studio_id matches booking studio_id
+                if booking_notification.get("studio_id") == studio_id:
+                    log_success(f"✓ Notification studio_id matches booking studio_id")
+                else:
+                    log_fail(f"✗ Notification studio_id mismatch")
+                    all_checks_passed = False
             else:
-                log_result("FAIL", "Uploaded photo NOT found in list", {
-                    "total_photos": len(photos),
-                    "looking_for": photo_id,
-                    "photo_ids_in_list": [p.get("photo_id") for p in photos]
-                })
-                return False
+                log_fail(f"✗ No notification found for booking {request_id}")
+                all_checks_passed = False
         else:
-            log_result("FAIL", f"List photos returned {response.status_code}", {
-                "response": response.text[:200]
-            })
-            return False
+            log_fail(f"GET /api/notifications → {resp.status_code}")
+            all_checks_passed = False
     except Exception as e:
-        log_result("FAIL", f"List photos failed with exception", {"error": str(e)})
-        return False
+        log_error(f"GET /api/notifications exception: {e}")
+        all_checks_passed = False
+    
+    return all_checks_passed
 
-def test_s3_import():
-    """Test 7: POST /api/events/{id}/import-s3 (bucket faceser)"""
-    log_test(7, "S3 Import (bucket: faceser)")
+def client_otp_login(phone: str) -> Optional[str]:
+    """Login as client using OTP flow and return session token."""
+    log(f"Client OTP login for phone: {phone}")
+    
+    # Normalize phone to +91 format
+    if not phone.startswith("+"):
+        phone = f"+91{phone}"
+    
+    # Step 1: Request OTP
+    log(f"Step 1: Requesting OTP for {phone}")
     try:
-        headers = {"Authorization": f"Bearer {session_token}"}
-        response = requests.post(
-            f"{BASE_URL}/events/{event_id}/import-s3",
-            json={"bucket": "faceser"},
-            headers=headers,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            status = data.get("status")
-            bucket = data.get("bucket")
-            imported = data.get("imported", 0)
-            
-            log_result("PASS", "S3 import returned controlled success", {
-                "status": status,
-                "bucket": bucket,
-                "imported": imported,
-                "queued_for_indexing": data.get("queued_for_indexing", 0),
-                "skipped": data.get("skipped", 0)
-            })
-            return True
-        else:
-            log_result("FAIL", f"S3 import returned {response.status_code}", {
-                "response": response.text[:200]
-            })
-            return False
-    except Exception as e:
-        log_result("FAIL", f"S3 import failed with exception", {"error": str(e)})
-        return False
-
-def test_delete_event():
-    """Test 8: DELETE /api/events/{id} (cleanup)"""
-    log_test(8, "Delete Throwaway Event (Cleanup)")
-    try:
-        headers = {"Authorization": f"Bearer {session_token}"}
-        response = requests.delete(
-            f"{BASE_URL}/events/{event_id}",
-            headers=headers,
-            timeout=30
-        )
-        
-        if response.status_code == 200:
-            data = response.json()
-            log_result("PASS", "Event deleted successfully", {
-                "status": data.get("status"),
-                "event_id": data.get("event_id"),
-                "photos_removed": data.get("photos_removed"),
-                "cloudinary_objects_deleted": data.get("cloudinary_objects_deleted"),
-                "faces_collection_deleted": data.get("faces_collection_deleted")
-            })
-            return True
-        else:
-            log_result("FAIL", f"Delete event returned {response.status_code}", {
-                "response": response.text[:200]
-            })
-            return False
-    except Exception as e:
-        log_result("FAIL", f"Delete event failed with exception", {"error": str(e)})
-        return False
-
-def test_verify_deletion():
-    """Test 9: GET /api/events/{id} (verify deletion)"""
-    log_test(9, "Verify Event Deletion")
-    try:
-        headers = {"Authorization": f"Bearer {session_token}"}
-        response = requests.get(
-            f"{BASE_URL}/events/{event_id}",
-            headers=headers,
+        resp = requests.post(
+            f"{BACKEND_URL}/auth/client/request-otp",
+            json={"channel": "phone", "phone": phone},
             timeout=10
         )
+        if resp.status_code != 200:
+            log_fail(f"OTP request failed → {resp.status_code}")
+            log_error(f"Response: {resp.text}")
+            return None
         
-        if response.status_code == 404:
-            log_result("PASS", "Event correctly deleted (404 returned)", {
-                "event_id": event_id
-            })
-            return True
-        else:
-            log_result("FAIL", f"Event still exists (expected 404, got {response.status_code})", {
-                "response": response.text[:200]
-            })
-            return False
+        data = resp.json()
+        dev_code = data.get("dev_code")
+        if not dev_code:
+            log_fail("OTP request returned 200 but no dev_code (OTP_DEV_MODE may be disabled)")
+            return None
+        
+        log_success(f"OTP requested → 200 with dev_code: {dev_code}")
+        
+        # Step 2: Verify OTP
+        log(f"Step 2: Verifying OTP with dev_code: {dev_code}")
+        resp = requests.post(
+            f"{BACKEND_URL}/auth/client/verify-otp",
+            json={"channel": "phone", "phone": phone, "code": dev_code},
+            timeout=10
+        )
+        if resp.status_code != 200:
+            log_fail(f"OTP verification failed → {resp.status_code}")
+            log_error(f"Response: {resp.text}")
+            return None
+        
+        data = resp.json()
+        token = data.get("session_token")
+        if not token:
+            log_fail("OTP verification returned 200 but no session_token")
+            return None
+        
+        log_success(f"OTP verified → 200 with session_token")
+        return token
+        
     except Exception as e:
-        log_result("FAIL", f"Verify deletion failed with exception", {"error": str(e)})
-        return False
+        log_error(f"Client OTP login exception: {e}")
+        return None
+
+def create_test_booking(client_token: str, name: str) -> Optional[str]:
+    """Create a test booking and return request_id."""
+    log(f"Creating test booking for client: {name}")
+    
+    booking_data = {
+        "service_type": "Wedding Photography",
+        "event_name": "Test Booking - Fallback Routing Verification",
+        "preferred_date": "2026-12-20",
+        "location": "Mumbai",
+        "expected_budget": 75000,
+        "message": "Test booking enquiry to verify fallback routing to DEFAULT_BOOKING_ADMIN_PHONE"
+    }
+    
+    try:
+        resp = requests.post(
+            f"{BACKEND_URL}/me/booking-requests",
+            headers={"Authorization": f"Bearer {client_token}"},
+            json=booking_data,
+            timeout=10
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            request_id = data.get("request_id")
+            if request_id:
+                log_success(f"Booking created → 200 with request_id: {request_id}")
+                return request_id
+            else:
+                log_fail("Booking creation returned 200 but no request_id")
+                return None
+        else:
+            log_fail(f"Booking creation failed → {resp.status_code}")
+            log_error(f"Response: {resp.text}")
+            return None
+    except Exception as e:
+        log_error(f"Booking creation exception: {e}")
+        return None
+
+def get_client_bookings(client_token: str) -> list:
+    """Get bookings for the client."""
+    log("Fetching client bookings: GET /api/me/bookings")
+    try:
+        resp = requests.get(
+            f"{BACKEND_URL}/me/bookings",
+            headers={"Authorization": f"Bearer {client_token}"},
+            timeout=10
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            bookings = data if isinstance(data, list) else []
+            log_success(f"GET /api/me/bookings → 200 with {len(bookings)} booking(s)")
+            return bookings
+        else:
+            log_fail(f"GET /api/me/bookings → {resp.status_code}")
+            log_error(f"Response: {resp.text}")
+            return []
+    except Exception as e:
+        log_error(f"GET /api/me/bookings exception: {e}")
+        return []
+
+def check_backend_logs():
+    """Check backend logs for errors."""
+    log("Checking backend logs for errors...")
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["tail", "-n", "50", "/var/log/supervisor/backend.err.log"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        if result.returncode == 0:
+            errors = result.stdout.strip()
+            if errors:
+                # Filter out expected OTP email errors
+                lines = errors.split("\n")
+                critical_errors = [line for line in lines if "Traceback" in line or "ERROR" in line]
+                critical_errors = [line for line in critical_errors if "OTP email" not in line and "Email send failed" not in line]
+                
+                if critical_errors:
+                    log_fail(f"Found {len(critical_errors)} critical error(s) in backend logs")
+                    for err in critical_errors[:5]:  # Show first 5
+                        log_error(err)
+                else:
+                    log_success("No critical errors in backend logs (only expected OTP email warnings)")
+            else:
+                log_success("Backend error log is empty")
+        else:
+            log("Could not read backend error log")
+    except Exception as e:
+        log(f"Could not check backend logs: {e}")
 
 def main():
-    """Run all tests"""
-    print("\n" + "="*80)
-    print("BACKEND VERIFICATION: Cloudinary + AWS Rekognition Configuration")
-    print("="*80)
-    print(f"Base URL: {BASE_URL}")
-    print(f"Admin: {ADMIN_EMAIL}")
-    print("="*80)
+    """Main test execution."""
+    print("=" * 80)
+    print("BOOKING FALLBACK ROUTING VERIFICATION TEST")
+    print("=" * 80)
+    print(f"Client Phone: {CLIENT_PHONE}")
+    print(f"Client Name: {CLIENT_NAME}")
+    print(f"Expected Fallback Admin Phone: {DEFAULT_BOOKING_ADMIN_PHONE}")
+    print("=" * 80)
+    print()
     
-    tests = [
-        ("Health Check", test_health_check),
-        ("Admin Login", test_admin_login),
-        ("Create Event", test_create_event),
-        ("Upload Photo (Cloudinary)", test_upload_photo),
-        ("Poll Indexing (AWS Rekognition)", test_poll_indexing),
-        ("List Photos", test_list_photos),
-        ("S3 Import (faceser)", test_s3_import),
-        ("Delete Event", test_delete_event),
-        ("Verify Deletion", test_verify_deletion)
-    ]
+    # Step 1: Admin login
+    admin_token = admin_login()
+    if not admin_token:
+        log_error("Cannot proceed without admin token")
+        sys.exit(1)
+    print()
     
-    results = []
-    for name, test_func in tests:
-        result = test_func()
-        results.append((name, result))
+    # Step 2: Get all bookings
+    bookings = get_bookings(admin_token)
+    print()
     
-    # Summary
-    print("\n" + "="*80)
-    print("TEST SUMMARY")
-    print("="*80)
+    # Step 3: Search for existing booking
+    existing_booking = find_booking_for_client(bookings, CLIENT_PHONE, CLIENT_NAME)
+    print()
     
-    passed = sum(1 for _, result in results if result)
-    total = len(results)
-    
-    for name, result in results:
-        symbol = "✅" if result else "❌"
-        status = "PASS" if result else "FAIL"
-        print(f"{symbol} {status}: {name}")
-    
-    print("="*80)
-    print(f"TOTAL: {passed}/{total} tests passed")
-    print("="*80)
-    
-    if passed == total:
-        print("\n✅ ALL TESTS PASSED - Backend verification successful!")
-        return 0
+    if existing_booking:
+        # Verify the existing booking
+        log("PART A: EXISTING BOOKING VERIFICATION")
+        print("-" * 80)
+        verification_passed = verify_booking_routing(existing_booking, admin_token)
+        print()
+        
+        if verification_passed:
+            log_success("✅ ALL CHECKS PASSED - Existing booking verified successfully")
+        else:
+            log_fail("❌ SOME CHECKS FAILED - Existing booking has issues")
+        print()
     else:
-        print(f"\n❌ {total - passed} TEST(S) FAILED - Backend verification incomplete")
-        return 1
+        # Reproduce the booking
+        log("PART B: BOOKING REPRODUCTION (Existing booking not found)")
+        print("-" * 80)
+        
+        # Step 4: Client OTP login
+        client_token = client_otp_login(CLIENT_PHONE)
+        if not client_token:
+            log_error("Cannot proceed without client token")
+            sys.exit(1)
+        print()
+        
+        # Step 5: Create test booking
+        request_id = create_test_booking(client_token, CLIENT_NAME)
+        if not request_id:
+            log_error("Failed to create test booking")
+            sys.exit(1)
+        print()
+        
+        # Step 6: Verify booking appears in client's list
+        client_bookings = get_client_bookings(client_token)
+        client_booking = next((b for b in client_bookings if b.get("request_id") == request_id), None)
+        if client_booking:
+            log_success(f"✓ Booking {request_id} found in client's booking list")
+        else:
+            log_fail(f"✗ Booking {request_id} NOT found in client's booking list")
+        print()
+        
+        # Step 7: Verify booking appears in admin's list
+        bookings = get_bookings(admin_token)
+        admin_booking = next((b for b in bookings if b.get("request_id") == request_id), None)
+        if admin_booking:
+            log_success(f"✓ Booking {request_id} found in admin's booking list")
+            print()
+            
+            # Step 8: Verify routing
+            verification_passed = verify_booking_routing(admin_booking, admin_token)
+            print()
+            
+            if verification_passed:
+                log_success("✅ ALL CHECKS PASSED - Reproduced booking verified successfully")
+            else:
+                log_fail("❌ SOME CHECKS FAILED - Reproduced booking has issues")
+        else:
+            log_fail(f"✗ Booking {request_id} NOT found in admin's booking list")
+        print()
+    
+    # Step 9: Check backend logs
+    check_backend_logs()
+    print()
+    
+    print("=" * 80)
+    print("TEST COMPLETE")
+    print("=" * 80)
 
 if __name__ == "__main__":
-    exit(main())
+    main()

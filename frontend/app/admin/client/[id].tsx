@@ -13,6 +13,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, Pill, GlassHeader, useToast } from "@/src/components/ui";
@@ -142,6 +143,29 @@ export default function ClientProfile() {
           <View style={styles.notesBox}>
             <Ionicons name="document-text-outline" size={16} color={colors.muted} />
             <Text style={styles.notesText}>{client.notes}</Text>
+          </View>
+        ) : null}
+
+        {client.user_profile ? (
+          <View style={styles.userProfileBox}>
+            <View style={styles.sectionHead}>
+              <Text style={styles.sectionTitle}>Client profile</Text>
+              <Pill label="Submitted by client" tone="success" />
+            </View>
+            {client.user_profile.profile_photo_base64 ? (
+              <Image source={{ uri: client.user_profile.profile_photo_base64 }} style={styles.profilePhoto} contentFit="cover" />
+            ) : null}
+            <ProfileLine label="Full name" value={client.user_profile.full_name} />
+            <ProfileLine label="Gender" value={client.user_profile.gender} />
+            <ProfileLine label="Mobile" value={client.user_profile.phone} />
+            <ProfileLine label="Email" value={client.user_profile.email} />
+            <ProfileLine label="City" value={client.user_profile.city} />
+            <ProfileLine label="Date of birth" value={client.user_profile.dob} />
+            <ProfileLine label="Profession" value={client.user_profile.profession} />
+            <ProfileLine label="Company" value={client.user_profile.company} />
+            <ProfileLine label="About" value={client.user_profile.about} />
+            <ProfileLine label="Instagram" value={client.user_profile.instagram} />
+            <ProfileLine label="Website" value={client.user_profile.website} />
           </View>
         ) : null}
 
@@ -275,6 +299,16 @@ function Stat({ icon, label, value }: { icon: any; label: string; value: string 
       <Ionicons name={icon} size={18} color={colors.brand} />
       <Text style={styles.statValue} numberOfLines={1} adjustsFontSizeToFit>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+function ProfileLine({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <View style={styles.profileLine}>
+      <Text style={styles.profileLabel}>{label}</Text>
+      <Text style={styles.profileValue}>{value}</Text>
     </View>
   );
 }
@@ -467,6 +501,11 @@ const styles = StyleSheet.create({
   statLabel: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm },
   notesBox: { flexDirection: "row", gap: spacing.sm, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginTop: spacing.sm, marginBottom: spacing.sm },
   notesText: { flex: 1, color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 20 },
+  userProfileBox: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginTop: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  profilePhoto: { width: 72, height: 72, borderRadius: radius.pill, marginBottom: spacing.md },
+  profileLine: { flexDirection: "row", gap: spacing.md, paddingVertical: spacing.sm, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
+  profileLabel: { width: 112, color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm },
+  profileValue: { flex: 1, color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base },
   sectionHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: spacing.xl, marginBottom: spacing.md },
   sectionTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl },
   addBtn: { flexDirection: "row", alignItems: "center", gap: 4, paddingHorizontal: spacing.md, paddingVertical: 6, borderRadius: radius.pill, backgroundColor: colors.brandTertiary },

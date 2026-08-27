@@ -12,6 +12,7 @@ Everything is scoped to the studio admin (``studio_id == admin.user_id``) so
 studios never see each other's clients. Existing gallery / album / face-search
 flows are untouched — events simply gain an optional ``client_id`` link.
 """
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -19,9 +20,9 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from config import db, PUBLIC_BASE_URL
+from config import db, PUBLIC_BASE_URL, ADMIN_SEED_EMAIL
 from auth_utils import require_admin, require_client
-from phone_utils import validate_phone, PhoneValidationError
+from phone_utils import validate_phone, PhoneValidationError, phone_variants
 import plans
 
 crm_router = APIRouter(prefix="/api")
@@ -118,7 +119,7 @@ def _new_id(prefix: str) -> str:
 
 
 def public_client(doc: dict, *, contacts=None, important_dates=None,
-                  events=None, stats=None) -> dict:
+                  events=None, stats=None, user_profile=None) -> dict:
     out = {
         "client_id": doc["client_id"],
         "name": doc.get("name"),
@@ -138,6 +139,8 @@ def public_client(doc: dict, *, contacts=None, important_dates=None,
         out["events"] = events
     if stats is not None:
         out["stats"] = stats
+    if user_profile is not None:
+        out["user_profile"] = user_profile
     return out
 
 
@@ -152,6 +155,36 @@ def public_contact(doc: dict) -> dict:
         "is_primary": doc.get("is_primary", False),
         "created_at": doc.get("created_at"),
     }
+
+
+def public_user_profile(doc: dict | None) -> dict | None:
+    if not doc or not doc.get("client_profile"):
+        return None
+    profile = dict(doc["client_profile"])
+    profile.update({
+        "user_id": doc.get("user_id"),
+        "email": doc.get("email"),
+        "phone": doc.get("phone"),
+        "verified_email": bool(doc.get("email") and doc.get("verified_email", True)),
+        "verified_phone": bool(doc.get("phone") and doc.get("verified_phone", True)),
+    })
+    return profile
+
+
+async def linked_user_profile(contacts: list[dict]) -> dict | None:
+    ors = []
+    for contact in contacts:
+        if contact.get("email"):
+            ors.append({"email": contact["email"].lower()})
+        if contact.get("phone"):
+            ors.append({"phone": contact["phone"]})
+    if not ors:
+        return None
+    user = await db.users.find_one(
+        {"role": "client", "$or": ors},
+        {"_id": 0, "password_hash": 0},
+    )
+    return public_user_profile(user)
 
 
 def public_date(doc: dict) -> dict:
@@ -404,6 +437,7 @@ async def get_client(client_id: str, admin: dict = Depends(require_admin)):
         important_dates=[public_date(d) for d in dates],
         events=[public_event_lite(e) for e in events],
         stats=stats,
+        user_profile=await linked_user_profile(contacts),
     )
 
 
@@ -762,6 +796,42 @@ class BookingStatusBody(BaseModel):
 BOOKING_STATUSES = {"new_request", "quotation", "payment_pending", "confirmed", "completed", "cancelled"}
 
 
+async def _fallback_booking_studio_id() -> str | None:
+    """Route enquiries without an existing gallery to the default studio.
+
+    Prefer an admin/studio profile explicitly using the configured business
+    number, then the admin user phone, and finally the seeded admin account so
+    the enquiry is never left ownerless when the default studio is onboarding.
+    """
+    target = os.environ.get("DEFAULT_BOOKING_ADMIN_PHONE", "8888766739")
+    try:
+        canonical = validate_phone(target)
+    except PhoneValidationError:
+        canonical = ""
+    variants = phone_variants(canonical) if canonical else []
+    if variants:
+        profile = await db.studio_profiles.find_one(
+            {"$or": [
+                {"phone": {"$in": variants}},
+                {"whatsapp": {"$in": variants}},
+            ]},
+            {"_id": 0, "studio_id": 1},
+        )
+        if profile and profile.get("studio_id"):
+            return profile["studio_id"]
+        admin = await db.users.find_one(
+            {"role": "admin", "phone": {"$in": variants}},
+            {"_id": 0, "user_id": 1},
+        )
+        if admin:
+            return admin["user_id"]
+    seed = await db.users.find_one(
+        {"role": "admin", "email": ADMIN_SEED_EMAIL.lower()},
+        {"_id": 0, "user_id": 1},
+    )
+    return seed.get("user_id") if seed else None
+
+
 
 @crm_router.post("/me/booking-requests")
 async def create_booking_request(body: BookingRequestBody, user: dict = Depends(require_client)):
@@ -773,10 +843,14 @@ async def create_booking_request(body: BookingRequestBody, user: dict = Depends(
         if ev and ev.get("created_by"):
             studio_id = ev["created_by"]
             break
+    routing_source = "associated_studio" if studio_id else "default_admin_phone"
+    if not studio_id:
+        studio_id = await _fallback_booking_studio_id()
     doc = {
         "request_id": _new_id("bkg"),
         "client_user_id": user["user_id"],
         "studio_id": studio_id,
+        "routing_source": routing_source,
         "status": "new_request",
         "event_name": (body.event_name or body.service_type).strip(),
         "service_type": body.service_type.strip(),

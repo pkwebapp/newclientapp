@@ -364,12 +364,16 @@ async def verify_otp(body: OtpVerify):
             "phone": identifier if body.channel == "phone" else None,
             "password_hash": None,
             "auth_provider": f"otp_{body.channel}",
+            "verified_email": body.channel == "email",
+            "verified_phone": body.channel == "phone",
             "created_at": now_iso(),
         }
         await db.users.insert_one(user)
     else:
         if user.get("role") != "client":
             raise HTTPException(status_code=403, detail="This contact belongs to a studio account")
+        verified_field = "verified_email" if body.channel == "email" else "verified_phone"
+        await db.users.update_one({"user_id": user["user_id"]}, {"$set": {verified_field: True}})
         if body.name and body.name.strip() and body.name.strip() != user.get("name"):
             user["name"] = body.name.strip()
             await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"name": user["name"]}})
@@ -392,7 +396,9 @@ class StudioProfile(BaseModel):
     contact_name: str
     studio_name: str
     phone: str
-    purpose: str
+    purposes: list[str] = Field(default_factory=list, max_length=3)
+    # Legacy clients may still send a single purpose; normalize it below.
+    purpose: Optional[str] = None
     city: str
     country: str
     website: Optional[str] = None
@@ -406,15 +412,25 @@ async def save_studio_profile(body: StudioProfile, user: dict = Depends(get_curr
     """Complete the studio profile before granting access to the dashboard."""
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="A studio account is required")
+    selected_purposes = [p.strip() for p in body.purposes if p and p.strip()]
+    if not selected_purposes and body.purpose and body.purpose.strip():
+        selected_purposes = [body.purpose.strip()]
+    if len(selected_purposes) > 3:
+        raise HTTPException(status_code=400, detail="Please select up to 3 photography types")
+    if len({p.casefold() for p in selected_purposes}) != len(selected_purposes):
+        raise HTTPException(status_code=400, detail="Please select each photography type only once")
     required = {
         "contact name": body.contact_name,
         "studio name": body.studio_name,
         "phone": body.phone,
-        "purpose": body.purpose,
+        "photography type": selected_purposes,
         "city": body.city,
         "country": body.country,
     }
-    missing = [label for label, value in required.items() if not (value and value.strip())]
+    missing = [
+        label for label, value in required.items()
+        if not value or (isinstance(value, str) and not value.strip())
+    ]
     if missing:
         raise HTTPException(status_code=400, detail="Please complete all required fields")
     phone = _phone_or_400(body.phone)
@@ -422,7 +438,9 @@ async def save_studio_profile(body: StudioProfile, user: dict = Depends(get_curr
         "contact_name": body.contact_name.strip(),
         "studio_name": body.studio_name.strip(),
         "phone": phone,
-        "purpose": body.purpose.strip(),
+        "purposes": selected_purposes,
+        # Keep the first selection for older consumers of studio_profile.purpose.
+        "purpose": selected_purposes[0],
         "city": body.city.strip(),
         "country": body.country.strip(),
         "website": (body.website or "").strip() or None,
@@ -1700,6 +1718,193 @@ async def _annotate_liked(event_id: str, user_id: str, photos: list[dict]) -> li
 # ---------------------------------------------------------------------------
 class ConsentBody(BaseModel):
     accepted: bool
+
+
+
+class ClientProfileUpdate(BaseModel):
+    full_name: Optional[str] = Field(default=None, max_length=120)
+    gender: Optional[str] = Field(default=None, max_length=40)
+    phone: Optional[str] = None
+    email: Optional[EmailStr] = None
+    city: Optional[str] = Field(default=None, max_length=120)
+    dob: Optional[str] = Field(default=None, max_length=10)
+    profile_photo_base64: Optional[str] = Field(default=None, max_length=4_000_000)
+    profession: Optional[str] = Field(default=None, max_length=120)
+    company: Optional[str] = Field(default=None, max_length=160)
+    about: Optional[str] = Field(default=None, max_length=1000)
+    instagram: Optional[str] = Field(default=None, max_length=160)
+    website: Optional[str] = Field(default=None, max_length=240)
+
+
+class ClientContactOtpRequest(BaseModel):
+    channel: str
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+
+
+class ClientContactOtpVerify(BaseModel):
+    channel: str
+    email: Optional[EmailStr] = None
+    phone: Optional[str] = None
+    code: str = Field(min_length=4, max_length=8)
+
+
+def _client_profile_public(user: dict) -> dict:
+    profile = dict(user.get("client_profile") or {})
+    profile.update({
+        "user_id": user.get("user_id"),
+        "email": user.get("email"),
+        "phone": user.get("phone"),
+        "verified_email": bool(user.get("email") and user.get("verified_email", True)),
+        "verified_phone": bool(user.get("phone") and user.get("verified_phone", True)),
+    })
+    return profile
+
+
+@api_router.get("/client/profile")
+async def get_client_profile(user: dict = Depends(require_client)):
+    fresh = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
+    return _client_profile_public(fresh or user)
+
+
+@api_router.post("/client/profile/request-otp")
+async def request_client_profile_otp(body: ClientContactOtpRequest, user: dict = Depends(require_client)):
+    if body.channel == "email":
+        if not body.email:
+            raise HTTPException(status_code=400, detail="Email is required")
+        identifier = body.email.lower()
+        conflict = await db.users.find_one({"email": identifier, "user_id": {"$ne": user["user_id"]}})
+    elif body.channel == "phone":
+        if not body.phone:
+            raise HTTPException(status_code=400, detail="Phone number is required")
+        identifier = _phone_or_400(body.phone)
+        conflict = await db.users.find_one({"phone": {"$in": phone_variants(identifier)}, "user_id": {"$ne": user["user_id"]}})
+    else:
+        raise HTTPException(status_code=400, detail="Invalid channel")
+    if conflict:
+        raise HTTPException(status_code=409, detail="That contact is already linked to another account")
+
+    code = gen_otp()
+    key = f"profile:{user['user_id']}:{body.channel}:{identifier}"
+    await db.otp_codes.update_one(
+        {"identifier": key},
+        {"$set": {
+            "identifier": key,
+            "channel": body.channel,
+            "target": identifier,
+            "code": code,
+            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
+            "attempts": 0,
+            "created_at": now_iso(),
+        }},
+        upsert=True,
+    )
+    delivered = False
+    if body.channel == "email":
+        try:
+            await send_otp_email(identifier, code)
+            delivered = True
+        except Exception as e:
+            logger.error(f"Profile OTP email send failed: {e}")
+    else:
+        logger.info(f"[SMS:{SMS_PROVIDER}] Profile OTP for {identifier}: {code}")
+    response = {"status": "sent", "channel": body.channel, "delivered": delivered}
+    if OTP_DEV_MODE:
+        response["dev_code"] = code
+    return response
+
+
+@api_router.post("/client/profile/verify-otp")
+async def verify_client_profile_otp(body: ClientContactOtpVerify, user: dict = Depends(require_client)):
+    if body.channel == "email":
+        if not body.email:
+            raise HTTPException(status_code=400, detail="Email is required")
+        identifier = body.email.lower()
+    elif body.channel == "phone":
+        identifier = _phone_or_400(body.phone or "")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid channel")
+    key = f"profile:{user['user_id']}:{body.channel}:{identifier}"
+    record = await db.otp_codes.find_one({"identifier": key})
+    if not record:
+        raise HTTPException(status_code=400, detail="Request a code first")
+    expires_at = record.get("expires_at")
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Code expired. Request a new one.")
+    if record.get("attempts", 0) >= 5:
+        raise HTTPException(status_code=429, detail="Too many attempts. Request a new code.")
+    if body.code != record.get("code"):
+        await db.otp_codes.update_one({"identifier": key}, {"$inc": {"attempts": 1}})
+        raise HTTPException(status_code=401, detail="Incorrect code")
+
+    await db.otp_codes.delete_one({"identifier": key})
+    if body.channel == "email":
+        await db.users.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"email": identifier, "verified_email": True}},
+        )
+    else:
+        await db.users.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"phone": identifier, "verified_phone": True}},
+        )
+    fresh = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
+    return _client_profile_public(fresh or user)
+
+
+@api_router.patch("/client/profile")
+async def update_client_profile(body: ClientProfileUpdate, user: dict = Depends(require_client)):
+    fresh = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0}) or user
+    existing = fresh.get("client_profile") or {}
+    email = (str(body.email).lower() if body.email is not None else fresh.get("email"))
+    phone = body.phone if body.phone is not None else fresh.get("phone")
+    full_name = (body.full_name if body.full_name is not None else existing.get("full_name")) or ""
+    gender = (body.gender if body.gender is not None else existing.get("gender")) or ""
+    city = (body.city if body.city is not None else existing.get("city")) or ""
+    dob = (body.dob if body.dob is not None else existing.get("dob")) or ""
+    if not full_name.strip() or not gender.strip() or not city.strip() or not dob.strip():
+        raise HTTPException(status_code=400, detail="Full name, gender, city, and date of birth are required")
+    if gender not in {"Male", "Female", "Non-binary", "Prefer not to say"}:
+        raise HTTPException(status_code=400, detail="Please select a valid gender")
+    try:
+        parsed_dob = datetime.strptime(dob.strip(), "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Date of birth must use YYYY-MM-DD") from exc
+    if parsed_dob > datetime.now(timezone.utc).date():
+        raise HTTPException(status_code=400, detail="Date of birth cannot be in the future")
+    if not email or not fresh.get("verified_email", bool(fresh.get("email"))):
+        raise HTTPException(status_code=400, detail="Please verify your email address first")
+    if not phone or not fresh.get("verified_phone", bool(fresh.get("phone"))):
+        raise HTTPException(status_code=400, detail="Please verify your mobile number first")
+    canonical_phone = _phone_or_400(phone)
+    if fresh.get("email") != email or fresh.get("phone") != canonical_phone:
+        raise HTTPException(status_code=400, detail="Verify the email and mobile number shown in your profile")
+
+    profile = {
+        "full_name": full_name.strip(),
+        "gender": gender,
+        "city": city.strip(),
+        "dob": dob.strip(),
+        "profile_photo_base64": body.profile_photo_base64 if body.profile_photo_base64 is not None else existing.get("profile_photo_base64"),
+        "profession": (body.profession if body.profession is not None else existing.get("profession") or "").strip(),
+        "company": (body.company if body.company is not None else existing.get("company") or "").strip(),
+        "about": (body.about if body.about is not None else existing.get("about") or "").strip(),
+        "instagram": (body.instagram if body.instagram is not None else existing.get("instagram") or "").strip(),
+        "website": (body.website if body.website is not None else existing.get("website") or "").strip(),
+        "updated_at": now_iso(),
+    }
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {
+            "name": profile["full_name"],
+            "client_profile": profile,
+            "profile_complete": True,
+        }},
+    )
+    updated = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
+    return _client_profile_public(updated or user)
 
 
 @api_router.get("/client/events")

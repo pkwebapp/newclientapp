@@ -54,6 +54,48 @@ function ChipRow({
   );
 }
 
+function MultiChipRow({
+  options,
+  values,
+  onChange,
+  testIDPrefix,
+  maxSelections,
+}: {
+  options: string[];
+  values: string[];
+  onChange: (next: string[]) => void;
+  testIDPrefix: string;
+  maxSelections: number;
+}) {
+  return (
+    <View style={styles.chipRow}>
+      {options.map((opt) => {
+        const active = values.includes(opt);
+        const atLimit = !active && values.length >= maxSelections;
+        return (
+          <Pressable
+            key={opt}
+            testID={`${testIDPrefix}-${opt}`}
+            onPress={() => {
+              if (active) {
+                onChange(values.filter((item) => item !== opt));
+              } else if (!atLimit) {
+                onChange([...values, opt]);
+              }
+            }}
+            disabled={atLimit}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: active, disabled: atLimit }}
+            style={[styles.chip, active && styles.chipActive, atLimit && styles.chipDisabled]}
+          >
+            <Text style={[styles.chipText, active && styles.chipTextActive, atLimit && styles.chipTextDisabled]}>{opt}</Text>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
 export default function StudioOnboarding() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
@@ -64,7 +106,7 @@ export default function StudioOnboarding() {
   const [contactName, setContactName] = useState(user?.name || "");
   const [studioName, setStudioName] = useState("");
   const [phone, setPhone] = useState(user?.phone || "");
-  const [purpose, setPurpose] = useState("");
+  const [purposes, setPurposes] = useState<string[]>([]);
   const [city, setCity] = useState("");
   const [country, setCountry] = useState("");
   const [website, setWebsite] = useState("");
@@ -78,10 +120,11 @@ export default function StudioOnboarding() {
       !!contactName.trim() &&
       !!studioName.trim() &&
       isPhoneNumberValid(phone) &&
-      !!purpose &&
+      purposes.length > 0 &&
+      purposes.length <= 3 &&
       !!city.trim() &&
       !!country.trim(),
-    [contactName, studioName, phone, purpose, city, country]
+    [contactName, studioName, phone, purposes, city, country]
   );
 
   // ---- Guards (after hooks) ----
@@ -107,7 +150,7 @@ export default function StudioOnboarding() {
         contact_name: contactName.trim(),
         studio_name: studioName.trim(),
         phone: phone.trim(),
-        purpose,
+        purposes,
         city: city.trim(),
         country: country.trim(),
         website: website.trim() || null,
@@ -171,7 +214,14 @@ export default function StudioOnboarding() {
         />
 
         <Text style={styles.fieldLabel}>What do you mainly shoot?</Text>
-        <ChipRow options={PURPOSES} value={purpose} onChange={setPurpose} testIDPrefix="onb-purpose" />
+        <Text style={styles.selectionHint}>Select up to 3</Text>
+        <MultiChipRow
+          options={PURPOSES}
+          values={purposes}
+          onChange={setPurposes}
+          testIDPrefix="onb-purpose"
+          maxSelections={3}
+        />
 
         <View style={styles.row}>
           <View style={styles.rowItem}>
@@ -277,6 +327,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   fieldLabel: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm, marginBottom: spacing.sm },
+  selectionHint: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: -spacing.xs, marginBottom: spacing.sm },
   chipRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginBottom: spacing.lg },
   chip: {
     paddingHorizontal: spacing.md,
@@ -289,8 +340,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   chipActive: { backgroundColor: colors.brand, borderColor: colors.brand },
+  chipDisabled: { opacity: 0.45 },
   chipText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
   chipTextActive: { color: colors.onBrand, fontWeight: "600" },
+  chipTextDisabled: { color: colors.muted },
   row: { flexDirection: "row", gap: spacing.md },
   rowItem: { flex: 1 },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: colors.borderStrong, marginTop: spacing.sm, marginBottom: spacing.xs },
