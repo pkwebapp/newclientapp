@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import DatePickerField, { todayIso } from "@/src/components/DatePickerField";
+import { PhoneField } from "@/src/components/PhoneField";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { goBackOr } from "@/src/navigation/back";
 
@@ -149,7 +150,14 @@ export default function NewClient() {
             </View>
             <TextField testID={`contact-name-${i}`} label="Name" value={c.name} onChangeText={(v) => updateContact(i, { name: v })} placeholder="Priya Sharma" />
             <TextField testID={`contact-role-${i}`} label="Role" value={c.role} onChangeText={(v) => updateContact(i, { role: v })} placeholder="Bride / Groom / Father…" />
-            <TextField testID={`contact-phone-${i}`} label="Phone" value={c.phone} onChangeText={(v) => updateContact(i, { phone: v })} placeholder="+91…" keyboardType="phone-pad" />
+            <PhoneField
+              testID={`contact-phone-${i}`}
+              label="Phone"
+              value={c.phone}
+              onChangeText={(v) => updateContact(i, { phone: v })}
+              placeholder="Enter mobile number"
+              required={false}
+            />
             <TextField testID={`contact-email-${i}`} label="Email" value={c.email} onChangeText={(v) => updateContact(i, { email: v })} placeholder="name@email.com" autoCapitalize="none" keyboardType="email-address" />
           </View>
         ))}

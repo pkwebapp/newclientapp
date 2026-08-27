@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, ScrollView, StyleSheet, Switch, Text, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -55,6 +55,7 @@ export default function NewEvent() {
   const [photographer, setPhotographer] = useState("Ritik");
   const [category, setCategory] = useState("portrait");
   const [mode, setMode] = useState<"upload" | "gdrive">("upload");
+  const [faceSearchEnabled, setFaceSearchEnabled] = useState(true);
   const [driveLink, setDriveLink] = useState("");
   const [value, setValue] = useState("");
   const [clients, setClients] = useState<any[]>([]);
@@ -83,6 +84,7 @@ export default function NewEvent() {
           date: date.trim() || undefined,
           photographer: photographer.trim() || undefined,
           category,
+          face_search_enabled: faceSearchEnabled,
           drive_link: driveLink.trim(),
           value: value.trim() ? Number(value.trim()) : undefined,
           client_id: clientId || undefined,
@@ -95,6 +97,7 @@ export default function NewEvent() {
           date: date.trim() || undefined,
           photographer: photographer.trim() || undefined,
           category,
+          face_search_enabled: faceSearchEnabled,
           value: value.trim() ? Number(value.trim()) : undefined,
           client_id: clientId || undefined,
         });
@@ -142,6 +145,27 @@ export default function NewEvent() {
             </View>
           </View>
         )}
+
+        <View style={styles.faceSearchCard} testID="face-search-toggle-card">
+          <View style={styles.faceSearchCopy}>
+            <View style={styles.faceSearchTitleRow}>
+              <Ionicons name="scan-outline" size={18} color={faceSearchEnabled ? colors.brand : colors.muted} />
+              <Text style={styles.faceSearchTitle}>Face search</Text>
+            </View>
+            <Text style={styles.faceSearchHint}>
+              {faceSearchEnabled
+                ? "Index faces so clients can find themselves with a selfie."
+                : "Off — photos will upload without face indexing or selfie search."}
+            </Text>
+          </View>
+          <Switch
+            testID="face-search-switch"
+            value={faceSearchEnabled}
+            onValueChange={setFaceSearchEnabled}
+            trackColor={{ true: colors.brand, false: colors.surfaceTertiary }}
+            thumbColor={colors.onSurface}
+          />
+        </View>
 
         <Text style={[styles.label, { marginTop: spacing.xl }]}>Category</Text>
         <View style={styles.chipWrap}>
@@ -299,6 +323,11 @@ const styles = StyleSheet.create({
   segText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
   segTextActive: { color: colors.onBrand, fontWeight: "600" },
   driveBox: { marginTop: spacing.lg, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, borderWidth: 1, borderColor: colors.brandTertiary },
+  faceSearchCard: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginTop: spacing.xl, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.lg },
+  faceSearchCopy: { flex: 1 },
+  faceSearchTitleRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  faceSearchTitle: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
+  faceSearchHint: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 18, marginTop: spacing.xs },
   hintRow: { flexDirection: "row", gap: 6, alignItems: "flex-start", marginTop: spacing.xs },
   hint: { flex: 1, color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 18 },
   dateFieldWrap: { marginBottom: spacing.lg },

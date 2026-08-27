@@ -21,6 +21,7 @@ import { api, publicApi, setAuthToken, ApiError } from "@/src/api/client";
 import { storage } from "@/src/utils/storage";
 import { cachePublicTab, restorePublicTab } from "@/src/utils/offline-gallery";
 import { Button, TextField, EmptyState, useToast } from "@/src/components/ui";
+import { PhoneField, isPhoneNumberValid } from "@/src/components/PhoneField";
 import { PhotoGrid, Photo } from "@/src/components/PhotoGrid";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
@@ -141,6 +142,7 @@ export default function PublicGallery() {
     try {
       const info = await publicApi.get(`/public/events/${id}`);
       setEvent(info);
+      if (info.face_search_enabled === false) setTab("all");
       const stored = await storage.secureGet<string>(tokenKey(String(id)), "");
       if (stored) {
         setAuthToken(stored);
@@ -183,7 +185,7 @@ export default function PublicGallery() {
 
   const submitAccess = async () => {
     if (!name.trim()) return toast.show("Please enter your name", "error");
-    if (phone.trim().length < 6) return toast.show("Enter a valid mobile number", "error");
+    if (!isPhoneNumberValid(phone)) return toast.show("Enter a valid mobile number for the selected country", "error");
     Keyboard.dismiss();
     setSubmitting(true);
     try {
@@ -290,7 +292,7 @@ export default function PublicGallery() {
             <View style={styles.gateIcon}>
               <Ionicons name={(categoryMeta[event?.category]?.icon as any) || "images"} size={26} color={colors.brand} />
             </View>
-            <Text style={styles.gateEyebrow}>You're invited to</Text>
+            <Text style={styles.gateEyebrow}>You’re invited to</Text>
             <Text style={styles.gateTitle}>{event?.name}</Text>
             <Text style={styles.gateMeta}>
               {[categoryMeta[event?.category]?.label, event?.photographer, event?.photo_count ? `${event.photo_count} photos` : null]
@@ -309,15 +311,11 @@ export default function PublicGallery() {
               autoCapitalize="words"
               returnKeyType="next"
             />
-            <TextField
+            <PhoneField
               testID="visitor-phone-input"
-              label="Mobile number"
               value={phone}
               onChangeText={setPhone}
-              placeholder="e.g. +91 98765 43210"
-              keyboardType="phone-pad"
-              returnKeyType="done"
-              onSubmitEditing={submitAccess}
+              placeholder="Enter mobile number"
             />
             <Button testID="visitor-enter-btn" title="View gallery" icon="arrow-forward" loading={submitting} onPress={submitAccess} />
             <Text style={styles.privacy}>
@@ -341,7 +339,7 @@ export default function PublicGallery() {
             ? "We couldn't find you this time. Try a clearer selfie in good light."
             : "Take a quick selfie and we'll surface every photo you're in.",
         }
-      : { icon: "images-outline", title: "No photos yet", subtitle: "The photographer hasn't added photos to this gallery." };
+      : { icon: "images-outline", title: "No photos yet", subtitle: "The photographer hasn’t added photos to this gallery." };
 
   const header = (
     <View style={{ paddingHorizontal: spacing.lg, paddingTop: spacing.md }}>
@@ -351,7 +349,7 @@ export default function PublicGallery() {
       </Text>
 
       <View style={styles.tabs}>
-        {(["all", "liked", "mine"] as Tab[]).map((t) => (
+        {(["all", "liked", ...(event?.face_search_enabled === false ? [] : ["mine"])] as Tab[]).map((t) => (
           <Pressable key={t} testID={`public-tab-${t}`} onPress={() => setTab(t)} style={[styles.tab, tab === t && styles.tabActive]}>
             <Ionicons
               name={t === "all" ? "grid-outline" : t === "liked" ? "heart-outline" : "person-outline"}
@@ -365,7 +363,7 @@ export default function PublicGallery() {
         ))}
       </View>
 
-      {tab === "mine" && (
+      {tab === "mine" && event?.face_search_enabled !== false && (
         <Button
           testID="find-my-photos-btn"
           title={searched ? "Re-scan my selfie" : "Find my photos"}

@@ -20,6 +20,7 @@ export type User = {
   picture?: string;
   profile_complete?: boolean;
   studio_profile?: Record<string, any> | null;
+  uploads_disabled?: boolean;
 };
 
 type AuthState = {

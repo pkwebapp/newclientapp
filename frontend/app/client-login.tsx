@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ApiError } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
+import { PhoneField } from "@/src/components/PhoneField";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { goBackOr } from "@/src/navigation/back";
 
@@ -55,6 +56,10 @@ export default function ClientLogin() {
   const verify = async () => {
     if (code.length < 4) {
       toast.show("Enter the 6-digit code", "error");
+      return;
+    }
+    if (!name.trim()) {
+      toast.show("Enter your name to continue", "error");
       return;
     }
     setLoading(true);
@@ -117,15 +122,24 @@ export default function ClientLogin() {
             </View>
 
             <View style={{ marginTop: spacing.xl }}>
-              <TextField
-                testID="client-identifier-input"
-                label={channel === "email" ? "Email address" : "Mobile number"}
-                value={value}
-                onChangeText={setValue}
-                placeholder={channel === "email" ? "you@example.com" : "+1 555 000 1234"}
-                autoCapitalize="none"
-                keyboardType={channel === "email" ? "email-address" : "phone-pad"}
-              />
+              {channel === "phone" ? (
+                <PhoneField
+                  testID="client-identifier-input"
+                  value={value}
+                  onChangeText={setValue}
+                  placeholder="Enter mobile number"
+                />
+              ) : (
+                <TextField
+                  testID="client-identifier-input"
+                  label="Email address"
+                  value={value}
+                  onChangeText={setValue}
+                  placeholder="you@example.com"
+                  autoCapitalize="none"
+                  keyboardType="email-address"
+                />
+              )}
               <Button testID="request-otp-btn" title="Send code" loading={loading} onPress={requestOtp} />
             </View>
           </>
@@ -145,7 +159,7 @@ export default function ClientLogin() {
               />
               <TextField
                 testID="client-name-input"
-                label="Your name (optional)"
+                label="Your name"
                 value={name}
                 onChangeText={setName}
                 placeholder="e.g. Priya"

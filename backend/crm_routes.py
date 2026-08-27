@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field
 
 from config import db, PUBLIC_BASE_URL
 from auth_utils import require_admin, require_client
+from phone_utils import validate_phone, PhoneValidationError
 import plans
 
 crm_router = APIRouter(prefix="/api")
@@ -31,6 +32,15 @@ crm_router = APIRouter(prefix="/api")
 # ---------------------------------------------------------------------------
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def clean_contact_phone(value: Optional[str]) -> Optional[str]:
+    if not value or not value.strip():
+        return None
+    try:
+        return validate_phone(value)
+    except PhoneValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 DEFAULT_STUDIO_WHATSAPP = "8888766739"
@@ -294,7 +304,7 @@ async def create_client(body: ClientCreate, admin: dict = Depends(require_admin)
             "studio_id": studio_id,
             "name": c.name.strip(),
             "role": c.role,
-            "phone": c.phone,
+            "phone": clean_contact_phone(c.phone),
             "email": (c.email or None),
             "is_primary": c.is_primary,
             "created_at": now_iso(),
@@ -451,7 +461,7 @@ async def add_contact(client_id: str, body: ContactIn, admin: dict = Depends(req
         "studio_id": studio_id,
         "name": body.name.strip(),
         "role": body.role,
-        "phone": body.phone,
+        "phone": clean_contact_phone(body.phone),
         "email": (body.email or None),
         "is_primary": body.is_primary,
         "created_at": now_iso(),
@@ -469,6 +479,8 @@ async def update_contact(client_id: str, contact_id: str, body: ContactUpdate,
     if not existing:
         raise HTTPException(status_code=404, detail="Contact not found")
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "phone" in updates:
+        updates["phone"] = clean_contact_phone(updates["phone"])
     if updates.get("is_primary"):
         await db.contacts.update_many({"client_id": client_id}, {"$set": {"is_primary": False}})
     if updates:
@@ -732,7 +744,66 @@ async def create_booking_request(body: BookingRequestBody, user: dict = Depends(
         "created_at": now_iso(),
     }
     await db.booking_requests.insert_one(doc)
+    if studio_id:
+        await db.notifications.insert_one({
+            "notification_id": _new_id("ntf"),
+            "studio_id": studio_id,
+            "type": "booking_request",
+            "title": "New booking request",
+            "body": f"{doc['contact_name'] or 'A client'} requested {doc['service_type']}.",
+            "booking_request_id": doc["request_id"],
+            "contact_name": doc.get("contact_name"),
+            "contact_phone": doc.get("contact_phone"),
+            "contact_email": doc.get("contact_email"),
+            "service_type": doc["service_type"],
+            "preferred_date": doc.get("preferred_date"),
+            "location": doc.get("location"),
+            "message": doc.get("message"),
+            "read": False,
+            "created_at": doc["created_at"],
+        })
     return {"status": "ok", "request_id": doc["request_id"]}
+
+
+@crm_router.get("/notifications")
+async def list_admin_notifications(admin: dict = Depends(require_admin)):
+    items = await db.notifications.find(
+        {"studio_id": admin["user_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    return {
+        "items": items,
+        "unread_count": sum(1 for item in items if not item.get("read")),
+    }
+
+
+@crm_router.patch("/notifications/{notification_id}/read")
+async def mark_admin_notification_read(notification_id: str, admin: dict = Depends(require_admin)):
+    result = await db.notifications.update_one(
+        {"notification_id": notification_id, "studio_id": admin["user_id"]},
+        {"$set": {"read": True, "read_at": now_iso()}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "read", "notification_id": notification_id}
+
+
+@crm_router.get("/me/notifications")
+async def list_client_notifications(user: dict = Depends(require_client)):
+    items = await db.notifications.find(
+        {"client_user_id": user["user_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(50)
+    return {"items": items, "unread_count": sum(1 for item in items if not item.get("read"))}
+
+
+@crm_router.patch("/me/notifications/{notification_id}/read")
+async def mark_client_notification_read(notification_id: str, user: dict = Depends(require_client)):
+    result = await db.notifications.update_one(
+        {"notification_id": notification_id, "client_user_id": user["user_id"]},
+        {"$set": {"read": True, "read_at": now_iso()}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "read", "notification_id": notification_id}
 
 
 class ReviewBody(BaseModel):

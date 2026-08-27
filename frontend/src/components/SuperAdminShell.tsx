@@ -11,6 +11,7 @@ export const SUPERADMIN_NAV = [
   { key: "photographers", label: "Photographers", icon: "people-outline", href: "/superadmin/photographers" },
   { key: "memberships", label: "Memberships", icon: "card-outline", href: "/superadmin/memberships" },
   { key: "galleries", label: "Galleries", icon: "images-outline", href: "/superadmin/galleries" },
+  { key: "albums", label: "Albums", icon: "book-outline", href: "/superadmin/albums" },
   { key: "storage", label: "Storage", icon: "cloud-outline", href: "/superadmin/storage" },
   { key: "activity", label: "Activity Logs", icon: "pulse-outline", href: "/superadmin/activity" },
   { key: "settings", label: "Settings", icon: "settings-outline", href: "/superadmin/settings" },

@@ -20,6 +20,7 @@ import * as Clipboard from "expo-clipboard";
 
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, Pill, useToast } from "@/src/components/ui";
+import { PhoneField } from "@/src/components/PhoneField";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { goBackOr } from "@/src/navigation/back";
 
@@ -509,14 +510,23 @@ export default function AlbumDetail() {
                 </Pressable>
               ))}
             </View>
-            <TextField
-              testID="album-grant-value-input"
-              value={grantValue}
-              onChangeText={setGrantValue}
-              placeholder={channel === "email" ? "client@example.com" : "+1 555 000 1234"}
-              autoCapitalize="none"
-              keyboardType={channel === "email" ? "email-address" : "phone-pad"}
-            />
+            {channel === "phone" ? (
+              <PhoneField
+                testID="album-grant-value-input"
+                value={grantValue}
+                onChangeText={setGrantValue}
+                placeholder="Enter mobile number"
+              />
+            ) : (
+              <TextField
+                testID="album-grant-value-input"
+                value={grantValue}
+                onChangeText={setGrantValue}
+                placeholder="client@example.com"
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+            )}
             <Button testID="album-add-grant-btn" title="Grant access" icon="person-add-outline" onPress={addGrant} />
 
             <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Individual access ({activeGrants.length})</Text>

@@ -1,386 +1,309 @@
 #!/usr/bin/env python3
 """
-Backend Re-verification Test Suite
-Tests Cloudinary + AWS Rekognition integration after credential configuration
+Backend-only verification for Studio/Client notification bell APIs.
+Tests admin and client notification endpoints, gallery_expiry notifications on archive,
+and mark-read functionality.
 """
 
 import requests
 import json
 import time
-import io
-from PIL import Image
+from datetime import datetime
 
-# Configuration
-BASE_URL = "http://localhost:8001/api"
+# Backend URL from frontend/.env
+BASE_URL = "https://newclient-app-2.preview.emergentagent.com/api"
+
+# Test credentials from /app/memory/test_credentials.md
 ADMIN_EMAIL = "admin@lumiere.studio"
 ADMIN_PASSWORD = "Admin@12345"
-S3_BUCKET = "faceser"
 
-# Test results tracking
-tests_passed = 0
-tests_failed = 0
-test_results = []
+# Test client credentials (will be created via OTP)
+CLIENT_PHONE = "+919876543210"
+CLIENT_NAME = "Test Notification Client"
 
-def log_test(test_name, passed, details=""):
-    global tests_passed, tests_failed
-    if passed:
-        tests_passed += 1
-        status = "✅ PASS"
-    else:
-        tests_failed += 1
-        status = "❌ FAIL"
-    
-    result = f"{status}: {test_name}"
-    if details:
-        result += f"\n   {details}"
-    test_results.append(result)
-    print(result)
-
-def create_test_jpeg():
-    """Create a small valid JPEG with a simple face-like pattern"""
-    # Create a 200x200 RGB image with a simple pattern
-    img = Image.new('RGB', (200, 200), color='white')
-    pixels = img.load()
-    
-    # Draw a simple face-like pattern (circle for face, dots for eyes, line for mouth)
-    for x in range(200):
-        for y in range(200):
-            # Face circle (centered at 100,100, radius 80)
-            dx, dy = x - 100, y - 100
-            dist = (dx*dx + dy*dy) ** 0.5
-            if 75 < dist < 85:
-                pixels[x, y] = (0, 0, 0)  # Black circle
-            # Left eye
-            elif (x-70)**2 + (y-80)**2 < 100:
-                pixels[x, y] = (0, 0, 0)
-            # Right eye
-            elif (x-130)**2 + (y-80)**2 < 100:
-                pixels[x, y] = (0, 0, 0)
-            # Mouth (simple arc)
-            elif 60 < x < 140 and 130 < y < 135:
-                pixels[x, y] = (0, 0, 0)
-    
-    # Save to bytes
-    img_bytes = io.BytesIO()
-    img.save(img_bytes, format='JPEG', quality=85)
-    img_bytes.seek(0)
-    return img_bytes.getvalue()
-
-def test_health():
-    """Test 1: Health check"""
-    try:
-        resp = requests.get(f"{BASE_URL}/", timeout=10)
-        if resp.status_code == 200:
-            data = resp.json()
-            log_test("Health check", True, f"Status: {data.get('status')}")
-            return True
-        else:
-            log_test("Health check", False, f"Status code: {resp.status_code}")
-            return False
-    except Exception as e:
-        log_test("Health check", False, f"Error: {str(e)}")
-        return False
+def log(msg):
+    """Print timestamped log message."""
+    print(f"[{datetime.now().strftime('%H:%M:%S')}] {msg}")
 
 def test_admin_login():
-    """Test 2: Admin login"""
-    try:
-        resp = requests.post(
-            f"{BASE_URL}/auth/admin/login",
-            json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD},
-            timeout=10
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            token = data.get("session_token")
-            if token:
-                log_test("Admin login", True, f"Token received: {token[:20]}...")
-                return token
-            else:
-                log_test("Admin login", False, "No session_token in response")
-                return None
-        else:
-            log_test("Admin login", False, f"Status: {resp.status_code}, Body: {resp.text}")
-            return None
-    except Exception as e:
-        log_test("Admin login", False, f"Error: {str(e)}")
-        return None
+    """Test 1: Admin login and get session token."""
+    log("TEST 1: Admin login")
+    resp = requests.post(f"{BASE_URL}/auth/admin/login", json={
+        "email": ADMIN_EMAIL,
+        "password": ADMIN_PASSWORD
+    })
+    log(f"  POST /api/auth/admin/login → {resp.status_code}")
+    assert resp.status_code == 200, f"Admin login failed: {resp.text}"
+    data = resp.json()
+    assert "session_token" in data, "No session_token in response"
+    log(f"  ✅ Admin logged in successfully")
+    return data["session_token"]
 
-def test_create_event(token):
-    """Test 3: Create throwaway event"""
-    try:
-        headers = {"Authorization": f"Bearer {token}"}
-        resp = requests.post(
-            f"{BASE_URL}/events",
-            headers=headers,
-            json={
-                "name": "QA Cloudinary Retest",
-                "category": "wedding",
-                "date": "2026-08-26"
-            },
-            timeout=10
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            event_id = data.get("event_id")
-            log_test("Create event", True, f"Event ID: {event_id}")
-            return event_id
-        else:
-            log_test("Create event", False, f"Status: {resp.status_code}, Body: {resp.text}")
-            return None
-    except Exception as e:
-        log_test("Create event", False, f"Error: {str(e)}")
-        return None
+def test_admin_notifications(admin_token):
+    """Test 2: GET /api/notifications returns items/unread_count."""
+    log("TEST 2: Admin GET /api/notifications")
+    resp = requests.get(f"{BASE_URL}/notifications", headers={
+        "Authorization": f"Bearer {admin_token}"
+    })
+    log(f"  GET /api/notifications → {resp.status_code}")
+    assert resp.status_code == 200, f"Admin notifications failed: {resp.text}"
+    data = resp.json()
+    assert "items" in data, "No 'items' field in response"
+    assert "unread_count" in data, "No 'unread_count' field in response"
+    assert isinstance(data["items"], list), "'items' is not a list"
+    assert isinstance(data["unread_count"], int), "'unread_count' is not an int"
+    log(f"  ✅ Admin notifications: {len(data['items'])} items, {data['unread_count']} unread")
+    return data
 
-def test_upload_photo(token, event_id):
-    """Test 4: Upload photo and verify Cloudinary CDN URLs"""
-    try:
-        headers = {"Authorization": f"Bearer {token}"}
-        
-        # Create test JPEG
-        jpeg_data = create_test_jpeg()
-        
-        files = {
-            'file': ('test_photo.jpg', jpeg_data, 'image/jpeg')
-        }
-        
-        resp = requests.post(
-            f"{BASE_URL}/events/{event_id}/photos",
-            headers=headers,
-            files=files,
-            timeout=30
-        )
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            photo_id = data.get("photo_id")
-            url = data.get("url")
-            thumb_url = data.get("thumb_url")
-            
-            # Verify Cloudinary CDN URLs
-            cloudinary_check = (
-                url and url.startswith("https://res.cloudinary.com/") and
-                thumb_url and thumb_url.startswith("https://res.cloudinary.com/")
-            )
-            
-            if cloudinary_check:
-                log_test("Upload photo with Cloudinary CDN", True, 
-                        f"Photo ID: {photo_id}\n   URL: {url[:80]}...\n   Thumb: {thumb_url[:80]}...")
-                return photo_id, url, thumb_url
-            else:
-                log_test("Upload photo with Cloudinary CDN", False, 
-                        f"URLs don't start with Cloudinary CDN\n   URL: {url}\n   Thumb: {thumb_url}")
-                return photo_id, url, thumb_url
-        else:
-            log_test("Upload photo with Cloudinary CDN", False, 
-                    f"Status: {resp.status_code}, Body: {resp.text}")
-            return None, None, None
-    except Exception as e:
-        log_test("Upload photo with Cloudinary CDN", False, f"Error: {str(e)}")
-        return None, None, None
+def test_client_otp_login():
+    """Test 3: Client OTP login (request + verify)."""
+    log("TEST 3: Client OTP login")
+    
+    # Request OTP
+    resp = requests.post(f"{BASE_URL}/auth/client/request-otp", json={
+        "channel": "phone",
+        "phone": CLIENT_PHONE,
+        "name": CLIENT_NAME
+    })
+    log(f"  POST /api/auth/client/request-otp → {resp.status_code}")
+    assert resp.status_code == 200, f"OTP request failed: {resp.text}"
+    data = resp.json()
+    
+    # In dev mode, dev_code is returned
+    dev_code = data.get("dev_code")
+    if not dev_code:
+        log("  ⚠️  No dev_code in response (OTP_DEV_MODE may be false)")
+        # Try a default dev code
+        dev_code = "123456"
+    
+    log(f"  Dev code: {dev_code}")
+    
+    # Verify OTP
+    resp = requests.post(f"{BASE_URL}/auth/client/verify-otp", json={
+        "channel": "phone",
+        "phone": CLIENT_PHONE,
+        "code": dev_code,
+        "name": CLIENT_NAME
+    })
+    log(f"  POST /api/auth/client/verify-otp → {resp.status_code}")
+    assert resp.status_code == 200, f"OTP verify failed: {resp.text}"
+    data = resp.json()
+    assert "session_token" in data, "No session_token in response"
+    log(f"  ✅ Client logged in successfully")
+    return data["session_token"], data["user"]["user_id"]
 
-def test_indexing_status(token, event_id):
-    """Test 5: Poll indexing status until ready or failed"""
-    try:
-        headers = {"Authorization": f"Bearer {token}"}
-        max_attempts = 20
-        attempt = 0
-        
-        while attempt < max_attempts:
-            resp = requests.get(
-                f"{BASE_URL}/events/{event_id}/indexing-status",
-                headers=headers,
-                timeout=10
-            )
-            
-            if resp.status_code != 200:
-                log_test("Indexing status polling", False, 
-                        f"Status: {resp.status_code}, Body: {resp.text}")
-                return None
-            
-            data = resp.json()
-            status = data.get("status")
-            indexed = data.get("indexed", 0)
-            total = data.get("total", 0)
-            faces = data.get("faces", 0)
-            complete = data.get("complete", False)
-            
-            print(f"   Polling attempt {attempt + 1}: status={status}, indexed={indexed}/{total}, faces={faces}, complete={complete}")
-            
-            if complete or status == "ready":
-                log_test("Indexing status polling", True, 
-                        f"Status: {status}, Indexed: {indexed}/{total}, Faces detected: {faces}")
-                return {"status": status, "indexed": indexed, "total": total, "faces": faces}
-            elif status == "failed":
-                log_test("Indexing status polling", False, f"Indexing failed")
-                return {"status": status, "indexed": indexed, "total": total, "faces": faces}
-            
-            attempt += 1
-            time.sleep(1)
-        
-        log_test("Indexing status polling", False, f"Timeout after {max_attempts} attempts")
-        return None
-    except Exception as e:
-        log_test("Indexing status polling", False, f"Error: {str(e)}")
-        return None
+def test_client_notifications(client_token):
+    """Test 4: GET /api/me/notifications returns items/unread_count."""
+    log("TEST 4: Client GET /api/me/notifications")
+    resp = requests.get(f"{BASE_URL}/me/notifications", headers={
+        "Authorization": f"Bearer {client_token}"
+    })
+    log(f"  GET /api/me/notifications → {resp.status_code}")
+    assert resp.status_code == 200, f"Client notifications failed: {resp.text}"
+    data = resp.json()
+    assert "items" in data, "No 'items' field in response"
+    assert "unread_count" in data, "No 'unread_count' field in response"
+    assert isinstance(data["items"], list), "'items' is not a list"
+    assert isinstance(data["unread_count"], int), "'unread_count' is not an int"
+    log(f"  ✅ Client notifications: {len(data['items'])} items, {data['unread_count']} unread")
+    return data
 
-def test_list_photos(token, event_id):
-    """Test 6: List photos"""
-    try:
-        headers = {"Authorization": f"Bearer {token}"}
-        resp = requests.get(
-            f"{BASE_URL}/events/{event_id}/photos",
-            headers=headers,
-            timeout=10
-        )
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            photos = data.get("photos", [])
-            log_test("List photos", True, f"Found {len(photos)} photo(s)")
-            return photos
-        else:
-            log_test("List photos", False, f"Status: {resp.status_code}, Body: {resp.text}")
-            return None
-    except Exception as e:
-        log_test("List photos", False, f"Error: {str(e)}")
-        return None
+def test_create_event(admin_token):
+    """Test 5: Create a throwaway event."""
+    log("TEST 5: Create throwaway event")
+    resp = requests.post(f"{BASE_URL}/events", headers={
+        "Authorization": f"Bearer {admin_token}"
+    }, json={
+        "name": "QA Notification Test Event",
+        "category": "wedding",
+        "event_date": "2026-12-31"
+    })
+    log(f"  POST /api/events → {resp.status_code}")
+    assert resp.status_code == 200, f"Event creation failed: {resp.text}"
+    data = resp.json()
+    event_id = data["event_id"]
+    log(f"  ✅ Event created: {event_id}")
+    return event_id
 
-def test_s3_import(token, event_id):
-    """Test 7: S3 import from faceser bucket"""
-    try:
-        headers = {"Authorization": f"Bearer {token}"}
-        resp = requests.post(
-            f"{BASE_URL}/events/{event_id}/import-s3",
-            headers=headers,
-            json={"bucket": S3_BUCKET},
-            timeout=30
-        )
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            imported = data.get("imported", 0)
-            queued = data.get("queued_for_indexing", 0)
-            skipped = data.get("skipped", 0)
-            log_test("S3 import", True, 
-                    f"Bucket: {S3_BUCKET}, Imported: {imported}, Queued: {queued}, Skipped: {skipped}")
-            return data
-        else:
-            log_test("S3 import", False, f"Status: {resp.status_code}, Body: {resp.text}")
-            return None
-    except Exception as e:
-        log_test("S3 import", False, f"Error: {str(e)}")
-        return None
+def test_create_access_grant(admin_token, event_id, client_phone):
+    """Test 6: Create an active access grant for the client."""
+    log("TEST 6: Create access grant for client")
+    resp = requests.post(f"{BASE_URL}/events/{event_id}/access", headers={
+        "Authorization": f"Bearer {admin_token}"
+    }, json={
+        "channel": "phone",
+        "phone": client_phone,
+        "full_gallery_access": True
+    })
+    log(f"  POST /api/events/{event_id}/access → {resp.status_code}")
+    assert resp.status_code == 200, f"Access grant creation failed: {resp.text}"
+    data = resp.json()
+    log(f"  ✅ Access grant created: {data.get('grant_id')}")
+    return data
 
-def test_delete_event(token, event_id):
-    """Test 8: Delete event and verify cleanup"""
-    try:
-        headers = {"Authorization": f"Bearer {token}"}
-        resp = requests.delete(
-            f"{BASE_URL}/events/{event_id}",
-            headers=headers,
-            timeout=30
-        )
-        
-        if resp.status_code == 200:
-            data = resp.json()
-            photos_removed = data.get("photos_removed", 0)
-            cloudinary_deleted = data.get("cloudinary_objects_deleted", 0)
-            faces_deleted = data.get("faces_collection_deleted", False)
-            log_test("Delete event", True, 
-                    f"Photos removed: {photos_removed}, Cloudinary objects: {cloudinary_deleted}, Faces collection: {faces_deleted}")
-            return True
-        else:
-            log_test("Delete event", False, f"Status: {resp.status_code}, Body: {resp.text}")
-            return False
-    except Exception as e:
-        log_test("Delete event", False, f"Error: {str(e)}")
-        return False
+def test_archive_event(admin_token, event_id):
+    """Test 7: Archive the event (should create gallery_expiry notification)."""
+    log("TEST 7: Archive event")
+    resp = requests.post(f"{BASE_URL}/events/{event_id}/archive", headers={
+        "Authorization": f"Bearer {admin_token}"
+    })
+    log(f"  POST /api/events/{event_id}/archive → {resp.status_code}")
+    assert resp.status_code == 200, f"Event archive failed: {resp.text}"
+    log(f"  ✅ Event archived successfully")
+    
+    # Wait a moment for notification to be created
+    time.sleep(1)
 
-def test_verify_deletion(token, event_id):
-    """Test 9: Verify event is deleted"""
-    try:
-        headers = {"Authorization": f"Bearer {token}"}
-        resp = requests.get(
-            f"{BASE_URL}/events/{event_id}",
-            headers=headers,
-            timeout=10
-        )
+def test_verify_gallery_expiry_notification(client_token):
+    """Test 8: Verify gallery_expiry notification appears in client notifications."""
+    log("TEST 8: Verify gallery_expiry notification")
+    resp = requests.get(f"{BASE_URL}/me/notifications", headers={
+        "Authorization": f"Bearer {client_token}"
+    })
+    log(f"  GET /api/me/notifications → {resp.status_code}")
+    assert resp.status_code == 200, f"Client notifications failed: {resp.text}"
+    data = resp.json()
+    
+    # Find gallery_expiry notification
+    gallery_expiry_notifs = [n for n in data["items"] if n.get("type") == "gallery_expiry"]
+    assert len(gallery_expiry_notifs) > 0, "No gallery_expiry notification found"
+    
+    notif = gallery_expiry_notifs[0]
+    log(f"  ✅ Found gallery_expiry notification:")
+    log(f"     ID: {notif.get('notification_id')}")
+    log(f"     Title: {notif.get('title')}")
+    log(f"     Body: {notif.get('body')}")
+    log(f"     Read: {notif.get('read')}")
+    log(f"     Unread count: {data['unread_count']}")
+    
+    return notif, data["unread_count"]
+
+def test_mark_client_notification_read(client_token, notification_id, initial_unread_count):
+    """Test 9: PATCH /api/me/notifications/{id}/read and verify unread count decreases."""
+    log("TEST 9: Mark client notification as read")
+    resp = requests.patch(f"{BASE_URL}/me/notifications/{notification_id}/read", headers={
+        "Authorization": f"Bearer {client_token}"
+    })
+    log(f"  PATCH /api/me/notifications/{notification_id}/read → {resp.status_code}")
+    assert resp.status_code == 200, f"Mark read failed: {resp.text}"
+    data = resp.json()
+    assert data.get("status") == "read", "Status is not 'read'"
+    log(f"  ✅ Notification marked as read")
+    
+    # Verify unread count decreased
+    resp = requests.get(f"{BASE_URL}/me/notifications", headers={
+        "Authorization": f"Bearer {client_token}"
+    })
+    assert resp.status_code == 200
+    new_data = resp.json()
+    new_unread_count = new_data["unread_count"]
+    
+    log(f"  Unread count: {initial_unread_count} → {new_unread_count}")
+    assert new_unread_count < initial_unread_count, "Unread count did not decrease"
+    log(f"  ✅ Unread count decreased correctly")
+
+def test_admin_booking_notification_regression(admin_token):
+    """Test 10: Verify admin booking notifications still work."""
+    log("TEST 10: Admin booking notification regression")
+    
+    # Get current notifications
+    resp = requests.get(f"{BASE_URL}/notifications", headers={
+        "Authorization": f"Bearer {admin_token}"
+    })
+    log(f"  GET /api/notifications → {resp.status_code}")
+    assert resp.status_code == 200, f"Admin notifications failed: {resp.text}"
+    data = resp.json()
+    
+    initial_count = len(data["items"])
+    log(f"  Current notification count: {initial_count}")
+    
+    # Find a booking notification if any exist
+    booking_notifs = [n for n in data["items"] if n.get("type") == "booking_request"]
+    if booking_notifs:
+        log(f"  ✅ Found {len(booking_notifs)} booking notification(s)")
         
-        if resp.status_code == 404:
-            log_test("Verify deletion", True, "Event not found (correctly deleted)")
-            return True
+        # Test mark-read on a booking notification
+        notif = booking_notifs[0]
+        if not notif.get("read"):
+            notif_id = notif["notification_id"]
+            resp = requests.patch(f"{BASE_URL}/notifications/{notif_id}/read", headers={
+                "Authorization": f"Bearer {admin_token}"
+            })
+            log(f"  PATCH /api/notifications/{notif_id}/read → {resp.status_code}")
+            assert resp.status_code == 200, f"Mark read failed: {resp.text}"
+            log(f"  ✅ Booking notification mark-read works")
         else:
-            log_test("Verify deletion", False, f"Event still exists: {resp.status_code}")
-            return False
-    except Exception as e:
-        log_test("Verify deletion", False, f"Error: {str(e)}")
-        return False
+            log(f"  ℹ️  Booking notification already read, skipping mark-read test")
+    else:
+        log(f"  ℹ️  No booking notifications found (this is OK)")
+    
+    log(f"  ✅ Admin booking notifications endpoint working")
+
+def test_cleanup_event(admin_token, event_id):
+    """Test 11: Delete the throwaway event."""
+    log("TEST 11: Cleanup - delete event")
+    resp = requests.delete(f"{BASE_URL}/events/{event_id}", headers={
+        "Authorization": f"Bearer {admin_token}"
+    })
+    log(f"  DELETE /api/events/{event_id} → {resp.status_code}")
+    assert resp.status_code == 200, f"Event deletion failed: {resp.text}"
+    data = resp.json()
+    log(f"  ✅ Event deleted: {data.get('status')}")
 
 def main():
-    print("=" * 80)
-    print("BACKEND RE-VERIFICATION TEST SUITE")
-    print("Testing Cloudinary + AWS Rekognition integration")
-    print("=" * 80)
-    print()
+    """Run all notification bell API tests."""
+    log("=" * 80)
+    log("BACKEND NOTIFICATION BELL API VERIFICATION")
+    log("=" * 80)
     
-    # Test 1: Health
-    if not test_health():
-        print("\n❌ Health check failed. Aborting tests.")
-        return
-    
-    # Test 2: Admin login
-    token = test_admin_login()
-    if not token:
-        print("\n❌ Admin login failed. Aborting tests.")
-        return
-    
-    # Test 3: Create event
-    event_id = test_create_event(token)
-    if not event_id:
-        print("\n❌ Event creation failed. Aborting tests.")
-        return
-    
-    # Test 4: Upload photo
-    photo_id, url, thumb_url = test_upload_photo(token, event_id)
-    if not photo_id:
-        print("\n❌ Photo upload failed. Continuing with remaining tests...")
-    
-    # Test 5: Indexing status
-    indexing_result = test_indexing_status(token, event_id)
-    
-    # Test 6: List photos
-    photos = test_list_photos(token, event_id)
-    
-    # Test 7: S3 import
-    s3_result = test_s3_import(token, event_id)
-    
-    # Test 8: Delete event
-    delete_success = test_delete_event(token, event_id)
-    
-    # Test 9: Verify deletion
-    if delete_success:
-        test_verify_deletion(token, event_id)
-    
-    # Summary
-    print()
-    print("=" * 80)
-    print("TEST SUMMARY")
-    print("=" * 80)
-    print(f"Total tests: {tests_passed + tests_failed}")
-    print(f"Passed: {tests_passed}")
-    print(f"Failed: {tests_failed}")
-    print()
-    
-    if tests_failed > 0:
-        print("❌ SOME TESTS FAILED")
-        print("\nFailed tests:")
-        for result in test_results:
-            if "❌ FAIL" in result:
-                print(result)
-    else:
-        print("✅ ALL TESTS PASSED")
-    
-    print("=" * 80)
+    try:
+        # Test 1: Admin login
+        admin_token = test_admin_login()
+        
+        # Test 2: Admin notifications endpoint
+        test_admin_notifications(admin_token)
+        
+        # Test 3: Client OTP login
+        client_token, client_user_id = test_client_otp_login()
+        
+        # Test 4: Client notifications endpoint (initial state)
+        initial_client_notifs = test_client_notifications(client_token)
+        
+        # Test 5: Create throwaway event
+        event_id = test_create_event(admin_token)
+        
+        # Test 6: Create access grant for client
+        test_create_access_grant(admin_token, event_id, CLIENT_PHONE)
+        
+        # Test 7: Archive event (creates gallery_expiry notification)
+        test_archive_event(admin_token, event_id)
+        
+        # Test 8: Verify gallery_expiry notification appears
+        gallery_notif, initial_unread = test_verify_gallery_expiry_notification(client_token)
+        
+        # Test 9: Mark notification as read and verify unread count decreases
+        test_mark_client_notification_read(client_token, gallery_notif["notification_id"], initial_unread)
+        
+        # Test 10: Verify admin booking notifications still work
+        test_admin_booking_notification_regression(admin_token)
+        
+        # Test 11: Cleanup
+        test_cleanup_event(admin_token, event_id)
+        
+        log("=" * 80)
+        log("✅ ALL TESTS PASSED")
+        log("=" * 80)
+        
+    except AssertionError as e:
+        log("=" * 80)
+        log(f"❌ TEST FAILED: {e}")
+        log("=" * 80)
+        raise
+    except Exception as e:
+        log("=" * 80)
+        log(f"❌ UNEXPECTED ERROR: {e}")
+        log("=" * 80)
+        raise
 
 if __name__ == "__main__":
     main()

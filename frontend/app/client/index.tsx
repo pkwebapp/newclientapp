@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, imgUrl } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { EmptyState, Pill, GlassHeader, useToast } from "@/src/components/ui";
+import { NotificationBell } from "@/src/components/NotificationBell";
 import { HeaderMenuButton } from "@/src/components/MobileShell";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
@@ -89,6 +90,16 @@ export default function ClientDashboard() {
     { key: "review", label: "Review", icon: "star", onPress: () => router.push("/client/review") },
   ];
 
+  const openClientNotification = (notification: any) => {
+    if (notification.event_id) {
+      router.push(`/client/event/${notification.event_id}`);
+    } else if (notification.type === "payment_reminder") {
+      router.push("/client/services");
+    } else {
+      router.push("/client");
+    }
+  };
+
   return (
     <View style={styles.container} testID="client-dashboard-screen">
       <GlassHeader
@@ -97,9 +108,12 @@ export default function ClientDashboard() {
         topInset={insets.top}
         left={<HeaderMenuButton />}
         right={
-          <Pressable testID="signout-btn" onPress={signOut} hitSlop={10} style={{ padding: 6 }}>
-            <Ionicons name="log-out-outline" size={22} color={colors.onSurfaceTertiary} />
-          </Pressable>
+          <View style={styles.headerActions}>
+            <NotificationBell audience="client" testID="client-notification-bell" onNotificationPress={openClientNotification} />
+            <Pressable testID="signout-btn" onPress={signOut} hitSlop={10} style={{ padding: 6 }}>
+              <Ionicons name="log-out-outline" size={22} color={colors.onSurfaceTertiary} />
+            </Pressable>
+          </View>
         }
       />
       {loading ? (
@@ -243,6 +257,7 @@ export default function ClientDashboard() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
+  headerActions: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   card: {
     width: "100%",

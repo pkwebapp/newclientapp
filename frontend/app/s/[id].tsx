@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, publicApi, setAuthToken, downloadPhoto, ApiError } from "@/src/api/client";
 import { storage } from "@/src/utils/storage";
 import { Button, TextField, EmptyState, useToast } from "@/src/components/ui";
+import { PhoneField, isPhoneNumberValid } from "@/src/components/PhoneField";
 import { PhotoGrid, Photo } from "@/src/components/PhotoGrid";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
@@ -55,28 +56,6 @@ export default function SharedGallery() {
 
   // gallery
   const [photos, setPhotos] = useState<Photo[]>([]);
-  const [loadingPhotos, setLoadingPhotos] = useState(false);
-
-  const loadPhotos = useCallback(async () => {
-    setLoadingPhotos(true);
-    try {
-      const r = await api.get(`/public/shares/${id}/photos`);
-      setPhotos(r.photos || []);
-      setScope(r.scope);
-      setSharerName(r.sharer_name || "");
-    } catch (e: any) {
-      if (e instanceof ApiError && (e.status === 401 || e.status === 403)) {
-        await storage.secureRemove(tokenKey(String(id)));
-        setAuthToken(null);
-        if (e.status === 403) setDisabledMsg(e.message);
-        setPhase(e.status === 403 ? "disabled" : "gate");
-      } else {
-        toast.show("Could not load photos", "error");
-      }
-    } finally {
-      setLoadingPhotos(false);
-    }
-  }, [id, toast]);
 
   const bootstrap = useCallback(async () => {
     try {
@@ -123,7 +102,7 @@ export default function SharedGallery() {
 
   const submitAccess = async () => {
     if (!name.trim()) return toast.show("Please enter your name", "error");
-    if (phone.trim().length < 6) return toast.show("Enter a valid mobile number", "error");
+    if (!isPhoneNumberValid(phone)) return toast.show("Enter a valid mobile number for the selected country", "error");
     Keyboard.dismiss();
     setSubmitting(true);
     try {
@@ -222,15 +201,11 @@ export default function SharedGallery() {
               autoCapitalize="words"
               returnKeyType="next"
             />
-            <TextField
+            <PhoneField
               testID="share-phone-input"
-              label="Mobile number"
               value={phone}
               onChangeText={setPhone}
-              placeholder="e.g. +91 98765 43210"
-              keyboardType="phone-pad"
-              returnKeyType="done"
-              onSubmitEditing={submitAccess}
+              placeholder="Enter mobile number"
             />
             <Button testID="share-enter-btn" title="View photos" icon="arrow-forward" loading={submitting} onPress={submitAccess} />
             <Text style={styles.privacy}>
@@ -249,15 +224,17 @@ export default function SharedGallery() {
       <Text style={styles.gallerySub} numberOfLines={1}>
         {[meta?.name, viewerName ? `Viewing as ${viewerName}` : null].filter(Boolean).join("  ·  ")}
       </Text>
-      <Pressable
-        testID="share-find-own-btn"
-        onPress={() => meta?.event_id && router.push(`/g/${meta.event_id}`)}
-        style={styles.findOwn}
-      >
-        <Ionicons name="sparkles" size={15} color={colors.brand} />
-        <Text style={styles.findOwnText}>Find your own photos in this gallery</Text>
-        <Ionicons name="chevron-forward" size={15} color={colors.brand} />
-      </Pressable>
+      {meta?.face_search_enabled !== false && (
+        <Pressable
+          testID="share-find-own-btn"
+          onPress={() => meta?.event_id && router.push(`/g/${meta.event_id}`)}
+          style={styles.findOwn}
+        >
+          <Ionicons name="sparkles" size={15} color={colors.brand} />
+          <Text style={styles.findOwnText}>Find your own photos in this gallery</Text>
+          <Ionicons name="chevron-forward" size={15} color={colors.brand} />
+        </Pressable>
+      )}
     </View>
   );
 
@@ -274,7 +251,7 @@ export default function SharedGallery() {
         </Pressable>
       </View>
 
-      {loadingPhotos && photos.length === 0 ? (
+      {photos.length === 0 ? (
         <View style={styles.center}>
           <ActivityIndicator color={colors.brand} />
         </View>

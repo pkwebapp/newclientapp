@@ -130,7 +130,9 @@ const PRELOAD_TIMEOUT_MS = 10_000;
       setTotalGalleryPhotos(Number(d.photo_count || 0));
       setFetchedPhotos(0);
       setFetchingGallery(!!d.full_gallery_access && Number(d.photo_count || 0) > 0);
-      const mp = await api.get(`/client/events/${id}/my-photos`);
+      const mp = d.face_search_enabled === false
+        ? { photos: [], searched: false }
+        : await api.get(`/client/events/${id}/my-photos`);
       const lk = await api.get(`/client/events/${id}/liked`);
       let firstPage: any = { items: [], has_more: false };
       if (d.full_gallery_access) {
@@ -138,6 +140,7 @@ const PRELOAD_TIMEOUT_MS = 10_000;
       }
       setOfflineMode(false);
       setDetail(d);
+      if (d.face_search_enabled === false) setTab(d.full_gallery_access ? "all" : "liked");
       setMyPhotos(mp.photos || []);
       setSearched(!!mp.searched);
       setLikedPhotos(lk.photos || []);
@@ -198,7 +201,7 @@ const PRELOAD_TIMEOUT_MS = 10_000;
       setAllHasMore(hasMore);
       setFetchingGallery(false);
       void syncPendingLikes();
-    } catch (e: any) {
+    } catch {
       const restored = await applyCachedGallery();
       if (!restored) toast.show("This gallery is unavailable offline and has no saved previews", "error");
     } finally {
@@ -253,6 +256,10 @@ const PRELOAD_TIMEOUT_MS = 10_000;
   }, [loadDetail]);
 
   const goScan = () => {
+    if (detail?.face_search_enabled === false) {
+      toast.show("Face search is disabled for this gallery", "info");
+      return;
+    }
     if (offlineMode) {
       toast.show("Face scan needs an internet connection", "info");
       return;
@@ -279,7 +286,7 @@ const PRELOAD_TIMEOUT_MS = 10_000;
     );
     try {
       await api.post(`/client/events/${id}/photos/${photo.photo_id}/like`);
-    } catch (e: any) {
+    } catch {
       await queueLikeAction({ eventId: String(id), photoId: photo.photo_id, liked: next });
       toast.show("Like saved offline — it will sync when you’re back online", "info");
     }
@@ -326,7 +333,7 @@ const PRELOAD_TIMEOUT_MS = 10_000;
   };
 
   const TABS: { key: "mine" | "liked" | "all"; label: string }[] = [
-    { key: "mine", label: `My Photos${myPhotos.length ? ` (${myPhotos.length})` : ""}` },
+    ...(detail?.face_search_enabled === false ? [] : [{ key: "mine" as const, label: `My Photos${myPhotos.length ? ` (${myPhotos.length})` : ""}` }]),
     { key: "liked", label: `Liked${likedPhotos.length ? ` (${likedPhotos.length})` : ""}` },
     ...(showAll ? [{ key: "all" as const, label: "All Photos" }] : []),
   ];
@@ -359,6 +366,12 @@ const PRELOAD_TIMEOUT_MS = 10_000;
           <Text style={styles.offlineText}>Offline · showing saved previews</Text>
         </View>
       )}
+      {detail?.face_search_enabled === false && (
+        <View style={styles.faceSearchNotice} testID="face-search-disabled-notice">
+          <Ionicons name="scan-outline" size={15} color={colors.muted} />
+          <Text style={styles.faceSearchNoticeText}>Face search is off for this gallery · browse the photos below</Text>
+        </View>
+      )}
       <Button
         testID="share-gallery-btn"
         title={`Share ${tab === "all" ? "All Photos" : tab === "liked" ? "Liked" : "My Photos"}`}
@@ -389,10 +402,12 @@ const PRELOAD_TIMEOUT_MS = 10_000;
         <View style={{ flex: 1 }}>
           {header}
           <EmptyState
-            icon="scan-outline"
-            title="Find yourself in this gallery"
-            subtitle="Take a quick selfie and we'll instantly gather every photo you appear in."
-            action={<Button testID="scan-cta-empty" title="Scan my face" icon="camera" onPress={goScan} />}
+            icon={detail?.face_search_enabled === false ? "images-outline" : "scan-outline"}
+            title={detail?.face_search_enabled === false ? "Face search is off" : "Find yourself in this gallery"}
+            subtitle={detail?.face_search_enabled === false
+              ? "This gallery is available for browsing, but selfie matching is disabled."
+              : "Take a quick selfie and we'll instantly gather every photo you appear in."}
+            action={detail?.face_search_enabled === false ? undefined : <Button testID="scan-cta-empty" title="Scan my face" icon="camera" onPress={goScan} />}
           />
         </View>
       ) : photos.length === 0 ? (
@@ -400,15 +415,19 @@ const PRELOAD_TIMEOUT_MS = 10_000;
           {header}
           <EmptyState
             icon={tab === "liked" ? "heart-outline" : "images-outline"}
-            title={tab === "mine" ? "No matches found" : tab === "liked" ? "No liked photos yet" : "No photos yet"}
+            title={tab === "mine"
+              ? detail?.face_search_enabled === false ? "Face search is off" : "No matches found"
+              : tab === "liked" ? "No liked photos yet" : "No photos yet"}
             subtitle={
               tab === "mine"
-                ? "We couldn't find you in this gallery. Try scanning again with better lighting."
+                ? detail?.face_search_enabled === false
+                  ? "Browse All Photos to view this gallery without selfie matching."
+                  : "We couldn't find you in this gallery. Try scanning again with better lighting."
                 : tab === "liked"
                 ? "Tap the heart on any photo to save it to your Liked gallery."
                 : "The studio hasn't added photos yet."
             }
-            action={tab === "mine" ? <Button testID="scan-cta-retry" title="Scan again" icon="camera" onPress={goScan} /> : undefined}
+            action={tab === "mine" && detail?.face_search_enabled !== false ? <Button testID="scan-cta-retry" title="Scan again" icon="camera" onPress={goScan} /> : undefined}
           />
         </View>
       ) : (
@@ -425,7 +444,7 @@ const PRELOAD_TIMEOUT_MS = 10_000;
       )}
 
       {/* Floating scan CTA */}
-      {!loading && (searched || photos.length > 0) && (
+      {!loading && detail?.face_search_enabled !== false && (searched || photos.length > 0) && (
         <View style={[styles.fabWrap, { bottom: insets.bottom + spacing.lg }]} pointerEvents="box-none">
           <Pressable testID="scan-fab" onPress={goScan} style={styles.fab}>
             <Ionicons name="camera" size={20} color={colors.onBrand} />
@@ -470,6 +489,8 @@ const styles = StyleSheet.create({
   segText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
   offlineNotice: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs, marginTop: spacing.sm },
   offlineText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm },
+  faceSearchNotice: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.xs, marginTop: spacing.sm, paddingHorizontal: spacing.lg },
+  faceSearchNoticeText: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, textAlign: "center" },
   segTextActive: { color: colors.onBrand, fontWeight: "600" },
 
   fabWrap: { position: "absolute", left: 0, right: 0, alignItems: "center" },

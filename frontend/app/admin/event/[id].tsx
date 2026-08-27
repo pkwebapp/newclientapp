@@ -19,7 +19,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { api, ApiError, imgUrl, getAuthToken, UploadItem } from "@/src/api/client";
+import { useAuth } from "@/src/context/AuthContext";
 import { Button, TextField, Pill, GlassHeader, EmptyState, useToast } from "@/src/components/ui";
+import { PhoneField } from "@/src/components/PhoneField";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { goBackOr } from "@/src/navigation/back";
 
@@ -36,6 +38,7 @@ export default function AdminEvent() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const toast = useToast();
+  const { user } = useAuth();
   const { isDesktop } = useResponsive();
 
   const [tab, setTab] = useState<Tab>("photos");
@@ -57,6 +60,7 @@ export default function AdminEvent() {
   const [uploadDone, setUploadDone] = useState(0);
   const [uploadTotal, setUploadTotal] = useState(0);
   const [importingS3, setImportingS3] = useState(false);
+  const [coverUploading, setCoverUploading] = useState(false);
 
   // access form
   const [channel, setChannel] = useState<"email" | "phone">("email");
@@ -155,19 +159,28 @@ export default function AdminEvent() {
     setUploadTotal(items.length);
     setUploadDone(0);
     let ok = 0;
+    let blocked = false;
     for (let i = 0; i < items.length; i += CHUNK) {
       const chunk = items.slice(i, i + CHUNK);
       try {
         const r = await api.uploadBulk(`/events/${id}/photos/bulk`, chunk);
         ok += r.uploaded || 0;
-      } catch {
-        // continue with remaining chunks
+      } catch (e: any) {
+        if (e instanceof ApiError && e.status === 403 && e.message.toLowerCase().includes("upload")) {
+          blocked = true;
+          break;
+        }
+        // Continue with remaining chunks after an individual upload failure.
       }
       setUploadDone(Math.min(i + chunk.length, items.length));
     }
     setUploading(false);
     setUploadTotal(0);
-    toast.show(`Uploaded ${ok} photo${ok !== 1 ? "s" : ""} · indexing in background`, ok ? "success" : "error");
+    if (blocked) {
+      toast.show("Your upload feature is disabled. Upgrade to continue or contact admin.", "error");
+    } else {
+      toast.show(`Uploaded ${ok} photo${ok !== 1 ? "s" : ""} · indexing in background`, ok ? "success" : "error");
+    }
     // Kick off status polling.
     try {
       const st = await api.get(`/events/${id}/indexing-status`);
@@ -232,6 +245,40 @@ export default function AdminEvent() {
       type: a.mimeType || "image/jpeg",
     }));
     await runBulkUpload(items);
+  };
+
+  const uploadCover = async () => {
+    if (user?.uploads_disabled) {
+      toast.show("Your upload feature is disabled. Upgrade to continue or contact admin.", "error");
+      return;
+    }
+    const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!perm.granted) {
+      toast.show("Photo access is needed to choose a cover", "error");
+      return;
+    }
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: false,
+      quality: 0.9,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    const asset = result.assets[0];
+    setCoverUploading(true);
+    try {
+      const updated = await api.upload(
+        `/events/${id}/cover`,
+        asset.uri,
+        asset.fileName || `gallery-cover-${Date.now()}.jpg`,
+        asset.mimeType || "image/jpeg",
+      );
+      setEvent(updated);
+      toast.show("Gallery cover updated", "success");
+    } catch (e: any) {
+      toast.show(e instanceof ApiError ? e.message : "Could not upload gallery cover", "error");
+    } finally {
+      setCoverUploading(false);
+    }
   };
 
   const importS3 = async () => {
@@ -556,6 +603,16 @@ export default function AdminEvent() {
               />
             </View>
 
+            {user?.uploads_disabled && (
+              <View style={styles.uploadDisabledBanner} testID="event-upload-disabled-banner">
+                <Ionicons name="cloud-offline-outline" size={20} color={colors.onError} />
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.uploadDisabledTitle}>Your upload feature is disabled</Text>
+                  <Text style={styles.uploadDisabledSub}>Upgrade to continue or contact admin.</Text>
+                </View>
+              </View>
+            )}
+
             {status && status.total_photos > 0 && status.complete === false && (
               <View style={styles.progressWrap} testID="indexing-progress">
                 <View style={styles.progressTrack}>
@@ -592,11 +649,11 @@ export default function AdminEvent() {
               </View>
             ) : (
               <>
-                <Button testID="upload-photos-btn" title={uploading ? "Uploading…" : "Upload photos"} icon="cloud-upload-outline" loading={uploading} onPress={uploadPhotos} />
+                <Button testID="upload-photos-btn" title={uploading ? "Uploading…" : "Upload photos"} icon="cloud-upload-outline" loading={uploading} disabled={user?.uploads_disabled} onPress={uploadPhotos} />
                 {Platform.OS === "web" && (
-                  <Button testID="upload-folder-btn" title="Upload a folder" variant="secondary" icon="folder-open-outline" disabled={uploading} onPress={() => pickWebFiles(true)} style={{ marginTop: spacing.md }} />
+                  <Button testID="upload-folder-btn" title="Upload a folder" variant="secondary" icon="folder-open-outline" disabled={uploading || user?.uploads_disabled} onPress={() => pickWebFiles(true)} style={{ marginTop: spacing.md }} />
                 )}
-                <Button testID="import-s3-btn" title="Import from S3 bucket" variant="ghost" icon="cloud-download-outline" loading={importingS3} onPress={importS3} style={{ marginTop: spacing.md }} />
+                <Button testID="import-s3-btn" title="Import from S3 bucket" variant="ghost" icon="cloud-download-outline" loading={importingS3} disabled={user?.uploads_disabled} onPress={importS3} style={{ marginTop: spacing.md }} />
               </>
             )}
 
@@ -725,14 +782,23 @@ export default function AdminEvent() {
                 </Pressable>
               ))}
             </View>
-            <TextField
-              testID="grant-value-input"
-              value={grantValue}
-              onChangeText={setGrantValue}
-              placeholder={channel === "email" ? "client@example.com" : "+1 555 000 1234"}
-              autoCapitalize="none"
-              keyboardType={channel === "email" ? "email-address" : "phone-pad"}
-            />
+            {channel === "phone" ? (
+              <PhoneField
+                testID="grant-value-input"
+                value={grantValue}
+                onChangeText={setGrantValue}
+                placeholder="Enter mobile number"
+              />
+            ) : (
+              <TextField
+                testID="grant-value-input"
+                value={grantValue}
+                onChangeText={setGrantValue}
+                placeholder="client@example.com"
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+            )}
             <View style={styles.switchRow}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.switchLabel}>Full gallery access</Text>
@@ -899,7 +965,26 @@ export default function AdminEvent() {
         {/* ---------------- SETTINGS ---------------- */}
         {tab === "settings" && (
           <>
-            <Text style={styles.sectionTitle}>Match similarity threshold</Text>
+            <Text style={styles.sectionTitle}>Gallery cover</Text>
+            <Text style={styles.muted}>Choose the image clients see on the gallery card. If you do not choose one, the first uploaded photo is used automatically.</Text>
+            <View style={styles.coverPreview} testID="gallery-cover-preview">
+              {imgUrl(event?.cover_url, event?.cover_path) ? (
+                <Image source={{ uri: imgUrl(event?.cover_url, event?.cover_path) }} style={StyleSheet.absoluteFill} contentFit="cover" />
+              ) : (
+                <View style={styles.coverEmpty}><Ionicons name="image-outline" size={28} color={colors.muted} /><Text style={styles.muted}>No cover selected</Text></View>
+              )}
+            </View>
+            <Button
+              testID="upload-gallery-cover-btn"
+              title={coverUploading ? "Uploading cover…" : "Upload custom cover"}
+              variant="secondary"
+              icon="image-outline"
+              loading={coverUploading}
+              disabled={user?.uploads_disabled}
+              onPress={uploadCover}
+            />
+
+            <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Match similarity threshold</Text>
             <Text style={styles.muted}>Higher = stricter matching, fewer false positives.</Text>
             <View style={styles.presetRow}>
               {["80", "85", "90", "95"].map((p) => (
@@ -1042,6 +1127,9 @@ const styles = StyleSheet.create({
   tabText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
   tabTextActive: { color: colors.onBrand, fontWeight: "600" },
   statusCard: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.lg },
+  uploadDisabledBanner: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.error, borderWidth: 1, borderColor: colors.error, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.lg },
+  uploadDisabledTitle: { color: colors.onError, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
+  uploadDisabledSub: { color: colors.onError, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
   statusTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.lg },
   statusSub: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
   driveCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, borderWidth: 1, borderColor: colors.brandTertiary },
@@ -1083,6 +1171,8 @@ const styles = StyleSheet.create({
   presetText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
   presetTextActive: { color: colors.onBrand, fontWeight: "600" },
   infoCard: { backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginTop: spacing.xl },
+  coverPreview: { width: "100%", aspectRatio: 1.7, maxHeight: 240, borderRadius: radius.lg, overflow: "hidden", backgroundColor: colors.surfaceSecondary, marginBottom: spacing.md },
+  coverEmpty: { flex: 1, alignItems: "center", justifyContent: "center", gap: spacing.sm },
   infoRow: { flexDirection: "row", justifyContent: "space-between", paddingVertical: spacing.sm },
   infoValue: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base },
   // share

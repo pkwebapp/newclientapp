@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
 import {
   ActivityIndicator,
+  Modal,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -15,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { EmptyState, Button, GlassHeader, useToast } from "@/src/components/ui";
+import { NotificationBell } from "@/src/components/NotificationBell";
 import { HeaderMenuButton } from "@/src/components/MobileShell";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
@@ -26,19 +28,25 @@ export default function AdminDashboard() {
   const [events, setEvents] = useState<any[]>([]);
   const [clientCount, setClientCount] = useState<number>(0);
   const [plan, setPlan] = useState<any>(null);
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState(0);
+  const [selectedBooking, setSelectedBooking] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
     try {
-      const [ev, cl, pl] = await Promise.all([
+      const [ev, cl, pl, notificationData] = await Promise.all([
         api.get("/events"),
         api.get("/clients").catch(() => []),
         api.get("/billing/status").catch(() => null),
+        api.get("/notifications").catch(() => ({ items: [], unread_count: 0 })),
       ]);
       setEvents(ev);
       setClientCount(Array.isArray(cl) ? cl.length : 0);
       setPlan(pl);
+      setNotifications(notificationData.items || []);
+      setUnreadNotifications(notificationData.unread_count || 0);
     } catch {
       toast.show("Could not load your studio", "error");
     } finally {
@@ -63,6 +71,17 @@ export default function AdminDashboard() {
     { key: "settings", label: "Settings", icon: "settings", onPress: () => router.push("/admin/settings") },
   ];
 
+  const openNotification = async (notification: any) => {
+    if (!notification.read) {
+      try {
+        await api.patch(`/notifications/${notification.notification_id}/read`, {});
+        setNotifications((prev) => prev.map((item) => item.notification_id === notification.notification_id ? { ...item, read: true } : item));
+        setUnreadNotifications((count) => Math.max(0, count - 1));
+      } catch {}
+    }
+    setSelectedBooking(notification);
+  };
+
   return (
     <View style={styles.container} testID="admin-dashboard-screen">
       <GlassHeader
@@ -70,6 +89,7 @@ export default function AdminDashboard() {
         subtitle={user?.email}
         topInset={insets.top}
         left={<HeaderMenuButton />}
+        right={<NotificationBell audience="admin" testID="admin-notification-bell" onNotificationPress={openNotification} />}
       />
       {loading ? (
         <View style={styles.center}>
@@ -107,6 +127,40 @@ export default function AdminDashboard() {
               </View>
               <Ionicons name="chevron-forward" size={16} color={plan.locked ? colors.onError : colors.brand} />
             </Pressable>
+          )}
+
+          {user?.uploads_disabled && (
+            <View style={styles.uploadDisabledBanner} testID="upload-disabled-banner">
+              <Ionicons name="cloud-offline-outline" size={20} color={colors.onError} />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.uploadDisabledTitle}>Your upload feature is disabled</Text>
+                <Text style={styles.uploadDisabledSub}>Upgrade to continue or contact admin.</Text>
+              </View>
+            </View>
+          )}
+
+          {notifications.length > 0 && (
+            <View style={styles.notificationsSection} testID="admin-notifications">
+              <View style={styles.notificationHeader}>
+                <Text style={styles.sectionTitle}>Notifications</Text>
+                {unreadNotifications > 0 && <View style={styles.unreadBadge}><Text style={styles.unreadBadgeText}>{unreadNotifications} new</Text></View>}
+              </View>
+              {notifications.slice(0, 3).map((notification) => (
+                <Pressable
+                  key={notification.notification_id}
+                  testID={`notification-${notification.notification_id}`}
+                  onPress={() => openNotification(notification)}
+                  style={[styles.notificationRow, !notification.read && styles.notificationUnread]}
+                >
+                  <View style={styles.notificationIcon}><Ionicons name="calendar-outline" size={18} color={colors.brand} /></View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.notificationTitle}>{notification.title}</Text>
+                    <Text style={styles.notificationBody}>{notification.body}</Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+                </Pressable>
+              ))}
+            </View>
           )}
 
           <Text style={styles.sectionTitle}>Quick actions</Text>
@@ -162,6 +216,29 @@ export default function AdminDashboard() {
           )}
         </ScrollView>
       )}
+      <Modal visible={!!selectedBooking} transparent animationType="fade" onRequestClose={() => setSelectedBooking(null)}>
+        <Pressable style={styles.bookingModalBackdrop} onPress={() => setSelectedBooking(null)}>
+          <Pressable style={styles.bookingModalCard} testID="booking-details-modal" onPress={() => {}}>
+            <View style={styles.bookingModalHeader}>
+              <View style={styles.notificationIcon}><Ionicons name="calendar-outline" size={20} color={colors.brand} /></View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.bookingModalTitle}>Booking request</Text>
+                <Text style={styles.bookingModalSub}>{selectedBooking?.service_type || "Session inquiry"}</Text>
+              </View>
+              <Pressable testID="close-booking-details" onPress={() => setSelectedBooking(null)} hitSlop={8}><Ionicons name="close" size={22} color={colors.muted} /></Pressable>
+            </View>
+            <View style={styles.bookingDetails}>
+              <Text style={styles.bookingPerson}>{selectedBooking?.contact_name || "Unknown client"}</Text>
+              {selectedBooking?.contact_phone ? <Text style={styles.bookingDetailText}>Phone: {selectedBooking.contact_phone}</Text> : null}
+              {selectedBooking?.contact_email ? <Text style={styles.bookingDetailText}>Email: {selectedBooking.contact_email}</Text> : null}
+              {selectedBooking?.preferred_date ? <Text style={styles.bookingDetailText}>Preferred date: {selectedBooking.preferred_date}</Text> : null}
+              {selectedBooking?.location ? <Text style={styles.bookingDetailText}>Location: {selectedBooking.location}</Text> : null}
+              {selectedBooking?.message ? <Text style={styles.bookingMessage}>“{selectedBooking.message}”</Text> : null}
+            </View>
+            <Button testID="booking-details-clients-btn" title="Open client CRM" variant="secondary" onPress={() => { setSelectedBooking(null); router.push("/admin/clients"); }} />
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -182,6 +259,27 @@ const styles = StyleSheet.create({
   statsRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.xl },
   planBanner: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.brandTertiary, borderWidth: 1, borderColor: colors.brand, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.xl },
   planBannerLocked: { backgroundColor: colors.error, borderColor: colors.error },
+  uploadDisabledBanner: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.error, borderWidth: 1, borderColor: colors.error, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.xl },
+  uploadDisabledTitle: { color: colors.onError, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
+  uploadDisabledSub: { color: colors.onError, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
+  notificationsSection: { marginBottom: spacing.xl },
+  notificationHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  unreadBadge: { backgroundColor: colors.brandTertiary, borderRadius: radius.pill, paddingHorizontal: spacing.sm, paddingVertical: 4 },
+  unreadBadgeText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "700" },
+  notificationRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.sm, borderWidth: 1, borderColor: colors.border },
+  notificationUnread: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
+  notificationIcon: { width: 38, height: 38, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.surface },
+  notificationTitle: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
+  notificationBody: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 3 },
+  bookingModalBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.72)", alignItems: "center", justifyContent: "center", padding: spacing.xl },
+  bookingModalCard: { width: "100%", maxWidth: 520, backgroundColor: colors.surfaceSecondary, borderRadius: radius.lg, padding: spacing.xl, borderWidth: 1, borderColor: colors.borderStrong },
+  bookingModalHeader: { flexDirection: "row", alignItems: "center", gap: spacing.md, marginBottom: spacing.xl },
+  bookingModalTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl },
+  bookingModalSub: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 3 },
+  bookingDetails: { backgroundColor: colors.surface, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.xl, gap: spacing.sm },
+  bookingPerson: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.lg, fontWeight: "700" },
+  bookingDetailText: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.base },
+  bookingMessage: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 21, marginTop: spacing.sm },
   planBannerTitle: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
   planBannerSub: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
   stat: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, alignItems: "flex-start", borderWidth: 1, borderColor: colors.border },

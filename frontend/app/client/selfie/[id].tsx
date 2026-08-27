@@ -128,7 +128,7 @@ export default function SelfieScreen() {
           <Text style={styles.consentTitle}>Biometric consent</Text>
           <Text style={styles.consentText}>
             To find your photos, we analyse your selfie to create a temporary face signature and match it
-            against this event's gallery.
+            against this event’s gallery.
           </Text>
           {[
             ["camera-outline", "Your selfie is used only for matching and is never stored."],

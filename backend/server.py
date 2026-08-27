@@ -25,6 +25,7 @@ from config import (
     ADMIN_SEED_EMAIL, ADMIN_SEED_PASSWORD, SUPERADMIN_EMAIL, SUPERADMIN_PASSWORD, PUBLIC_BASE_URL,
 )
 from storage_service import get_storage
+from phone_utils import validate_phone, PhoneValidationError, phone_variants
 from face_engine import get_face_engine, NotIndexedError
 import gdrive_service
 from gdrive_service import DriveError
@@ -157,6 +158,7 @@ def public_event(event: dict) -> dict:
         "category": event.get("category"),
         "photographer": event.get("photographer"),
         "similarity_threshold": event.get("similarity_threshold", DEFAULT_SIMILARITY_THRESHOLD),
+        "face_search_enabled": event.get("face_search_enabled", True),
         "indexing_status": event.get("indexing_status", "empty"),
         "photo_count": event.get("photo_count", 0),
         "cover_path": event.get("cover_path"),
@@ -178,8 +180,11 @@ def share_url_for(event_id: str) -> str:
     return f"{base}/g/{event_id}"
 
 
-def normalize_phone(phone: str) -> str:
-    return (phone or "").strip()
+def _phone_or_400(value: str) -> str:
+    try:
+        return validate_phone(value)
+    except PhoneValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # ---------------------------------------------------------------------------
@@ -288,7 +293,7 @@ async def request_otp(body: OtpRequest):
     elif body.channel == "phone":
         if not body.phone:
             raise HTTPException(status_code=400, detail="Phone number is required")
-        identifier = body.phone.strip()
+        identifier = _phone_or_400(body.phone)
     else:
         raise HTTPException(status_code=400, detail="Invalid channel")
 
@@ -328,7 +333,7 @@ async def verify_otp(body: OtpVerify):
     if body.channel == "email":
         identifier = (body.email or "").lower()
     else:
-        identifier = (body.phone or "").strip()
+        identifier = _phone_or_400(body.phone or "")
     if not identifier:
         raise HTTPException(status_code=400, detail="Missing identifier")
 
@@ -348,7 +353,7 @@ async def verify_otp(body: OtpVerify):
 
     await db.otp_codes.delete_one({"identifier": identifier})
 
-    query = {"email": identifier} if body.channel == "email" else {"phone": identifier}
+    query = {"email": identifier} if body.channel == "email" else {"phone": {"$in": phone_variants(identifier)}}
     user = await db.users.find_one(query)
     if not user:
         user = {
@@ -365,6 +370,9 @@ async def verify_otp(body: OtpVerify):
     else:
         if user.get("role") != "client":
             raise HTTPException(status_code=403, detail="This contact belongs to a studio account")
+        if body.name and body.name.strip() and body.name.strip() != user.get("name"):
+            user["name"] = body.name.strip()
+            await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"name": user["name"]}})
 
     token = await create_session(user["user_id"])
     return {"session_token": token, "user": _public_user(user)}
@@ -409,10 +417,11 @@ async def save_studio_profile(body: StudioProfile, user: dict = Depends(get_curr
     missing = [label for label, value in required.items() if not (value and value.strip())]
     if missing:
         raise HTTPException(status_code=400, detail="Please complete all required fields")
+    phone = _phone_or_400(body.phone)
     profile = {
         "contact_name": body.contact_name.strip(),
         "studio_name": body.studio_name.strip(),
-        "phone": body.phone.strip(),
+        "phone": phone,
         "purpose": body.purpose.strip(),
         "city": body.city.strip(),
         "country": body.country.strip(),
@@ -565,6 +574,7 @@ class EventCreate(BaseModel):
     category: str = "event"
     photographer: Optional[str] = None
     similarity_threshold: Optional[float] = None
+    face_search_enabled: bool = True
     client_id: Optional[str] = None  # optional link to a CRM client/family
     value: Optional[float] = None    # booking value (for lifetime-value stats)
 
@@ -599,7 +609,7 @@ async def create_event(body: EventCreate, admin: dict = Depends(require_admin)):
     await plans.check_can_create_gallery(admin)
     event_id = f"evt_{uuid.uuid4().hex[:12]}"
     engine = get_face_engine()
-    collection_id = engine.create_collection(event_id)
+    collection_id = engine.create_collection(event_id) if body.face_search_enabled else None
     threshold = body.similarity_threshold or DEFAULT_SIMILARITY_THRESHOLD
     event = {
         "event_id": event_id,
@@ -608,6 +618,7 @@ async def create_event(body: EventCreate, admin: dict = Depends(require_admin)):
         "category": body.category,
         "photographer": body.photographer,
         "similarity_threshold": threshold,
+        "face_search_enabled": body.face_search_enabled,
         "collection_id": collection_id,
         "indexing_status": "empty",
         "photo_count": 0,
@@ -635,6 +646,7 @@ class GDriveEventCreate(BaseModel):
     category: str = "event"
     photographer: Optional[str] = None
     similarity_threshold: Optional[float] = None
+    face_search_enabled: bool = True
     drive_link: str
 
 
@@ -646,12 +658,10 @@ async def _sync_gdrive_event(event: dict, images: Optional[list] = None) -> dict
     if images is None:
         images = await run_in_threadpool(gdrive_service.list_folder_images, folder_id)
 
-    existing = {
-        p["drive_file_id"]: p
-        for p in await db.photos.find(
-            {"event_id": event_id, "source": "gdrive"}, {"_id": 0}
-        ).to_list(100000)
-    }
+    existing: dict[str, dict] = {}
+    async for photo in db.photos.find({"event_id": event_id, "source": "gdrive"}, {"_id": 0}).batch_size(500):
+        if photo.get("drive_file_id"):
+            existing[photo["drive_file_id"]] = photo
     engine = get_face_engine()
 
     seen: set[str] = set()
@@ -674,7 +684,7 @@ async def _sync_gdrive_event(event: dict, images: Optional[list] = None) -> dict
                 "md5_checksum": img.get("md5_checksum"),
                 "modified_time": img.get("modified_time"),
                 "face_count": 0,
-                "indexing_status": "pending",
+                "indexing_status": "pending" if event.get("face_search_enabled", True) else "disabled",
                 "uploaded_at": now_iso(),
             })
             added += 1
@@ -701,7 +711,7 @@ async def _sync_gdrive_event(event: dict, images: Optional[list] = None) -> dict
                 set_fields.update({
                     "md5_checksum": img.get("md5_checksum"),
                     "modified_time": img.get("modified_time"),
-                    "indexing_status": "pending",
+                    "indexing_status": "pending" if event.get("face_search_enabled", True) else "disabled",
                     "face_count": 0,
                 })
                 updated += 1
@@ -767,7 +777,7 @@ async def create_gdrive_event(body: GDriveEventCreate, admin: dict = Depends(req
 
     event_id = f"evt_{uuid.uuid4().hex[:12]}"
     engine = get_face_engine()
-    collection_id = engine.create_collection(event_id)
+    collection_id = engine.create_collection(event_id) if body.face_search_enabled else None
     event = {
         "event_id": event_id,
         "name": body.name,
@@ -775,6 +785,7 @@ async def create_gdrive_event(body: GDriveEventCreate, admin: dict = Depends(req
         "category": body.category,
         "photographer": body.photographer,
         "similarity_threshold": body.similarity_threshold or DEFAULT_SIMILARITY_THRESHOLD,
+        "face_search_enabled": body.face_search_enabled,
         "collection_id": collection_id,
         "indexing_status": "empty",
         "photo_count": 0,
@@ -820,6 +831,36 @@ async def get_event(event_id: str, admin: dict = Depends(require_admin)):
     return public_event(event)
 
 
+@api_router.post("/events/{event_id}/cover")
+async def upload_event_cover(
+    event_id: str,
+    file: UploadFile = File(...),
+    admin: dict = Depends(require_admin_uploads),
+):
+    event = await admin_event_or_404(event_id, admin)
+    content_type = file.content_type or "image/jpeg"
+    if not content_type.startswith("image/"):
+        raise HTTPException(status_code=400, detail="Gallery cover must be an image")
+    content = await file.read()
+    if not content or len(content) > 15 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Gallery cover must be between 1 byte and 15 MB")
+    try:
+        with Image.open(io.BytesIO(content)) as image:
+            image.verify()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail="The selected gallery cover is not a valid image") from exc
+
+    extension = (file.filename or "cover.jpg").rsplit(".", 1)[-1].lower()
+    if extension not in {"jpg", "jpeg", "png", "webp"}:
+        extension = "jpg"
+    cover_path = f"events/{event_id}/cover/cover_{uuid.uuid4().hex[:10]}.{extension}"
+    storage = get_storage()
+    await run_in_threadpool(storage.delete_prefix, f"events/{event_id}/cover")
+    await run_in_threadpool(storage.put_object, cover_path, content, content_type)
+    await db.events.update_one({"event_id": event_id}, {"$set": {"cover_path": cover_path, "cover_custom": True}})
+    return public_event(await get_event_or_404(event_id))
+
+
 @api_router.patch("/events/{event_id}")
 async def update_event(event_id: str, body: EventUpdate, admin: dict = Depends(require_admin)):
     await admin_event_or_404(event_id, admin)
@@ -841,6 +882,8 @@ async def reindex_event(event_id: str, admin: dict = Depends(require_admin)):
     """Rebuild the face collection for an event and re-index all its photos.
     Needed after switching the face engine (e.g. mock -> AWS Rekognition)."""
     event = await admin_event_or_404(event_id, admin)
+    if not event.get("face_search_enabled", True):
+        return {"status": "disabled", "photos": await db.photos.count_documents({"event_id": event_id}), "faces_indexed": 0}
     engine = get_face_engine()
     storage = get_storage()
     cid = event["collection_id"]
@@ -849,11 +892,13 @@ async def reindex_event(event_id: str, admin: dict = Depends(require_admin)):
     await run_in_threadpool(engine.delete_collection, cid)
     await run_in_threadpool(engine.ensure_collection, cid)
 
-    photos = await db.photos.find({"event_id": event_id}, {"_id": 0}).to_list(5000)
+    photos_cursor = db.photos.find({"event_id": event_id}, {"_id": 0}).batch_size(500)
     await db.faces.delete_many({"event_id": event_id})
 
     total_faces = 0
-    for p in photos:
+    photo_count = 0
+    async for p in photos_cursor:
+        photo_count += 1
         try:
             if p.get("source") == "gdrive":
                 content, _ = await run_in_threadpool(gdrive_service.preview_bytes, p["drive_file_id"], 1600)
@@ -876,8 +921,8 @@ async def reindex_event(event_id: str, admin: dict = Depends(require_admin)):
 
     # Stale matched albums must be re-computed by clients.
     await db.client_albums.delete_many({"event_id": event_id})
-    await db.events.update_one({"event_id": event_id}, {"$set": {"indexing_status": "ready" if photos else "empty"}})
-    return {"status": "reindexed", "photos": len(photos), "faces_indexed": total_faces}
+    await db.events.update_one({"event_id": event_id}, {"$set": {"indexing_status": "ready" if photo_count else "empty"}})
+    return {"status": "reindexed", "photos": photo_count, "faces_indexed": total_faces}
 
 
 @api_router.post("/events/{event_id}/archive")
@@ -886,6 +931,25 @@ async def archive_event(event_id: str, admin: dict = Depends(require_admin)):
     asked to contact the photographer) until it is restored."""
     await admin_event_or_404(event_id, admin)
     await db.events.update_one({"event_id": event_id}, {"$set": {"status": "archived"}})
+    grants = await db.access_grants.find({"event_id": event_id, "status": "active"}, {"_id": 0}).to_list(2000)
+    for grant in grants:
+        lookup = []
+        if grant.get("client_email"):
+            lookup.append({"email": grant["client_email"].lower()})
+        if grant.get("client_phone"):
+            lookup.append({"phone": grant["client_phone"]})
+        users = await db.users.find({"role": "client", "$or": lookup}, {"_id": 0, "user_id": 1}).to_list(20) if lookup else []
+        for client_user in users:
+            await db.notifications.insert_one({
+                "notification_id": f"ntf_{uuid.uuid4().hex[:12]}",
+                "client_user_id": client_user["user_id"],
+                "type": "gallery_expiry",
+                "title": "Gallery notice",
+                "body": "This gallery has been archived by the studio.",
+                "event_id": event_id,
+                "read": False,
+                "created_at": now_iso(),
+            })
     event = await get_event_or_404(event_id)
     return public_event(event)
 
@@ -973,17 +1037,18 @@ async def _ingest_photo(event: dict, data: bytes, filename: str, content_type: s
         "width": w,
         "height": h,
         "face_count": 0,
-        "indexing_status": "pending",
+        "indexing_status": "pending" if event.get("face_search_enabled", True) else "disabled",
         "uploaded_at": now_iso(),
     }
     await db.photos.insert_one(photo)
 
-    set_fields = {"indexing_status": "indexing"}
+    set_fields = {"indexing_status": "indexing" if event.get("face_search_enabled", True) else "disabled"}
     if not event.get("cover_path"):
         set_fields["cover_path"] = thumb_path
         event["cover_path"] = thumb_path  # so subsequent imports in a loop don't reset
     await db.events.update_one({"event_id": event_id}, {"$inc": {"photo_count": 1}, "$set": set_fields})
-    _wake_indexer()
+    if event.get("face_search_enabled", True):
+        _wake_indexer()
     return photo
 
 
@@ -1033,6 +1098,10 @@ async def _index_one_photo(event: dict, photo: dict) -> None:
 
 
 async def _refresh_event_index_status(event_id: str) -> None:
+    event = await db.events.find_one({"event_id": event_id}, {"_id": 0, "face_search_enabled": 1})
+    if event and not event.get("face_search_enabled", True):
+        await db.events.update_one({"event_id": event_id}, {"$set": {"indexing_status": "disabled"}})
+        return
     total = await db.photos.count_documents({"event_id": event_id})
     remaining = await db.photos.count_documents(
         {"event_id": event_id, "indexing_status": {"$in": ["pending", "indexing"]}}
@@ -1252,7 +1321,8 @@ async def grant_access(event_id: str, body: AccessGrantCreate, admin: dict = Dep
     elif body.channel == "phone":
         if not body.phone:
             raise HTTPException(status_code=400, detail="Phone required")
-        key = {"event_id": event_id, "client_phone": body.phone.strip()}
+        phone = _phone_or_400(body.phone or "")
+        key = {"event_id": event_id, "client_phone": phone}
     else:
         raise HTTPException(status_code=400, detail="Invalid channel")
 
@@ -1744,6 +1814,8 @@ async def give_consent(event_id: str, body: ConsentBody, user: dict = Depends(re
 async def selfie_search(event_id: str, file: UploadFile = File(...), user: dict = Depends(require_client)):
     grant = await client_grant_or_403(event_id, user)
     event = await get_event_or_404(event_id)
+    if not event.get("face_search_enabled", True):
+        raise HTTPException(status_code=403, detail="Face search is disabled for this gallery. Browse All Photos instead.")
 
     consent = await db.consent_logs.find_one({"event_id": event_id, "client_user_id": user["user_id"]})
     if not consent:
@@ -1930,18 +2002,20 @@ async def _register_visitor(event_id: str, name: str, phone: str, source: str = 
     """Validate a name+mobile gate, upsert the client user + access grant +
     gallery_visitors record (for admin analytics), and return (user, token)."""
     name = (name or "").strip()
-    phone = normalize_phone(phone)
+    try:
+        phone = validate_phone(phone)
+    except PhoneValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     if not name:
         raise HTTPException(status_code=400, detail="Please enter your name")
-    if not phone or len(phone) < 6:
-        raise HTTPException(status_code=400, detail="Please enter a valid mobile number")
 
-    existing = await db.gallery_visitors.find_one({"event_id": event_id, "phone": phone})
+    phone_keys = phone_variants(phone)
+    existing = await db.gallery_visitors.find_one({"event_id": event_id, "phone": {"$in": phone_keys}})
     if existing and existing.get("status") == "blocked":
         raise HTTPException(status_code=403, detail="Your access to this gallery has been blocked")
 
-    # Find or create a lightweight client user keyed by phone.
-    user = await db.users.find_one({"phone": phone, "role": "client"})
+    # Find or create a lightweight client user keyed by canonical phone.
+    user = await db.users.find_one({"phone": {"$in": phone_keys}, "role": "client"})
     if not user:
         user = {
             "user_id": new_user_id(),

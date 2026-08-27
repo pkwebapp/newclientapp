@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ApiError } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { Button, TextField, useToast } from "@/src/components/ui";
+import { PhoneField, isPhoneNumberValid } from "@/src/components/PhoneField";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
@@ -76,7 +77,7 @@ export default function StudioOnboarding() {
     () =>
       !!contactName.trim() &&
       !!studioName.trim() &&
-      phone.trim().length >= 6 &&
+      isPhoneNumberValid(phone) &&
       !!purpose &&
       !!city.trim() &&
       !!country.trim(),
@@ -161,13 +162,12 @@ export default function StudioOnboarding() {
           placeholder="e.g. PK Photography"
           autoCapitalize="words"
         />
-        <TextField
+        <PhoneField
           testID="onb-phone"
           label="Phone number"
           value={phone}
           onChangeText={setPhone}
-          placeholder="e.g. +91 98765 43210"
-          keyboardType="phone-pad"
+          placeholder="Enter mobile number"
         />
 
         <Text style={styles.fieldLabel}>What do you mainly shoot?</Text>

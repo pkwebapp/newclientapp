@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, Pill, GlassHeader, useToast } from "@/src/components/ui";
+import { PhoneField } from "@/src/components/PhoneField";
 import DatePickerField, { todayIso } from "@/src/components/DatePickerField";
 import { formatINR } from "@/src/utils/format";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
@@ -395,7 +396,7 @@ function ContactModal({ clientId, contact, onClose, onSaved }: any) {
     <ModalShell title={editing ? "Edit contact" : "Add contact"} onClose={onClose}>
       <TextField label="Name" value={name} onChangeText={setName} testID="contact-modal-name" placeholder="Priya Sharma" />
       <TextField label="Role" value={role} onChangeText={setRole} placeholder="Bride / Groom / Father…" />
-      <TextField label="Phone" value={phone} onChangeText={setPhone} placeholder="+91…" keyboardType="phone-pad" />
+      <PhoneField label="Phone" value={phone} onChangeText={setPhone} placeholder="Enter mobile number" required={false} />
       <TextField label="Email" value={email} onChangeText={setEmail} placeholder="name@email.com" autoCapitalize="none" keyboardType="email-address" />
       <Pressable onPress={() => setIsPrimary((v) => !v)} style={styles.primaryToggle} testID="contact-modal-primary">
         <Ionicons name={isPrimary ? "checkbox" : "square-outline"} size={20} color={isPrimary ? colors.brand : colors.muted} />

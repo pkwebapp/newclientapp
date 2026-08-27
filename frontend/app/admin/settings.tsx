@@ -7,6 +7,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
+import { PhoneField } from "@/src/components/PhoneField";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { goBackOr } from "@/src/navigation/back";
 
@@ -71,8 +72,8 @@ export default function StudioSettings() {
             <Text style={styles.infoText}>These details power the client Quick Actions — Message (WhatsApp), Call, and the Google review link.</Text>
           </View>
           <TextField testID="studio-name" label="Studio name" value={name} onChangeText={setName} placeholder="PK Photography" />
-          <TextField testID="studio-whatsapp" label="WhatsApp number" value={whatsapp} onChangeText={setWhatsapp} placeholder="8888766739" keyboardType="phone-pad" />
-          <TextField testID="studio-phone" label="Call number" value={phone} onChangeText={setPhone} placeholder="8888766739" keyboardType="phone-pad" />
+          <PhoneField testID="studio-whatsapp" label="WhatsApp number" value={whatsapp} onChangeText={setWhatsapp} placeholder="Enter mobile number" required={false} />
+          <PhoneField testID="studio-phone" label="Call number" value={phone} onChangeText={setPhone} placeholder="Enter mobile number" required={false} />
           <TextField testID="studio-review-url" label="Google review link" value={reviewUrl} onChangeText={setReviewUrl} placeholder="https://g.page/r/…" autoCapitalize="none" />
           <TextField testID="studio-booking-email" label="Booking email" value={bookingEmail} onChangeText={setBookingEmail} placeholder="studio@email.com" autoCapitalize="none" keyboardType="email-address" />
           <Button testID="save-settings-btn" title="Save settings" loading={saving} onPress={save} icon="checkmark" />

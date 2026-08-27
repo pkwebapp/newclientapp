@@ -127,6 +127,7 @@ async def overview(admin: dict = Depends(require_superadmin)):
     photographers = await db.users.find({"role": "admin"}, {"_id": 0}).to_list(1000)
     rows = [await _photographer_row(user) for user in photographers]
     gallery_count = await db.events.count_documents({})
+    album_count = await db.albums.count_documents({})
     image_count = await db.photos.count_documents({})
     today = datetime.now(timezone.utc).date().isoformat()
     uploads_today = await db.photos.count_documents({"uploaded_at": {"$regex": f"^{today}"}})
@@ -140,6 +141,7 @@ async def overview(admin: dict = Depends(require_superadmin)):
             "total_photographers": len(rows),
             "active_photographers": sum(1 for row in rows if row["status"] == "active"),
             "total_galleries": gallery_count,
+            "total_albums": album_count,
             "total_images": image_count,
             "storage_bytes": storage_bytes,
             "uploads_today": uploads_today,
@@ -227,6 +229,34 @@ async def galleries(q: Optional[str] = None, admin: dict = Depends(require_super
         count = await db.photos.count_documents({"event_id": event["event_id"]})
         row = {"event_id": event["event_id"], "name": event.get("name"), "photographer": (photographer or {}).get("name") or (photographer or {}).get("email"), "images": count, "storage_bytes": 0, "created_at": event.get("created_at"), "status": event.get("status", "active")}
         if not query or query in (row["name"] or "").lower() or query in (row["photographer"] or "").lower():
+            rows.append(row)
+    return rows
+
+
+@superadmin_router.get("/albums")
+async def albums(q: Optional[str] = None, admin: dict = Depends(require_superadmin)):
+    album_docs = await db.albums.find({}, {"_id": 0}).sort("created_at", -1).to_list(5000)
+    rows = []
+    query = (q or "").strip().lower()
+    for album in album_docs:
+        photographer = await db.users.find_one({"user_id": album.get("created_by")}, {"_id": 0, "name": 1, "email": 1})
+        pages = int(album.get("page_count") or 0)
+        row = {
+            "album_id": album.get("album_id"),
+            "title": album.get("title") or "Untitled album",
+            "photographer": (photographer or {}).get("name") or (photographer or {}).get("email") or "Unknown photographer",
+            "client_name": album.get("client_name"),
+            "event_name": album.get("event_name"),
+            "event_date": album.get("event_date"),
+            "status": album.get("status", "draft"),
+            "archived": bool(album.get("archived", False)),
+            "pages": pages,
+            "spreads": int(album.get("total_spreads") or 0),
+            "created_at": album.get("created_at"),
+            "updated_at": album.get("updated_at"),
+        }
+        haystack = " ".join(str(row.get(key) or "") for key in ("title", "photographer", "client_name", "event_name")).lower()
+        if not query or query in haystack:
             rows.append(row)
     return rows
 

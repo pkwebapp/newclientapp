@@ -79,7 +79,7 @@ async def require_admin(authorization: str | None = Header(default=None)):
 async def require_admin_uploads(authorization: str | None = Header(default=None)):
     user = await require_admin(authorization)
     if user.get("uploads_disabled"):
-        raise HTTPException(status_code=403, detail="Uploads are disabled for this photographer account")
+        raise HTTPException(status_code=403, detail="Your upload feature is disabled. Upgrade to continue or contact admin.")
     return user
 
 

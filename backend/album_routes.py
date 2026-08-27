@@ -23,10 +23,18 @@ from pydantic import BaseModel
 from config import db, APP_NAME, PUBLIC_BASE_URL
 from storage_service import get_storage
 from auth_utils import require_admin, require_admin_uploads, require_client
+from phone_utils import validate_phone, PhoneValidationError
 import album_service
 import plans
 
 logger = logging.getLogger(__name__)
+
+
+def clean_access_phone(value: Optional[str]) -> str:
+    try:
+        return validate_phone(value or "")
+    except PhoneValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 album_router = APIRouter(prefix="/api/albums")
 
@@ -102,6 +110,7 @@ def _admin_album_public(a: dict) -> dict:
         "title": a.get("title"),
         "client_name": a.get("client_name"),
         "event_name": a.get("event_name"),
+        "event_date": a.get("event_date"),
         "status": a.get("status", "draft"),
         "archived": bool(a.get("archived", False)),
         "total_spreads": a.get("total_spreads", 0),
@@ -130,6 +139,7 @@ def _viewer_manifest(a: dict) -> dict:
         "title": a.get("title"),
         "client_name": a.get("client_name"),
         "event_name": a.get("event_name"),
+        "event_date": a.get("event_date"),
         "total_spreads": a.get("total_spreads", 0),
         "settings": {
             "auto_open": a.get("auto_open", False),
@@ -151,12 +161,14 @@ class AlbumCreate(BaseModel):
     title: str
     client_name: Optional[str] = None
     event_name: Optional[str] = None
+    event_date: Optional[str] = None
 
 
 class AlbumUpdate(BaseModel):
     title: Optional[str] = None
     client_name: Optional[str] = None
     event_name: Optional[str] = None
+    event_date: Optional[str] = None
     auto_open: Optional[bool] = None
     page_turn_sound: Optional[bool] = None
     autoplay: Optional[bool] = None
@@ -191,6 +203,7 @@ async def create_album(body: AlbumCreate, admin: dict = Depends(require_admin)):
         "title": body.title.strip() or "Untitled Album",
         "client_name": (body.client_name or "").strip() or None,
         "event_name": (body.event_name or "").strip() or None,
+        "event_date": (body.event_date or "").strip() or None,
         "status": "draft",
         "archived": False,
         "share_token": uuid.uuid4().hex + uuid.uuid4().hex[:8],
@@ -239,6 +252,8 @@ async def update_album(album_id: str, body: AlbumUpdate, admin: dict = Depends(r
         updates["autoplay_interval"] = max(1.5, min(8.0, float(updates["autoplay_interval"])))
     if "title" in updates:
         updates["title"] = updates["title"].strip() or "Untitled Album"
+    if "event_date" in updates:
+        updates["event_date"] = updates["event_date"].strip() or None
     if updates:
         updates["updated_at"] = now_iso()
         await db.albums.update_one({"album_id": album_id}, {"$set": updates})
@@ -406,7 +421,8 @@ async def grant_album_access(album_id: str, body: AlbumAccessCreate,
     elif body.channel == "phone":
         if not body.phone or not body.phone.strip():
             raise HTTPException(status_code=400, detail="Phone number required")
-        key = {"album_id": album_id, "client_phone": body.phone.strip()}
+        phone = clean_access_phone(body.phone)
+        key = {"album_id": album_id, "client_phone": phone}
     else:
         raise HTTPException(status_code=400, detail="Invalid channel")
 

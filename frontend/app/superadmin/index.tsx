@@ -23,6 +23,7 @@ export default function SuperAdminDashboard() {
     ["Total Photographers", number(stats.total_photographers), "people-outline"],
     ["Active Photographers", number(stats.active_photographers), "checkmark-circle-outline"],
     ["Total Galleries", number(stats.total_galleries), "images-outline"],
+    ["Total Albums", number(stats.total_albums), "book-outline"],
     ["Total Images", number(stats.total_images), "image-outline"],
     ["Storage Used", formatBytes(stats.storage_bytes), "cloud-outline"],
     ["Uploads Today", number(stats.uploads_today), "cloud-upload-outline"],

@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, EmptyState, Pill, useToast } from "@/src/components/ui";
+import DatePickerField from "@/src/components/DatePickerField";
 import { HeaderMenuButton } from "@/src/components/MobileShell";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
@@ -27,6 +28,7 @@ type Album = {
   title: string;
   client_name?: string | null;
   event_name?: string | null;
+  event_date?: string | null;
   status: string;
   archived?: boolean;
   total_spreads: number;
@@ -55,7 +57,7 @@ export default function AlbumsScreen() {
   const [creating, setCreating] = useState(false);
   const [title, setTitle] = useState("");
   const [client, setClient] = useState("");
-  const [event, setEvent] = useState("");
+  const [eventDate, setEventDate] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -87,10 +89,10 @@ export default function AlbumsScreen() {
       const a: Album = await api.post("/albums", {
         title: title.trim(),
         client_name: client.trim() || undefined,
-        event_name: event.trim() || undefined,
+        event_date: eventDate || undefined,
       });
       toast.show("Album created — upload a PDF next", "success");
-      setShowCreate(false); setTitle(""); setClient(""); setEvent("");
+      setShowCreate(false); setTitle(""); setClient(""); setEventDate("");
       router.push(`/admin/album/${a.album_id}` as any);
     } catch (e: any) {
       toast.show(e instanceof ApiError ? e.message : "Could not create album", "error");
@@ -156,7 +158,7 @@ export default function AlbumsScreen() {
                     <View style={{ flex: 1 }}>
                       <Text style={styles.title} numberOfLines={1}>{a.title}</Text>
                       <Text style={styles.sub} numberOfLines={1}>
-                        {[a.client_name, a.event_name].filter(Boolean).join(" · ") || "No client set"}
+                        {[a.client_name, a.event_name, a.event_date].filter(Boolean).join(" · ") || "No client set"}
                       </Text>
                       <Text style={styles.meta}>
                         {a.has_pdf ? `${a.total_spreads} spreads · ${a.page_count} pages` : "No PDF uploaded"}
@@ -194,7 +196,7 @@ export default function AlbumsScreen() {
           <KeyboardAwareScrollView keyboardShouldPersistTaps="handled" bottomOffset={24}>
             <TextField testID="album-title-input" label="Album title" value={title} onChangeText={setTitle} placeholder="The Wedding Album" />
             <TextField testID="album-client-input" label="Client name" value={client} onChangeText={setClient} placeholder="Aisha & Rohan" />
-            <TextField testID="album-event-input" label="Event" value={event} onChangeText={setEvent} placeholder="Dec 2025" />
+            <DatePickerField testID="album-event-date-input" label="Album date" value={eventDate} onChange={setEventDate} emptyLabel="Choose album date" hint="Optional · select from calendar" />
             <Button testID="create-album-btn" title="Create album" loading={creating} onPress={create} />
           </KeyboardAwareScrollView>
         </View>
