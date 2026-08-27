@@ -71,6 +71,7 @@ export default function ClientDashboard() {
   const studio = dash?.studio || {};
   const memories = dash?.memories || [];
   const upcoming = dash?.upcoming || [];
+  const upcomingShoots = dash?.upcoming_shoots || [];
   const firstName = dash?.profile?.first_name || user?.name || "there";
 
   const openWhatsApp = () => {
@@ -85,7 +86,6 @@ export default function ClientDashboard() {
 
   const ACTIONS = [
     { key: "book", label: "Book", icon: "calendar", onPress: () => router.push("/client/book") },
-    { key: "bookings", label: "My Bookings", icon: "clipboard-outline", onPress: () => router.push("/client/bookings") },
     { key: "message", label: "Message", icon: "logo-whatsapp", onPress: openWhatsApp },
     { key: "call", label: "Call", icon: "call", onPress: call },
     { key: "review", label: "Review", icon: "star", onPress: () => router.push("/client/review") },
@@ -146,6 +146,21 @@ export default function ClientDashboard() {
               </Pressable>
             ))}
           </View>
+
+          {upcomingShoots.length > 0 && (
+            <>
+              <View style={styles.sectionHead}><Text style={styles.sectionTitle}>Upcoming shoots</Text><Pressable testID="view-client-bookings" onPress={() => router.push("/client/bookings")}><Text style={styles.viewAll}>View all</Text></Pressable></View>
+              <View style={styles.upcomingBox}>
+                {upcomingShoots.map((shoot: any) => (
+                  <Pressable key={shoot.request_id} testID={`upcoming-shoot-${shoot.request_id}`} onPress={() => router.push(`/client/booking/${shoot.request_id}`)} style={styles.upcomingRow}>
+                    <View style={styles.upcomingIcon}><Ionicons name="calendar" size={16} color={colors.brand} /></View>
+                    <View style={{ flex: 1 }}><Text style={styles.upcomingTitle}>{shoot.event_name || shoot.service_type}</Text><Text style={styles.upcomingSub}>{shoot.preferred_date} · {shoot.start_time || "Time pending"} · {shoot.location || "Venue pending"}</Text></View>
+                    <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          )}
 
           {/* Upcoming */}
           {upcoming.length > 0 && (
@@ -279,6 +294,8 @@ const styles = StyleSheet.create({
   cardBottom: { position: "absolute", left: spacing.lg, right: spacing.lg, bottom: spacing.lg },
   cardTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"] },
   sectionTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, marginBottom: spacing.md, marginTop: spacing.lg },
+  sectionHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
+  viewAll: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600", marginTop: spacing.lg, marginBottom: spacing.md },
   yearHead: { color: colors.brand, fontFamily: fonts.display, fontSize: fontSize.lg, marginBottom: spacing.md, marginTop: spacing.lg, letterSpacing: 1 },
   actionsRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.sm },
   action: { flex: 1, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, paddingVertical: spacing.lg, alignItems: "center", gap: spacing.sm, borderWidth: 1, borderColor: colors.border },

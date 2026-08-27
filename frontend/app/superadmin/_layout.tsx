@@ -3,9 +3,12 @@ import { ActivityIndicator, StyleSheet, View } from "react-native";
 
 import { useAuth } from "@/src/context/AuthContext";
 import { SuperAdminShell } from "@/src/components/SuperAdminShell";
+import { getAppSurface } from "@/src/navigation/host-routing";
 
 export default function SuperAdminLayout() {
   const { user, loading } = useAuth();
+  const surface = getAppSurface();
+  if (surface === "client" || surface === "studio") return <Redirect href="/" />;
   if (loading) return <View style={styles.loading}><ActivityIndicator /></View>;
   if (!user) return <Redirect href="/superadmin-login" />;
   if (user.role !== "superadmin") return <Redirect href="/" />;

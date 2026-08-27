@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View, Platform } from "react-native";
+import { Pressable, StyleSheet, Text, View, Platform, Linking } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -12,6 +12,7 @@ import { useResponsive } from "@/src/hooks/use-responsive";
 import { goBackOr } from "@/src/navigation/back";
 
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { APP_DOMAIN, getAppSurface } from "@/src/navigation/host-routing";
 
 export default function AdminLogin() {
   const router = useRouter();
@@ -19,6 +20,7 @@ export default function AdminLogin() {
   const { signInWithToken, startGoogleLogin } = useAuth();
   const toast = useToast();
   const { isDesktop } = useResponsive();
+  const surface = getAppSurface();
 
   const [mode, setMode] = useState<"login" | "register">("login");
   const [name, setName] = useState("");
@@ -60,6 +62,16 @@ export default function AdminLogin() {
       setGoogleLoading(false);
     }
   };
+
+  if (surface === "client" || surface === "superadmin") {
+    return (
+      <View style={styles.restrictedContainer} testID="admin-login-restricted">
+        <Text style={styles.restrictedTitle}>Studio sign-in is on its own workspace</Text>
+        <Text style={styles.restrictedText}>Use the dedicated studio domain to keep client and platform access separate.</Text>
+        <Button title="Open studio workspace" onPress={() => Linking.openURL(`${APP_DOMAIN.studio}/admin-login`)} icon="briefcase-outline" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container} testID="admin-login-screen">
@@ -133,13 +145,6 @@ export default function AdminLogin() {
               {mode === "login" ? "New studio? Create an account" : "Already have an account? Sign in"}
             </Text>
           </Pressable>
-          <Pressable
-            testID="superadmin-login-link"
-            onPress={() => router.push("/superadmin-login")}
-            style={{ marginTop: spacing.lg, alignItems: "center", minHeight: 44, justifyContent: "center" }}
-          >
-            <Text style={styles.superadminLink}>Platform owner sign in</Text>
-          </Pressable>
         </View>
       </KeyboardAwareScrollView>
     </View>
@@ -147,6 +152,9 @@ export default function AdminLogin() {
 }
 
 const styles = StyleSheet.create({
+  restrictedContainer: { flex: 1, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", padding: spacing.xl },
+  restrictedTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"], textAlign: "center" },
+  restrictedText: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 21, textAlign: "center", marginVertical: spacing.lg, maxWidth: 420 },
   container: { flex: 1, backgroundColor: colors.surface },
   body: { paddingHorizontal: spacing.xl, paddingTop: spacing["2xl"] },
   bodyDesktop: { maxWidth: 460, width: "100%", alignSelf: "center", paddingTop: spacing["3xl"] },

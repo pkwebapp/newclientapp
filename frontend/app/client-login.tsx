@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View, Linking } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -13,6 +13,7 @@ import { useResponsive } from "@/src/hooks/use-responsive";
 import { goBackOr } from "@/src/navigation/back";
 
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { APP_DOMAIN, getAppSurface } from "@/src/navigation/host-routing";
 
 export default function ClientLogin() {
   const router = useRouter();
@@ -20,6 +21,7 @@ export default function ClientLogin() {
   const { signInWithToken } = useAuth();
   const toast = useToast();
   const { isDesktop } = useResponsive();
+  const surface = getAppSurface();
 
   const [channel, setChannel] = useState<"email" | "phone">("email");
   const [step, setStep] = useState<"identify" | "verify">("identify");
@@ -76,6 +78,16 @@ export default function ClientLogin() {
       setLoading(false);
     }
   };
+
+  if (surface === "studio" || surface === "superadmin") {
+    return (
+      <View style={styles.restrictedContainer} testID="client-login-restricted">
+        <Text style={styles.restrictedTitle}>Client sign-in is on its own website</Text>
+        <Text style={styles.restrictedText}>Use the client domain to access your galleries and bookings.</Text>
+        <Button title="Open client website" onPress={() => Linking.openURL(`${APP_DOMAIN.client}/client-login`)} icon="sparkles-outline" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.container} testID="client-login-screen">
@@ -177,6 +189,9 @@ export default function ClientLogin() {
 }
 
 const styles = StyleSheet.create({
+  restrictedContainer: { flex: 1, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center", padding: spacing.xl },
+  restrictedTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"], textAlign: "center" },
+  restrictedText: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 21, textAlign: "center", marginVertical: spacing.lg, maxWidth: 420 },
   container: { flex: 1, backgroundColor: colors.surface },
   body: { paddingHorizontal: spacing.xl, paddingTop: spacing["2xl"] },
   bodyDesktop: { maxWidth: 460, width: "100%", alignSelf: "center", paddingTop: spacing["3xl"] },

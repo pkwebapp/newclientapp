@@ -21,10 +21,19 @@ export function todayIso() {
   return toIsoDate(new Date());
 }
 
+export function isValidIsoDate(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return false;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
+}
+
 export function formatDateLabel(isoDate: string, empty = "Choose a date") {
-  if (!isoDate) return empty;
+  if (!isValidIsoDate(isoDate)) return empty;
   const [year, month, day] = isoDate.split("-").map(Number);
-  if (!year || !month || !day) return empty;
   return `${day} ${MONTH_NAMES[month - 1]} ${year}`;
 }
 
@@ -58,9 +67,9 @@ export default function DatePickerField({
 }: Props) {
   const [open, setOpen] = useState(false);
   const initialMonth = useMemo(() => {
-    if (value) {
+    if (isValidIsoDate(value)) {
       const [y, m] = value.split("-").map(Number);
-      if (y && m) return new Date(y, m - 1, 1);
+      return new Date(y, m - 1, 1);
     }
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -68,9 +77,9 @@ export default function DatePickerField({
   const [calendarMonth, setCalendarMonth] = useState<Date>(initialMonth);
 
   const openPicker = () => {
-    if (value) {
+    if (isValidIsoDate(value)) {
       const [y, m] = value.split("-").map(Number);
-      if (y && m) setCalendarMonth(new Date(y, m - 1, 1));
+      setCalendarMonth(new Date(y, m - 1, 1));
     } else {
       const now = new Date();
       setCalendarMonth(new Date(now.getFullYear(), now.getMonth(), 1));

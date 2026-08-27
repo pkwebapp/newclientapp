@@ -8,6 +8,7 @@ import { DesktopShell } from "@/src/components/DesktopShell";
 import { MobileShell } from "@/src/components/MobileShell";
 import { colors, fonts, fontSize } from "@/src/theme";
 
+import { getAppSurface } from "@/src/navigation/host-routing";
 /**
  * Auth gate for all /admin/* routes.
  *
@@ -21,6 +22,9 @@ import { colors, fonts, fontSize } from "@/src/theme";
 export default function AdminLayout() {
   const { user, loading } = useAuth();
   const { isDesktop } = useResponsive();
+  const surface = getAppSurface();
+
+  if (surface === "client" || surface === "superadmin") return <Redirect href="/" />;
 
   if (loading) {
     return (

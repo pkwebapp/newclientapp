@@ -8,6 +8,7 @@ import { MobileShell } from "@/src/components/MobileShell";
 import { DesktopShell } from "@/src/components/DesktopShell";
 
 import { colors, fonts, fontSize } from "@/src/theme";
+import { getAppSurface } from "@/src/navigation/host-routing";
 
 /**
  * Auth gate for all /client/* routes.
@@ -19,6 +20,9 @@ import { colors, fonts, fontSize } from "@/src/theme";
 export default function ClientLayout() {
   const { user, loading } = useAuth();
   const { isDesktop } = useResponsive();
+  const surface = getAppSurface();
+
+  if (surface === "studio" || surface === "superadmin") return <Redirect href="/" />;
 
   if (loading) {
     return (

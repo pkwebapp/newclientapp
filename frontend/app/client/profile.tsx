@@ -9,6 +9,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api, ApiError } from "@/src/api/client";
 import { Button, GlassHeader, TextField, useToast } from "@/src/components/ui";
+import DatePickerField, { isValidIsoDate } from "@/src/components/DatePickerField";
 import { PhoneField, isPhoneNumberValid } from "@/src/components/PhoneField";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
@@ -49,7 +50,7 @@ export default function ClientProfileScreen() {
       setPhone(data.phone || "");
       setEmail(data.email || "");
       setCity(data.city || "");
-      setDob(data.dob || "");
+      setDob(isValidIsoDate(data.dob || "") ? data.dob : "");
       setProfession(data.profession || "");
       setCompany(data.company || "");
       setAbout(data.about || "");
@@ -246,7 +247,7 @@ export default function ClientProfileScreen() {
             <TextField testID="profile-city" label="City" value={city} onChangeText={setCity} placeholder="e.g. Goa" autoCapitalize="words" />
           </View>
           <View style={styles.rowItem}>
-            <TextField testID="profile-dob" label="Date of birth" value={dob} onChangeText={setDob} placeholder="YYYY-MM-DD" keyboardType="numbers-and-punctuation" maxLength={10} />
+            <DatePickerField testID="profile-dob" label="Date of birth" value={dob} onChange={setDob} emptyLabel="Choose date of birth" />
           </View>
         </View>
 

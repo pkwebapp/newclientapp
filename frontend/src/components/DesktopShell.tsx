@@ -11,6 +11,7 @@ type NavItem = { label: string; icon: keyof typeof Ionicons.glyphMap; href: stri
 
 const ADMIN_NAV: NavItem[] = [
   { label: "Home", icon: "home-outline", href: "/admin" },
+  { label: "Bookings", icon: "calendar-outline", href: "/admin/bookings" },
   { label: "Client Galleries", icon: "images-outline", href: "/admin/galleries" },
   { label: "Clients", icon: "people-outline", href: "/admin/clients" },
   { label: "Albums", icon: "book-outline", href: "/admin/albums" },
@@ -18,6 +19,7 @@ const ADMIN_NAV: NavItem[] = [
 
 const CLIENT_NAV: NavItem[] = [
   { label: "Your Memories", icon: "images-outline", href: "/client" },
+  { label: "My Bookings", icon: "calendar-outline", href: "/client/bookings" },
   { label: "Explore Services", icon: "sparkles-outline", href: "/client/services" },
 ];
 
@@ -41,9 +43,11 @@ export function DesktopShell({
 
   const isActive = (href: string) => {
     if (href === "/admin") return pathname === "/admin";
+    if (href === "/admin/bookings") return pathname === "/admin/bookings" || pathname.startsWith("/admin/booking");
     if (href === "/admin/galleries") return pathname.startsWith("/admin/galleries") || pathname.startsWith("/admin/event");
     if (href === "/admin/clients") return pathname === "/admin/clients" || pathname.startsWith("/admin/client");
     if (href === "/admin/albums") return pathname.startsWith("/admin/album");
+    if (href === "/client/bookings") return pathname === "/client/bookings" || pathname.startsWith("/client/booking");
     if (href === "/client/services") return pathname === "/client/services";
     if (href === "/client") return pathname === "/client";
     return pathname === href;

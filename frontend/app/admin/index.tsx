@@ -237,7 +237,7 @@ export default function AdminDashboard() {
               {selectedBooking?.location ? <Text style={styles.bookingDetailText}>Location: {selectedBooking.location}</Text> : null}
               {selectedBooking?.message ? <Text style={styles.bookingMessage}>“{selectedBooking.message}”</Text> : null}
             </View>
-            <Button testID="booking-details-clients-btn" title="Open client CRM" variant="secondary" onPress={() => { setSelectedBooking(null); router.push("/admin/clients"); }} />
+            <Button testID="booking-details-open-btn" title="Open booking workspace" variant="secondary" onPress={() => { const requestId = selectedBooking?.booking_request_id; setSelectedBooking(null); if (requestId) router.push(`/admin/booking/${requestId}`); else router.push("/admin/bookings"); }} />
           </Pressable>
         </Pressable>
       </Modal>

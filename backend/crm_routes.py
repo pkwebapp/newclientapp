@@ -35,6 +35,16 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def clean_iso_date(value: Optional[str], field: str = "date") -> Optional[str]:
+    if value is None or not str(value).strip():
+        return None
+    try:
+        parsed = datetime.strptime(str(value).strip(), "%Y-%m-%d")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"{field.capitalize()} must be a valid calendar date (YYYY-MM-DD)") from exc
+    return parsed.date().isoformat()
+
+
 def clean_contact_phone(value: Optional[str]) -> Optional[str]:
     if not value or not value.strip():
         return None
@@ -446,6 +456,8 @@ async def update_client(client_id: str, body: ClientUpdate, admin: dict = Depend
     studio_id = admin["user_id"]
     await _client_or_404(client_id, studio_id)
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "preferred_date" in updates:
+        updates["preferred_date"] = clean_iso_date(updates["preferred_date"], "preferred date")
     if "type" in updates and updates["type"] not in CLIENT_TYPES:
         raise HTTPException(status_code=400, detail=f"type must be one of {sorted(CLIENT_TYPES)}")
     if "status" in updates and updates["status"] not in CLIENT_STATUSES:
@@ -513,6 +525,8 @@ async def update_contact(client_id: str, contact_id: str, body: ContactUpdate,
     if not existing:
         raise HTTPException(status_code=404, detail="Contact not found")
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "preferred_date" in updates:
+        updates["preferred_date"] = clean_iso_date(updates["preferred_date"], "preferred date")
     if "phone" in updates:
         updates["phone"] = clean_contact_phone(updates["phone"])
     if updates.get("is_primary"):
@@ -564,6 +578,8 @@ async def update_date(client_id: str, date_id: str, body: ImportantDateUpdate,
     if not existing:
         raise HTTPException(status_code=404, detail="Important date not found")
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "preferred_date" in updates:
+        updates["preferred_date"] = clean_iso_date(updates["preferred_date"], "preferred date")
     if updates:
         await db.important_dates.update_one({"date_id": date_id}, {"$set": updates})
     doc = await db.important_dates.find_one({"date_id": date_id}, {"_id": 0})
@@ -634,6 +650,8 @@ async def get_my_studio_profile(admin: dict = Depends(require_admin)):
 @crm_router.patch("/studio/profile")
 async def update_my_studio_profile(body: StudioProfileUpdate, admin: dict = Depends(require_admin)):
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "preferred_date" in updates:
+        updates["preferred_date"] = clean_iso_date(updates["preferred_date"], "preferred date")
     updates["studio_id"] = admin["user_id"]
     updates["updated_at"] = now_iso()
     await db.studio_profiles.update_one(
@@ -729,6 +747,13 @@ async def client_dashboard(user: dict = Depends(require_client)):
         upcoming = [u for u in upcoming if u["days_until"] is not None]
         upcoming.sort(key=lambda u: u["days_until"])
 
+    # ---- Scheduled shoots (from the booking pipeline) ----
+    scheduled_bookings = await db.booking_requests.find(
+        {"client_user_id": user["user_id"], "status": "scheduled"},
+        {"_id": 0},
+    ).sort("preferred_date", 1).to_list(20)
+    upcoming_shoots = [_booking_view(doc) for doc in scheduled_bookings]
+
     # ---- Studio contact (for Quick Actions) ----
     studio_id = None
     if studio_ids:
@@ -742,6 +767,7 @@ async def client_dashboard(user: dict = Depends(require_client)):
         "profile": {"name": name, "first_name": first_name},
         "memories": memories,
         "upcoming": upcoming[:6],
+        "upcoming_shoots": upcoming_shoots,
         "studio": studio,
     }
 
@@ -774,11 +800,24 @@ class BookingUpdateBody(BaseModel):
     notes: Optional[str] = None
 
 
+class ClientBookingEditBody(BaseModel):
+    event_name: Optional[str] = None
+    service_type: Optional[str] = None
+    preferred_date: Optional[str] = None
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+    location: Optional[str] = None
+    requirement: Optional[str] = None
+    expected_budget: Optional[float] = None
+    message: Optional[str] = None
+
+
 class QuoteBody(BaseModel):
     total_amount: float = Field(ge=0)
     advance_amount: float = Field(ge=0)
     payment_terms: Optional[str] = None
     notes: Optional[str] = None
+    offerings: list[dict] = Field(default_factory=list)
 
 
 class PaymentBody(BaseModel):
@@ -793,7 +832,16 @@ class BookingStatusBody(BaseModel):
     status: str
 
 
-BOOKING_STATUSES = {"new_request", "quotation", "payment_pending", "confirmed", "completed", "cancelled"}
+class ScheduleBody(BaseModel):
+    scheduled_date: str = Field(min_length=1)
+    start_time: str = Field(min_length=1)
+    end_time: str = Field(min_length=1)
+    venue: str = Field(min_length=1)
+    assigned_photographer: Optional[str] = None
+    team_notes: Optional[str] = None
+
+
+BOOKING_STATUSES = {"new_request", "quotation", "payment_pending", "confirmed", "scheduled", "completed", "cancelled"}
 
 
 async def _fallback_booking_studio_id() -> str | None:
@@ -832,6 +880,53 @@ async def _fallback_booking_studio_id() -> str | None:
     return seed.get("user_id") if seed else None
 
 
+async def _ensure_booking_lead(studio_id: str | None, user: dict) -> str | None:
+    """Create/link a studio CRM lead for every new enquiry."""
+    if not studio_id:
+        return None
+    ors = []
+    if user.get("phone"):
+        ors.append({"phone": {"$in": phone_variants(user["phone"])}})
+    if user.get("email"):
+        ors.append({"email": user["email"].lower()})
+    if not ors:
+        return None
+    contact = await db.contacts.find_one({"studio_id": studio_id, "$or": ors}, {"_id": 0})
+    if contact:
+        await db.clients.update_one(
+            {"client_id": contact["client_id"], "studio_id": studio_id},
+            {"$addToSet": {"tags": "Lead"}, "$set": {"updated_at": now_iso()}},
+        )
+        return contact["client_id"]
+
+    client_id = _new_id("cli")
+    ts = now_iso()
+    await db.clients.insert_one({
+        "client_id": client_id,
+        "studio_id": studio_id,
+        "name": user.get("name") or "New enquiry",
+        "type": "individual",
+        "status": "lead",
+        "pipeline_stage": "new_inquiry",
+        "tags": ["Lead"],
+        "notes": "Automatically created from a booking enquiry.",
+        "created_at": ts,
+        "updated_at": ts,
+    })
+    await db.contacts.insert_one({
+        "contact_id": _new_id("con"),
+        "client_id": client_id,
+        "studio_id": studio_id,
+        "name": user.get("name") or "New enquiry",
+        "role": "Lead",
+        "phone": clean_contact_phone(user.get("phone")),
+        "email": (user.get("email") or None),
+        "is_primary": True,
+        "created_at": ts,
+    })
+    return client_id
+
+
 
 @crm_router.post("/me/booking-requests")
 async def create_booking_request(body: BookingRequestBody, user: dict = Depends(require_client)):
@@ -846,15 +941,17 @@ async def create_booking_request(body: BookingRequestBody, user: dict = Depends(
     routing_source = "associated_studio" if studio_id else "default_admin_phone"
     if not studio_id:
         studio_id = await _fallback_booking_studio_id()
+    crm_client_id = await _ensure_booking_lead(studio_id, user)
     doc = {
         "request_id": _new_id("bkg"),
         "client_user_id": user["user_id"],
+        "crm_client_id": crm_client_id,
         "studio_id": studio_id,
         "routing_source": routing_source,
         "status": "new_request",
         "event_name": (body.event_name or body.service_type).strip(),
         "service_type": body.service_type.strip(),
-        "preferred_date": (body.preferred_date or "").strip() or None,
+        "preferred_date": clean_iso_date(body.preferred_date, "preferred date"),
         "start_time": (body.start_time or "").strip() or None,
         "end_time": (body.end_time or "").strip() or None,
         "location": (body.location or "").strip() or None,
@@ -947,6 +1044,8 @@ async def update_admin_booking(booking_id: str, body: BookingUpdateBody, admin: 
     doc = await db.booking_requests.find_one({"request_id": booking_id, "studio_id": admin["user_id"]}, {"_id": 0})
     if not doc: raise HTTPException(status_code=404, detail="Booking not found")
     updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "preferred_date" in updates:
+        updates["preferred_date"] = clean_iso_date(updates["preferred_date"], "preferred date")
     if "status" in updates and updates["status"] not in BOOKING_STATUSES: raise HTTPException(status_code=400, detail="Invalid booking status")
     await db.booking_requests.update_one({"request_id": booking_id}, {"$set": updates})
     return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
@@ -958,9 +1057,39 @@ async def send_booking_quote(booking_id: str, body: QuoteBody, admin: dict = Dep
     if not doc: raise HTTPException(status_code=404, detail="Booking not found")
     if body.advance_amount > body.total_amount: raise HTTPException(status_code=400, detail="Advance cannot exceed total")
     revision = int(doc.get("quote_revision") or 0) + 1
-    quote = {"revision": revision, "total_amount": body.total_amount, "advance_amount": body.advance_amount, "payment_terms": body.payment_terms, "notes": body.notes, "created_at": now_iso()}
-    await db.booking_requests.update_one({"request_id": booking_id}, {"$set": {"total_amount": body.total_amount, "advance_amount": body.advance_amount, "payment_terms": body.payment_terms, "notes": body.notes, "quote_revision": revision, "status": "quotation"}, "$push": {"quote_history": quote}})
+    offerings = [
+        {
+            "title": str(item.get("title") or "Included service").strip(),
+            "description": str(item.get("description") or "").strip(),
+            "amount": float(item.get("amount") or 0),
+        }
+        for item in body.offerings
+        if isinstance(item, dict)
+    ]
+    quote = {"revision": revision, "total_amount": body.total_amount, "advance_amount": body.advance_amount, "payment_terms": body.payment_terms, "notes": body.notes, "offerings": offerings, "created_at": now_iso()}
+    await db.booking_requests.update_one({"request_id": booking_id}, {"$set": {"total_amount": body.total_amount, "advance_amount": body.advance_amount, "payment_terms": body.payment_terms, "notes": body.notes, "offerings": offerings, "quote_revision": revision, "status": "quotation"}, "$push": {"quote_history": quote}})
     await _notify_client(doc.get("client_user_id"), "Quotation received", f"Your studio sent quotation revision {revision}.", "quotation", booking_id)
+    return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
+
+
+@crm_router.patch("/me/bookings/{booking_id}")
+async def edit_client_booking(booking_id: str, body: ClientBookingEditBody, user: dict = Depends(require_client)):
+    doc = await db.booking_requests.find_one({"request_id": booking_id, "client_user_id": user["user_id"]}, {"_id": 0})
+    if not doc: raise HTTPException(status_code=404, detail="Booking not found")
+    if doc.get("status") not in {"new_request", "quotation", "payment_pending"}:
+        raise HTTPException(status_code=400, detail="This booking can no longer be edited")
+    updates = {k: v for k, v in body.model_dump(exclude_unset=True).items() if v is not None}
+    if "preferred_date" in updates:
+        updates["preferred_date"] = clean_iso_date(updates["preferred_date"], "preferred date")
+    if not updates: raise HTTPException(status_code=400, detail="Add at least one change")
+    if "service_type" in updates and not str(updates["service_type"]).strip():
+        raise HTTPException(status_code=400, detail="Service type cannot be empty")
+    updates["client_change_request"] = "Client updated booking enquiry"
+    updates["status"] = "new_request"
+    updates["updated_at"] = now_iso()
+    await db.booking_requests.update_one({"request_id": booking_id}, {"$set": updates})
+    if doc.get("studio_id"):
+        await db.notifications.insert_one({"notification_id": _new_id("ntf"), "studio_id": doc["studio_id"], "type": "booking_update", "title": "Booking enquiry updated", "body": f"{doc.get('contact_name') or 'A client'} updated their enquiry.", "booking_request_id": booking_id, "read": False, "created_at": now_iso()})
     return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
 
 
@@ -968,7 +1097,9 @@ async def send_booking_quote(booking_id: str, body: QuoteBody, admin: dict = Dep
 async def accept_booking_quote(booking_id: str, user: dict = Depends(require_client)):
     doc = await db.booking_requests.find_one({"request_id": booking_id, "client_user_id": user["user_id"]}, {"_id": 0})
     if not doc: raise HTTPException(status_code=404, detail="Booking not found")
-    await db.booking_requests.update_one({"request_id": booking_id}, {"$set": {"status": "payment_pending"}})
+    if doc.get("status") != "quotation" or not doc.get("quote_revision"):
+        raise HTTPException(status_code=400, detail="There is no quotation ready to accept")
+    await db.booking_requests.update_one({"request_id": booking_id}, {"$set": {"status": "payment_pending", "client_decision": "accepted", "client_decided_at": now_iso()}})
     if doc.get("studio_id"): await db.notifications.insert_one({"notification_id": _new_id("ntf"), "studio_id": doc["studio_id"], "type": "booking_update", "title": "Quotation accepted", "body": f"{doc.get('contact_name') or 'A client'} accepted the quotation.", "booking_request_id": booking_id, "read": False, "created_at": now_iso()})
     return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
 
@@ -990,7 +1121,8 @@ async def add_booking_payment(booking_id: str, body: PaymentBody, admin: dict = 
     payment = {"payment_id": _new_id("pay"), **body.model_dump(), "paid_at": now_iso() if body.status == "paid" else None}
     payments = (doc.get("payments") or []) + [payment]
     paid = sum(float(p.get("amount") or 0) for p in payments if p.get("status") == "paid")
-    status = "confirmed" if doc.get("total_amount") and paid >= float(doc["total_amount"]) else ("payment_pending" if doc.get("status") in {"quotation", "payment_pending"} else doc.get("status", "new_request"))
+    advance_due = float(doc.get("advance_amount") or doc.get("total_amount") or 0)
+    status = "confirmed" if advance_due > 0 and paid >= advance_due else ("payment_pending" if doc.get("status") in {"quotation", "payment_pending"} else doc.get("status", "new_request"))
     updates = {"payments": payments, "status": status}
     if status == "confirmed" and not doc.get("booking_id"):
         count = await db.booking_requests.count_documents({"booking_id": {"$ne": None}})
@@ -1000,9 +1132,41 @@ async def add_booking_payment(booking_id: str, body: PaymentBody, admin: dict = 
     return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
 
 
+@crm_router.post("/bookings/{booking_id}/schedule")
+async def schedule_booking(booking_id: str, body: ScheduleBody, admin: dict = Depends(require_admin)):
+    doc = await db.booking_requests.find_one({"request_id": booking_id, "studio_id": admin["user_id"]}, {"_id": 0})
+    if not doc: raise HTTPException(status_code=404, detail="Booking not found")
+    if doc.get("status") != "confirmed":
+        raise HTTPException(status_code=400, detail="Record the booking payment before scheduling")
+    scheduled_date = clean_iso_date(body.scheduled_date, "scheduled date")
+    if body.end_time <= body.start_time:
+        raise HTTPException(status_code=400, detail="End time must be after start time")
+    same_day = await db.booking_requests.find({
+        "studio_id": admin["user_id"],
+        "request_id": {"$ne": booking_id},
+        "status": "scheduled",
+        "preferred_date": scheduled_date,
+    }, {"_id": 0, "start_time": 1, "end_time": 1}).to_list(100)
+    for other in same_day:
+        if other.get("start_time") and other.get("end_time") and body.start_time < other["end_time"] and body.end_time > other["start_time"]:
+            raise HTTPException(status_code=409, detail="This time overlaps another scheduled booking")
+    schedule = {
+        "date": scheduled_date,
+        "start_time": body.start_time,
+        "end_time": body.end_time,
+        "venue": body.venue.strip(),
+        "assigned_photographer": (body.assigned_photographer or "").strip() or None,
+        "team_notes": (body.team_notes or "").strip() or None,
+        "scheduled_at": now_iso(),
+    }
+    await db.booking_requests.update_one({"request_id": booking_id}, {"$set": {"status": "scheduled", "preferred_date": scheduled_date, "start_time": body.start_time, "end_time": body.end_time, "location": body.venue.strip(), "schedule": schedule, "updated_at": now_iso()}})
+    await _notify_client(doc.get("client_user_id"), "Shoot scheduled", f"Your shoot is scheduled for {scheduled_date} at {body.start_time}.", "booking_scheduled", booking_id)
+    return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
+
+
 @crm_router.get("/bookings-calendar")
 async def bookings_calendar(month: Optional[str] = None, admin: dict = Depends(require_admin)):
-    query = {"studio_id": admin["user_id"], "preferred_date": {"$ne": None}}
+    query = {"studio_id": admin["user_id"], "status": "scheduled", "preferred_date": {"$ne": None}}
     if month: query["preferred_date"] = {"$regex": f"^{month}"}
     docs = await db.booking_requests.find(query, {"_id": 0}).sort("preferred_date", 1).to_list(500)
     return [_booking_view(doc) for doc in docs]

@@ -10,6 +10,7 @@ import { H1, H2, H3, P, A, Section, Footer } from "@expo/html-elements";
 import { Button } from "@/src/components/ui";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { getAppSurface } from "@/src/navigation/host-routing";
 
 const SITE = "https://www.pikconnect.com";
 const OG_IMAGE = "https://pkphotography.in/pricing/PKP_0763%20cover.jpg";
@@ -56,11 +57,23 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const isWide = width >= 900;
   const isWebWide = Platform.OS === "web" && isWide;
+  const surface = getAppSurface();
 
-  // Logged-in users are sent to their dashboard (client-only; crawlers never run this).
   useEffect(() => {
+    if (surface === "client") {
+      router.replace(user?.role === "client" ? "/client" : "/client-login");
+      return;
+    }
+    if (surface === "studio") {
+      router.replace(user?.role === "admin" ? "/admin" : "/admin-login");
+      return;
+    }
+    if (surface === "superadmin") {
+      router.replace(user?.role === "superadmin" ? "/superadmin" : "/superadmin-login");
+      return;
+    }
     if (user) router.replace(user.role === "superadmin" ? "/superadmin" : user.role === "admin" ? "/admin" : "/client");
-  }, [user, router]);
+  }, [surface, user, router]);
 
   return (
     <>

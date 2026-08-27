@@ -39,6 +39,14 @@ export const ADMIN_TABS: TabItem[] = [
     isActive: (p) => p === "/admin",
   },
   {
+    key: "bookings",
+    label: "Bookings",
+    icon: "calendar-outline",
+    activeIcon: "calendar",
+    href: "/admin/bookings",
+    isActive: (p) => p.startsWith("/admin/bookings") || p.startsWith("/admin/booking"),
+  },
+  {
     key: "galleries",
     label: "Galleries",
     icon: "images-outline",
@@ -69,6 +77,7 @@ export const ADMIN_TABS: TabItem[] = [
 // the back affordance leads instead — standard native tab behaviour.
 export const ADMIN_TAB_ROOTS = [
   "/admin",
+  "/admin/bookings",
   "/admin/galleries",
   "/admin/clients",
   "/admin/albums",
@@ -93,6 +102,13 @@ export const ADMIN_DRAWER_ITEMS: DrawerItem[] = [
 ];
 // ---- Client (Client Gallery) ----
 export const CLIENT_DRAWER_ITEMS: DrawerItem[] = [
+  {
+    key: "bookings",
+    label: "My Bookings",
+    sublabel: "Review enquiries, quotes & shoot dates",
+    icon: "calendar-outline",
+    href: "/client/bookings",
+  },
   {
     key: "profile",
     label: "My Profile",
