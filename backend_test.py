@@ -1,59 +1,93 @@
 #!/usr/bin/env python3
 """
-Final Backend Verification for Booking System MVP
-Tests all critical endpoints and runs a complete throwaway booking lifecycle.
+Backend-only verification after switching to Cloudinary + AWS Rekognition credentials.
+Tests: supervisor/backend startup, health, admin login, event creation, photo upload with Cloudinary CDN,
+AWS Rekognition indexing, photo listing, S3 import, and cleanup.
 """
 
 import requests
-import json
 import time
-from datetime import datetime, timedelta
+import io
+from PIL import Image
 
-# Backend URL from frontend/.env
-BASE_URL = "https://newclient-app-2.preview.emergentagent.com/api"
-
-# Test credentials from /app/memory/test_credentials.md
+# Configuration
+BASE_URL = "https://ab1b5b53-cd84-4df4-bf72-9cc6253f1656.preview.emergentagent.com/api"
 ADMIN_EMAIL = "admin@lumiere.studio"
 ADMIN_PASSWORD = "Admin@12345"
-SUPERADMIN_EMAIL = "prabhakar@pkphotography.in"
-SUPERADMIN_PASSWORD = "SuperAdmin@3214"
 
-# Test results
-results = []
-admin_token = None
-superadmin_token = None
-client_token = None
-test_event_id = None
-test_booking_id = None
+# Test state
+session_token = None
+event_id = None
+photo_id = None
 
-def log_test(test_name, passed, details=""):
+def log_test(step, description):
+    """Log test step"""
+    print(f"\n{'='*80}")
+    print(f"TEST {step}: {description}")
+    print('='*80)
+
+def log_result(status, message, details=None):
     """Log test result"""
-    status = "✅ PASS" if passed else "❌ FAIL"
-    results.append(f"{status}: {test_name}")
+    symbol = "✅" if status == "PASS" else "❌"
+    print(f"{symbol} {status}: {message}")
     if details:
-        results.append(f"   {details}")
-    print(f"{status}: {test_name}")
-    if details:
-        print(f"   {details}")
+        for key, value in details.items():
+            print(f"   • {key}: {value}")
+
+def create_test_image():
+    """Create a small valid JPEG with a synthetic face pattern"""
+    img = Image.new('RGB', (200, 200), color='white')
+    pixels = img.load()
+    
+    # Draw a simple face pattern (circle for head, dots for eyes, line for mouth)
+    for x in range(200):
+        for y in range(200):
+            # Head circle
+            if 50 <= x <= 150 and 50 <= y <= 150:
+                dist = ((x-100)**2 + (y-100)**2)**0.5
+                if 40 <= dist <= 50:
+                    pixels[x, y] = (0, 0, 0)
+            # Left eye
+            if 70 <= x <= 80 and 80 <= y <= 90:
+                pixels[x, y] = (0, 0, 0)
+            # Right eye
+            if 120 <= x <= 130 and 80 <= y <= 90:
+                pixels[x, y] = (0, 0, 0)
+            # Mouth
+            if 80 <= x <= 120 and 120 <= y <= 125:
+                pixels[x, y] = (0, 0, 0)
+    
+    # Save to bytes
+    img_bytes = io.BytesIO()
+    img.save(img_bytes, format='JPEG', quality=85)
+    img_bytes.seek(0)
+    return img_bytes.getvalue()
 
 def test_health_check():
     """Test 1: GET /api/ health check"""
+    log_test(1, "Health Check")
     try:
         response = requests.get(f"{BASE_URL}/", timeout=10)
         if response.status_code == 200:
             data = response.json()
-            log_test("GET /api/ (health check)", True, f"Response: {data}")
+            log_result("PASS", f"Health check returned 200", {
+                "status": data.get("status"),
+                "service": data.get("service")
+            })
             return True
         else:
-            log_test("GET /api/ (health check)", False, f"Status: {response.status_code}")
+            log_result("FAIL", f"Health check returned {response.status_code}", {
+                "response": response.text[:200]
+            })
             return False
     except Exception as e:
-        log_test("GET /api/ (health check)", False, f"Error: {str(e)}")
+        log_result("FAIL", f"Health check failed with exception", {"error": str(e)})
         return False
 
 def test_admin_login():
-    """Test 2: Admin login"""
-    global admin_token
+    """Test 2: POST /api/auth/admin/login"""
+    global session_token
+    log_test(2, "Admin Login")
     try:
         response = requests.post(
             f"{BASE_URL}/auth/admin/login",
@@ -62,454 +96,363 @@ def test_admin_login():
         )
         if response.status_code == 200:
             data = response.json()
-            admin_token = data.get("session_token")
-            log_test("Admin login", True, f"Token received, role: {data.get('user', {}).get('role')}")
-            return True
+            session_token = data.get("session_token")
+            if session_token:
+                log_result("PASS", "Admin login successful", {
+                    "email": ADMIN_EMAIL,
+                    "token_length": len(session_token),
+                    "user_role": data.get("user", {}).get("role")
+                })
+                return True
+            else:
+                log_result("FAIL", "No session_token in response", {"response": data})
+                return False
         else:
-            log_test("Admin login", False, f"Status: {response.status_code}, Response: {response.text}")
+            log_result("FAIL", f"Admin login returned {response.status_code}", {
+                "response": response.text[:200]
+            })
             return False
     except Exception as e:
-        log_test("Admin login", False, f"Error: {str(e)}")
+        log_result("FAIL", f"Admin login failed with exception", {"error": str(e)})
         return False
 
-def test_superadmin_login():
-    """Test 3: Superadmin login"""
-    global superadmin_token
+def test_create_event():
+    """Test 3: POST /api/events (create throwaway event)"""
+    global event_id
+    log_test(3, "Create Throwaway Event")
     try:
-        response = requests.post(
-            f"{BASE_URL}/superadmin/login",
-            json={"email": SUPERADMIN_EMAIL, "password": SUPERADMIN_PASSWORD},
-            timeout=10
-        )
-        if response.status_code == 200:
-            data = response.json()
-            superadmin_token = data.get("session_token")
-            log_test("Superadmin login", True, f"Token received, role: {data.get('user', {}).get('role')}")
-            return True
-        else:
-            log_test("Superadmin login", False, f"Status: {response.status_code}, Response: {response.text}")
-            return False
-    except Exception as e:
-        log_test("Superadmin login", False, f"Error: {str(e)}")
-        return False
-
-def test_admin_get_bookings():
-    """Test 4: Admin GET /api/bookings"""
-    try:
-        response = requests.get(
-            f"{BASE_URL}/bookings",
-            headers={"Authorization": f"Bearer {admin_token}"},
-            timeout=10
-        )
-        if response.status_code == 200:
-            data = response.json()
-            count = len(data) if isinstance(data, list) else data.get("count", 0)
-            log_test("Admin GET /api/bookings", True, f"Retrieved {count} booking(s)")
-            return True
-        else:
-            log_test("Admin GET /api/bookings", False, f"Status: {response.status_code}")
-            return False
-    except Exception as e:
-        log_test("Admin GET /api/bookings", False, f"Error: {str(e)}")
-        return False
-
-def test_admin_get_bookings_calendar():
-    """Test 5: Admin GET /api/bookings-calendar"""
-    try:
-        response = requests.get(
-            f"{BASE_URL}/bookings-calendar",
-            headers={"Authorization": f"Bearer {admin_token}"},
-            timeout=10
-        )
-        if response.status_code == 200:
-            data = response.json()
-            count = len(data) if isinstance(data, list) else 0
-            log_test("Admin GET /api/bookings-calendar", True, f"Retrieved {count} calendar booking(s)")
-            return True
-        else:
-            log_test("Admin GET /api/bookings-calendar", False, f"Status: {response.status_code}")
-            return False
-    except Exception as e:
-        log_test("Admin GET /api/bookings-calendar", False, f"Error: {str(e)}")
-        return False
-
-def test_create_throwaway_event():
-    """Test 6: Create throwaway event for booking"""
-    global test_event_id
-    try:
+        headers = {"Authorization": f"Bearer {session_token}"}
         response = requests.post(
             f"{BASE_URL}/events",
-            headers={"Authorization": f"Bearer {admin_token}"},
             json={
-                "name": "QA Final Verification Event",
-                "category": "wedding",
-                "date": "2027-08-15"
+                "name": "QA Cloudinary AWS Verification",
+                "date": "2027-03-15",
+                "location": "Test Location"
             },
+            headers=headers,
             timeout=10
         )
         if response.status_code == 200:
             data = response.json()
-            test_event_id = data.get("event_id")
-            log_test("Create throwaway event", True, f"Event ID: {test_event_id}")
-            return True
+            event_id = data.get("event_id")
+            if event_id:
+                log_result("PASS", "Event created successfully", {
+                    "event_id": event_id,
+                    "name": data.get("name"),
+                    "status": data.get("status")
+                })
+                return True
+            else:
+                log_result("FAIL", "No event_id in response", {"response": data})
+                return False
         else:
-            log_test("Create throwaway event", False, f"Status: {response.status_code}")
+            log_result("FAIL", f"Create event returned {response.status_code}", {
+                "response": response.text[:200]
+            })
             return False
     except Exception as e:
-        log_test("Create throwaway event", False, f"Error: {str(e)}")
+        log_result("FAIL", f"Create event failed with exception", {"error": str(e)})
         return False
 
-def test_client_otp_request():
-    """Test 7: Client OTP request"""
+def test_upload_photo():
+    """Test 4: POST /api/events/{id}/photos (upload valid small JPEG)"""
+    global photo_id
+    log_test(4, "Upload Photo with Cloudinary Storage")
     try:
-        response = requests.post(
-            f"{BASE_URL}/auth/client/request-otp",
-            json={"channel": "phone", "phone": "+919876543210"},
-            timeout=10
-        )
-        if response.status_code == 200:
-            data = response.json()
-            dev_code = data.get("dev_code")
-            log_test("Client OTP request", True, f"Dev code: {dev_code}")
-            return dev_code
-        else:
-            log_test("Client OTP request", False, f"Status: {response.status_code}")
-            return None
-    except Exception as e:
-        log_test("Client OTP request", False, f"Error: {str(e)}")
-        return None
-
-def test_client_otp_verify(dev_code):
-    """Test 8: Client OTP verify"""
-    global client_token
-    try:
-        response = requests.post(
-            f"{BASE_URL}/auth/client/verify-otp",
-            json={"channel": "phone", "phone": "+919876543210", "code": dev_code},
-            timeout=10
-        )
-        if response.status_code == 200:
-            data = response.json()
-            client_token = data.get("session_token")
-            log_test("Client OTP verify", True, f"Client token received")
-            return True
-        else:
-            log_test("Client OTP verify", False, f"Status: {response.status_code}")
-            return False
-    except Exception as e:
-        log_test("Client OTP verify", False, f"Error: {str(e)}")
-        return False
-
-def test_client_event_access():
-    """Test 9: Client event access (visitor registration)"""
-    try:
-        # Use public endpoint without auth header
-        response = requests.post(
-            f"{BASE_URL}/public/events/{test_event_id}/access",
-            json={"name": "QA Test Client", "phone": "+919876543210"},
-            timeout=10
-        )
-        if response.status_code == 200:
-            log_test("Client event access", True, "Visitor registered successfully")
-            return True
-        else:
-            log_test("Client event access", False, f"Status: {response.status_code}")
-            return False
-    except Exception as e:
-        log_test("Client event access", False, f"Error: {str(e)}")
-        return False
-
-def test_create_booking_request():
-    """Test 10: Create client booking request"""
-    global test_booking_id
-    try:
-        # Calculate future date
-        future_date = (datetime.now() + timedelta(days=180)).strftime("%Y-%m-%d")
+        headers = {"Authorization": f"Bearer {session_token}"}
+        img_bytes = create_test_image()
+        files = {"file": ("test_photo.jpg", img_bytes, "image/jpeg")}
         
         response = requests.post(
-            f"{BASE_URL}/me/booking-requests",
-            headers={"Authorization": f"Bearer {client_token}"},
-            json={
-                "service_type": "wedding",
-                "event_name": "Summer Wedding 2027",
-                "preferred_date": future_date,
-                "start_time": "16:00",
-                "end_time": "23:00",
-                "location": "Grand Hyatt, Mumbai",
-                "requirement": "Full day wedding coverage with candid photography, traditional shots, and drone footage",
-                "expected_budget": 150000,
-                "message": "Looking for premium wedding photography package"
-            },
-            timeout=10
+            f"{BASE_URL}/events/{event_id}/photos",
+            files=files,
+            headers=headers,
+            timeout=30
         )
+        
         if response.status_code == 200:
             data = response.json()
-            # Try different possible field names
-            test_booking_id = data.get("booking_id") or data.get("id") or data.get("request_id")
-            log_test("Create booking request", True, f"Response: {data}, Booking ID: {test_booking_id}")
-            return True
+            photo_id = data.get("photo_id")
+            url = data.get("url")
+            thumb_url = data.get("thumb_url")
+            
+            # Verify Cloudinary CDN URLs
+            cloudinary_cdn = "res.cloudinary.com"
+            url_valid = url and cloudinary_cdn in url
+            thumb_valid = thumb_url and cloudinary_cdn in thumb_url
+            
+            if photo_id and url_valid and thumb_valid:
+                log_result("PASS", "Photo uploaded with Cloudinary CDN URLs", {
+                    "photo_id": photo_id,
+                    "url_starts_with": url[:60] + "..." if len(url) > 60 else url,
+                    "thumb_url_starts_with": thumb_url[:60] + "..." if len(thumb_url) > 60 else thumb_url,
+                    "cloudinary_cdn_verified": "✓"
+                })
+                return True
+            else:
+                log_result("FAIL", "Photo uploaded but missing Cloudinary CDN URLs", {
+                    "photo_id": photo_id,
+                    "url": url,
+                    "thumb_url": thumb_url,
+                    "url_has_cloudinary": url_valid,
+                    "thumb_has_cloudinary": thumb_valid
+                })
+                return False
         else:
-            log_test("Create booking request", False, f"Status: {response.status_code}, Response: {response.text}")
+            log_result("FAIL", f"Upload photo returned {response.status_code}", {
+                "response": response.text[:200]
+            })
             return False
     except Exception as e:
-        log_test("Create booking request", False, f"Error: {str(e)}")
+        log_result("FAIL", f"Upload photo failed with exception", {"error": str(e)})
         return False
 
-def test_admin_sees_booking():
-    """Test 11: Admin sees the booking"""
+def test_poll_indexing():
+    """Test 5: GET /api/events/{id}/indexing-status (poll until ready)"""
+    log_test(5, "Poll Indexing Status (AWS Rekognition)")
     try:
+        headers = {"Authorization": f"Bearer {session_token}"}
+        max_attempts = 20
+        poll_interval = 2
+        
+        for attempt in range(1, max_attempts + 1):
+            response = requests.get(
+                f"{BASE_URL}/events/{event_id}/indexing-status",
+                headers=headers,
+                timeout=10
+            )
+            
+            if response.status_code != 200:
+                log_result("FAIL", f"Indexing status returned {response.status_code}", {
+                    "attempt": attempt,
+                    "response": response.text[:200]
+                })
+                return False
+            
+            data = response.json()
+            status = data.get("status")
+            indexed = data.get("indexed", 0)
+            total = data.get("total", 0)
+            faces = data.get("faces", 0)
+            complete = data.get("complete", False)
+            
+            print(f"   Attempt {attempt}/{max_attempts}: status={status}, indexed={indexed}/{total}, faces={faces}, complete={complete}")
+            
+            if status == "ready" and complete:
+                log_result("PASS", "AWS Rekognition indexing completed successfully", {
+                    "status": status,
+                    "indexed": f"{indexed}/{total}",
+                    "faces_detected": faces,
+                    "complete": complete,
+                    "attempts": attempt
+                })
+                return True
+            
+            if status == "error":
+                log_result("FAIL", "Indexing failed with error status", {
+                    "status": status,
+                    "data": data
+                })
+                return False
+            
+            if attempt < max_attempts:
+                time.sleep(poll_interval)
+        
+        log_result("FAIL", f"Indexing did not complete after {max_attempts} attempts", {
+            "last_status": status,
+            "indexed": f"{indexed}/{total}"
+        })
+        return False
+        
+    except Exception as e:
+        log_result("FAIL", f"Poll indexing failed with exception", {"error": str(e)})
+        return False
+
+def test_list_photos():
+    """Test 6: GET /api/events/{id}/photos (list photos)"""
+    log_test(6, "List Photos")
+    try:
+        headers = {"Authorization": f"Bearer {session_token}"}
         response = requests.get(
-            f"{BASE_URL}/bookings/{test_booking_id}",
-            headers={"Authorization": f"Bearer {admin_token}"},
+            f"{BASE_URL}/events/{event_id}/photos",
+            headers=headers,
             timeout=10
         )
+        
         if response.status_code == 200:
             data = response.json()
-            log_test("Admin sees booking", True, f"Event: {data.get('event_name')}, Status: {data.get('status')}")
-            return True
+            photos = data if isinstance(data, list) else data.get("items", [])
+            
+            # Find our uploaded photo
+            uploaded_photo = None
+            for photo in photos:
+                if photo.get("photo_id") == photo_id:
+                    uploaded_photo = photo
+                    break
+            
+            if uploaded_photo:
+                log_result("PASS", "Uploaded photo found in list", {
+                    "total_photos": len(photos),
+                    "photo_id": photo_id,
+                    "filename": uploaded_photo.get("filename"),
+                    "status": uploaded_photo.get("status")
+                })
+                return True
+            else:
+                log_result("FAIL", "Uploaded photo NOT found in list", {
+                    "total_photos": len(photos),
+                    "looking_for": photo_id,
+                    "photo_ids_in_list": [p.get("photo_id") for p in photos]
+                })
+                return False
         else:
-            log_test("Admin sees booking", False, f"Status: {response.status_code}")
+            log_result("FAIL", f"List photos returned {response.status_code}", {
+                "response": response.text[:200]
+            })
             return False
     except Exception as e:
-        log_test("Admin sees booking", False, f"Error: {str(e)}")
+        log_result("FAIL", f"List photos failed with exception", {"error": str(e)})
         return False
 
-def test_admin_send_quotation():
-    """Test 12: Admin sends quotation"""
+def test_s3_import():
+    """Test 7: POST /api/events/{id}/import-s3 (bucket faceser)"""
+    log_test(7, "S3 Import (bucket: faceser)")
     try:
+        headers = {"Authorization": f"Bearer {session_token}"}
         response = requests.post(
-            f"{BASE_URL}/bookings/{test_booking_id}/quote",
-            headers={"Authorization": f"Bearer {admin_token}"},
-            json={
-                "total_amount": 180000,
-                "advance_amount": 60000,
-                "payment_terms": "60k advance, balance on delivery",
-                "notes": "Premium wedding package with drone coverage"
-            },
-            timeout=10
+            f"{BASE_URL}/events/{event_id}/import-s3",
+            json={"bucket": "faceser"},
+            headers=headers,
+            timeout=30
         )
-        if response.status_code == 200:
-            data = response.json()
-            log_test("Admin sends quotation", True, f"Status: {data.get('status')}, Amount: {data.get('total_amount')}")
-            return True
-        else:
-            log_test("Admin sends quotation", False, f"Status: {response.status_code}")
-            return False
-    except Exception as e:
-        log_test("Admin sends quotation", False, f"Error: {str(e)}")
-        return False
-
-def test_client_get_bookings():
-    """Test 13: Client GET /api/me/bookings"""
-    try:
-        response = requests.get(
-            f"{BASE_URL}/me/bookings",
-            headers={"Authorization": f"Bearer {client_token}"},
-            timeout=10
-        )
-        if response.status_code == 200:
-            data = response.json()
-            count = len(data) if isinstance(data, list) else 0
-            log_test("Client GET /api/me/bookings", True, f"Retrieved {count} booking(s)")
-            return True
-        else:
-            log_test("Client GET /api/me/bookings", False, f"Status: {response.status_code}")
-            return False
-    except Exception as e:
-        log_test("Client GET /api/me/bookings", False, f"Error: {str(e)}")
-        return False
-
-def test_client_accept_quotation():
-    """Test 14: Client accepts quotation"""
-    try:
-        response = requests.post(
-            f"{BASE_URL}/me/bookings/{test_booking_id}/quote/accept",
-            headers={"Authorization": f"Bearer {client_token}"},
-            timeout=10
-        )
-        if response.status_code == 200:
-            data = response.json()
-            log_test("Client accepts quotation", True, f"Status: {data.get('status')}")
-            return True
-        else:
-            log_test("Client accepts quotation", False, f"Status: {response.status_code}")
-            return False
-    except Exception as e:
-        log_test("Client accepts quotation", False, f"Error: {str(e)}")
-        return False
-
-def test_admin_record_partial_payment():
-    """Test 15: Admin records partial offline payment"""
-    try:
-        response = requests.post(
-            f"{BASE_URL}/bookings/{test_booking_id}/payments",
-            headers={"Authorization": f"Bearer {admin_token}"},
-            json={
-                "label": "Partial advance payment",
-                "amount": 30000,
-                "method": "cash",
-                "notes": "Received 30k cash as partial advance"
-            },
-            timeout=10
-        )
-        if response.status_code == 200:
-            data = response.json()
-            log_test("Admin records partial payment", True, 
-                    f"Paid: {data.get('paid_amount')}, Remaining: {data.get('remaining_amount')}, Status: {data.get('status')}")
-            return True
-        else:
-            log_test("Admin records partial payment", False, f"Status: {response.status_code}")
-            return False
-    except Exception as e:
-        log_test("Admin records partial payment", False, f"Error: {str(e)}")
-        return False
-
-def test_verify_payment_pending():
-    """Test 16: Verify status remains payment_pending"""
-    try:
-        response = requests.get(
-            f"{BASE_URL}/bookings/{test_booking_id}",
-            headers={"Authorization": f"Bearer {admin_token}"},
-            timeout=10
-        )
+        
         if response.status_code == 200:
             data = response.json()
             status = data.get("status")
-            paid = data.get("paid_amount")
-            remaining = data.get("remaining_amount")
-            if status == "payment_pending" and remaining > 0:
-                log_test("Verify payment_pending status", True, 
-                        f"Status: {status}, Paid: {paid}, Remaining: {remaining}")
-                return True
-            else:
-                log_test("Verify payment_pending status", False, 
-                        f"Expected payment_pending with remaining > 0, got status={status}, remaining={remaining}")
-                return False
+            bucket = data.get("bucket")
+            imported = data.get("imported", 0)
+            
+            log_result("PASS", "S3 import returned controlled success", {
+                "status": status,
+                "bucket": bucket,
+                "imported": imported,
+                "queued_for_indexing": data.get("queued_for_indexing", 0),
+                "skipped": data.get("skipped", 0)
+            })
+            return True
         else:
-            log_test("Verify payment_pending status", False, f"Status: {response.status_code}")
+            log_result("FAIL", f"S3 import returned {response.status_code}", {
+                "response": response.text[:200]
+            })
             return False
     except Exception as e:
-        log_test("Verify payment_pending status", False, f"Error: {str(e)}")
+        log_result("FAIL", f"S3 import failed with exception", {"error": str(e)})
         return False
 
-def test_client_get_notifications():
-    """Test 17: Client GET /api/me/notifications"""
+def test_delete_event():
+    """Test 8: DELETE /api/events/{id} (cleanup)"""
+    log_test(8, "Delete Throwaway Event (Cleanup)")
     try:
-        response = requests.get(
-            f"{BASE_URL}/me/notifications",
-            headers={"Authorization": f"Bearer {client_token}"},
-            timeout=10
+        headers = {"Authorization": f"Bearer {session_token}"}
+        response = requests.delete(
+            f"{BASE_URL}/events/{event_id}",
+            headers=headers,
+            timeout=30
         )
+        
         if response.status_code == 200:
             data = response.json()
-            count = len(data) if isinstance(data, list) else 0
-            log_test("Client GET /api/me/notifications", True, f"Retrieved {count} notification(s)")
+            log_result("PASS", "Event deleted successfully", {
+                "status": data.get("status"),
+                "event_id": data.get("event_id"),
+                "photos_removed": data.get("photos_removed"),
+                "cloudinary_objects_deleted": data.get("cloudinary_objects_deleted"),
+                "faces_collection_deleted": data.get("faces_collection_deleted")
+            })
             return True
         else:
-            log_test("Client GET /api/me/notifications", False, f"Status: {response.status_code}")
+            log_result("FAIL", f"Delete event returned {response.status_code}", {
+                "response": response.text[:200]
+            })
             return False
     except Exception as e:
-        log_test("Client GET /api/me/notifications", False, f"Error: {str(e)}")
+        log_result("FAIL", f"Delete event failed with exception", {"error": str(e)})
         return False
 
-def test_cleanup_booking():
-    """Test 18: Cleanup - Delete throwaway event (cascades to booking)"""
+def test_verify_deletion():
+    """Test 9: GET /api/events/{id} (verify deletion)"""
+    log_test(9, "Verify Event Deletion")
     try:
-        response = requests.delete(
-            f"{BASE_URL}/events/{test_event_id}",
-            headers={"Authorization": f"Bearer {admin_token}"},
+        headers = {"Authorization": f"Bearer {session_token}"}
+        response = requests.get(
+            f"{BASE_URL}/events/{event_id}",
+            headers=headers,
             timeout=10
         )
-        if response.status_code == 200:
-            log_test("Cleanup throwaway event", True, "Event and associated data deleted")
+        
+        if response.status_code == 404:
+            log_result("PASS", "Event correctly deleted (404 returned)", {
+                "event_id": event_id
+            })
             return True
         else:
-            log_test("Cleanup throwaway event", False, f"Status: {response.status_code}")
+            log_result("FAIL", f"Event still exists (expected 404, got {response.status_code})", {
+                "response": response.text[:200]
+            })
             return False
     except Exception as e:
-        log_test("Cleanup throwaway event", False, f"Error: {str(e)}")
+        log_result("FAIL", f"Verify deletion failed with exception", {"error": str(e)})
         return False
 
 def main():
     """Run all tests"""
-    print("=" * 80)
-    print("FINAL BACKEND VERIFICATION - BOOKING SYSTEM MVP")
-    print("=" * 80)
-    print()
+    print("\n" + "="*80)
+    print("BACKEND VERIFICATION: Cloudinary + AWS Rekognition Configuration")
+    print("="*80)
+    print(f"Base URL: {BASE_URL}")
+    print(f"Admin: {ADMIN_EMAIL}")
+    print("="*80)
     
-    # Test 1: Health check
-    if not test_health_check():
-        print("\n❌ Health check failed. Aborting tests.")
-        return
+    tests = [
+        ("Health Check", test_health_check),
+        ("Admin Login", test_admin_login),
+        ("Create Event", test_create_event),
+        ("Upload Photo (Cloudinary)", test_upload_photo),
+        ("Poll Indexing (AWS Rekognition)", test_poll_indexing),
+        ("List Photos", test_list_photos),
+        ("S3 Import (faceser)", test_s3_import),
+        ("Delete Event", test_delete_event),
+        ("Verify Deletion", test_verify_deletion)
+    ]
     
-    # Test 2: Admin login
-    if not test_admin_login():
-        print("\n❌ Admin login failed. Aborting tests.")
-        return
-    
-    # Test 3: Superadmin login
-    test_superadmin_login()
-    
-    # Test 4-5: Admin booking endpoints
-    test_admin_get_bookings()
-    test_admin_get_bookings_calendar()
-    
-    # Test 6: Create throwaway event
-    if not test_create_throwaway_event():
-        print("\n❌ Event creation failed. Aborting booking tests.")
-        return
-    
-    # Test 7-9: Client authentication and event access
-    dev_code = test_client_otp_request()
-    if not dev_code:
-        print("\n❌ Client OTP request failed. Aborting booking tests.")
-        return
-    
-    if not test_client_otp_verify(dev_code):
-        print("\n❌ Client OTP verify failed. Aborting booking tests.")
-        return
-    
-    if not test_client_event_access():
-        print("\n❌ Client event access failed. Aborting booking tests.")
-        return
-    
-    # Test 10-17: Complete booking lifecycle
-    if not test_create_booking_request():
-        print("\n❌ Booking creation failed. Aborting lifecycle tests.")
-        return
-    
-    test_admin_sees_booking()
-    test_admin_send_quotation()
-    test_client_get_bookings()
-    test_client_accept_quotation()
-    test_admin_record_partial_payment()
-    test_verify_payment_pending()
-    test_client_get_notifications()
-    
-    # Test 18: Cleanup
-    test_cleanup_booking()
+    results = []
+    for name, test_func in tests:
+        result = test_func()
+        results.append((name, result))
     
     # Summary
-    print()
-    print("=" * 80)
+    print("\n" + "="*80)
     print("TEST SUMMARY")
-    print("=" * 80)
-    passed = sum(1 for r in results if r.startswith("✅"))
-    failed = sum(1 for r in results if r.startswith("❌"))
-    print(f"Total: {passed + failed} tests")
-    print(f"Passed: {passed}")
-    print(f"Failed: {failed}")
-    print()
+    print("="*80)
     
-    if failed > 0:
-        print("FAILED TESTS:")
-        for r in results:
-            if r.startswith("❌"):
-                print(r)
+    passed = sum(1 for _, result in results if result)
+    total = len(results)
+    
+    for name, result in results:
+        symbol = "✅" if result else "❌"
+        status = "PASS" if result else "FAIL"
+        print(f"{symbol} {status}: {name}")
+    
+    print("="*80)
+    print(f"TOTAL: {passed}/{total} tests passed")
+    print("="*80)
+    
+    if passed == total:
+        print("\n✅ ALL TESTS PASSED - Backend verification successful!")
+        return 0
     else:
-        print("✅ ALL TESTS PASSED")
-    
-    print("=" * 80)
+        print(f"\n❌ {total - passed} TEST(S) FAILED - Backend verification incomplete")
+        return 1
 
 if __name__ == "__main__":
-    main()
+    exit(main())
