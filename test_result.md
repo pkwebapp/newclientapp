@@ -6139,3 +6139,79 @@ agent_communication:
         
         All login flows are production-ready. 0 failures.
 
+    - agent: "testing"
+      message: |
+        📋 CLIENT PHONE LOGIN REPRODUCTION TEST - ISSUE IDENTIFIED (NOT A BUG)
+        
+        Reproduced user's specific client phone-login issue with phone number 8888766739 as requested.
+        
+        TEST SCENARIO:
+        • Route: /client-login
+        • Channel: Phone
+        • Phone number: 8888766739
+        • Two test attempts: (1) immediate verify, (2) 5-second delay on verify screen
+        
+        TEST RESULTS:
+        
+        **Test 1 - Immediate Verify:**
+        1. ✅ POST /api/auth/client/request-otp → 200 OK
+           • Response: {"status":"sent","channel":"phone","delivered":false,"dev_code":"970165"}
+           • Dev code auto-filled in UI: 970165
+        
+        2. ❌ POST /api/auth/client/verify-otp → 403 FORBIDDEN
+           • Response: {"detail":"This contact belongs to a studio account"}
+           • Error toast displayed in UI: "This contact belongs to a studio account"
+           • User remained on /client-login page (no navigation)
+        
+        **Test 2 - 5-Second Delay on Verify Screen:**
+        1. ✅ POST /api/auth/client/request-otp → 200 OK
+           • Response: {"status":"sent","channel":"phone","delivered":false,"dev_code":"002380"}
+           • Dev code auto-filled in UI: 002380
+        
+        2. ❌ POST /api/auth/client/verify-otp → 403 FORBIDDEN
+           • Response: {"detail":"This contact belongs to a studio account"}
+           • Error toast displayed in UI: "This contact belongs to a studio account"
+           • User remained on /client-login page (no navigation)
+        
+        ROOT CAUSE ANALYSIS:
+        
+        Queried MongoDB database and confirmed:
+        • Phone number 8888766739 is associated with user_id: user_43f2099e7e73
+        • User role: **admin** (NOT client)
+        • User email: admin@lumiere.studio
+        • User name: Test Studio
+        • This is a studio account with pro plan status
+        
+        Backend code verification (server.py line 366-367):
+        ```python
+        if user.get("role") != "client":
+            raise HTTPException(status_code=403, detail="This contact belongs to a studio account")
+        ```
+        
+        CONCLUSION: ✅ SYSTEM WORKING AS DESIGNED
+        
+        This is NOT a bug. The system is correctly preventing admin/studio accounts from logging in 
+        through the client login flow. This is a security feature to prevent role confusion and 
+        unauthorized access.
+        
+        The error message "This contact belongs to a studio account" is accurate and appropriate.
+        The 403 Forbidden status is the correct HTTP response.
+        
+        TIMING ANALYSIS:
+        • The issue is NOT related to timing or waiting on the verify screen
+        • Both immediate verify and delayed verify (5 seconds) produced identical results
+        • The failure occurs at the verify-otp endpoint, not due to session timeout
+        
+        USER GUIDANCE:
+        If a user encounters this error, they should:
+        1. Use a different phone number for client login (one not associated with a studio account)
+        2. Use the admin login flow at /admin-login if they want to access the studio console
+        
+        SCREENSHOTS CAPTURED:
+        • Initial client login screen with phone tab selected
+        • Phone number 8888766739 entered
+        • Verify screen with auto-filled dev codes (both tests)
+        • Error toast: "This contact belongs to a studio account" (visible in both tests)
+        
+        No code changes required. System behavior is correct and secure.
+
