@@ -49,13 +49,6 @@ export default function Landing() {
               icon="sparkles"
               onPress={() => router.push("/client-login")}
             />
-            <Button
-              testID="continue-admin-btn"
-              title="Studio sign in"
-              variant="ghost"
-              icon="briefcase-outline"
-              onPress={() => router.push("/admin-login")}
-            />
           </View>
         </View>
       </View>

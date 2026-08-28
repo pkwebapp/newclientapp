@@ -1,32 +1,29 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import Head from "expo-router/head";
-import { ImageBackground, Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { H1, H2, H3, P, A, Section, Footer } from "@expo/html-elements";
 
 import { Button } from "@/src/components/ui";
+import HeroConstellation from "@/src/components/HeroConstellation";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { getAppSurface } from "@/src/navigation/host-routing";
 
 const SITE = "https://www.pikconnect.com";
 const OG_IMAGE = "https://pkphotography.in/pricing/PKP_0763%20cover.jpg";
-const HERO =
-  "https://images.unsplash.com/photo-1516035069371-29a1b244cc32?q=80&w=1920&auto=format&fit=crop";
-
-const TITLE = "PIK Connect — Event Photo Galleries by PK Photography";
+const TITLE = "PIK Connect | Photo Gallery, AI Face Search & CRM for Photographers";
 const DESC =
-  "Find your event & wedding photos instantly with a selfie. PIK Connect delivers private photo galleries for PK Photography clients across Mumbai & Goa.";
+  "PIK Connect gives photographers a private photo gallery, AI face search, digital albums, effortless photo sharing and client management in one lightweight workspace.";
 const KEYWORDS =
-  "PIK Connect, PK Photography, wedding photographer Mumbai, event photographer Goa, pre-wedding photography Goa, corporate photography Mumbai, event photo gallery, find my photos selfie, photo delivery app, destination wedding photographer";
+  "photo gallery for photographers, AI face search, photo sharing, digital albums, photography CRM, client management, PIK Connect";
 
 const STEPS = [
-  { icon: "camera-outline", title: "Snap a selfie", text: "Open your event link and take one quick selfie." },
-  { icon: "sparkles-outline", title: "We match you", text: "Our engine finds your face across the entire gallery." },
-  { icon: "cloud-download-outline", title: "Download in HD", text: "View and save every photo of you in full quality." },
+  { icon: "camera-outline", title: "Snap a selfie", text: "Open your private digital album and take one quick selfie." },
+  { icon: "sparkles-outline", title: "AI face search finds you", text: "Our AI face search finds your face across the entire gallery." },
+  { icon: "cloud-download-outline", title: "Your photos", text: "View, save and share every photo of you in full quality." },
 ];
 
 const FAQS = [
@@ -34,6 +31,27 @@ const FAQS = [
   { q: "Is my gallery private?", a: "Yes — every gallery is a private, secure link, and your selfie is used only to match your photos." },
   { q: "Which cities do you cover?", a: "Studios in Andheri West, Mumbai and Morjim, Goa — plus destination and pan-India shoots." },
 ];
+
+const BADGES = [
+  { icon: "scan-outline", title: "AI Face Search", text: "Smart & accurate" },
+  { icon: "shield-checkmark-outline", title: "Private & Secure", text: "Your data stays safe" },
+  { icon: "flash-outline", title: "Instant Delivery", text: "Results in seconds" },
+  { icon: "image-outline", title: "High Resolution", text: "Full-quality photos" },
+];
+
+function BadgeCard({ icon, title, text, style }: { icon: string; title: string; text: string; style?: object }) {
+  return (
+    <View style={[styles.badge, style]}>
+      <View style={styles.badgeIcon}>
+        <Ionicons name={icon as any} size={16} color={colors.brand} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.badgeTitle}>{title}</Text>
+        <Text style={styles.badgeText}>{text}</Text>
+      </View>
+    </View>
+  );
+}
 
 function FaqRow({ q, a }: { q: string; a: string }) {
   const [open, setOpen] = useState(false);
@@ -58,6 +76,12 @@ export default function Home() {
   const isWide = width >= 900;
   const isWebWide = Platform.OS === "web" && isWide;
   const surface = getAppSurface();
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const openPage = (route: string) => {
+    setMobileMenuOpen(false);
+    router.push(route as any);
+  };
 
   useEffect(() => {
     if (surface === "client") {
@@ -82,7 +106,6 @@ export default function Home() {
         <meta name="description" content={DESC} />
         <meta name="keywords" content={KEYWORDS} />
         <meta name="robots" content="index, follow" />
-        <link rel="canonical" href={`${SITE}/`} />
         <meta property="og:type" content="website" />
         <meta property="og:title" content={TITLE} />
         <meta property="og:description" content={DESC} />
@@ -96,42 +119,59 @@ export default function Home() {
 
       <ScrollView style={styles.page} showsVerticalScrollIndicator={false}>
         {/* ---------------- HERO ---------------- */}
-        <ImageBackground
-          source={{ uri: HERO }}
-          resizeMode="cover"
-          style={[styles.hero, { height: isWebWide ? height : undefined, minHeight: isWebWide ? height : isWide ? Math.max(600, height * 0.9) : height }]}
-        >
-          <LinearGradient
-            colors={["rgba(14,13,12,0.20)", "rgba(14,13,12,0.52)", "rgba(14,13,12,0.95)"]}
-            locations={[0, 0.5, 1]}
-            style={StyleSheet.absoluteFill}
-          />
-          <View style={[styles.heroInner, { paddingTop: insets.top + spacing.xl }, isWide && styles.heroInnerWide]}>
-            <View style={styles.logoRow}>
-              <Ionicons name="aperture-outline" size={24} color={colors.brand} />
-              <Text style={styles.logo}>PIK CONNECT</Text>
+        <View style={[styles.hero, isWebWide && { minHeight: height }]}>
+          <View pointerEvents="none" style={styles.heroGlowTop} />
+          <View pointerEvents="none" style={styles.heroGlowSide} />
+          <View pointerEvents="box-none" style={[styles.heroInner, { paddingTop: insets.top + spacing.xl }, isWide && styles.heroInnerWide]}>
+            <View style={styles.topBar}>
+              <View style={styles.logoRow}><Ionicons name="aperture-outline" size={24} color={colors.brand} /><Text style={styles.logo}>PIK CONNECT</Text></View>
+              {isWide ? (
+                <View style={styles.navLinks}>
+                  <Pressable onPress={() => openPage("/how-it-works")}><Text style={styles.navLink}>How it works</Text></Pressable>
+                  <Pressable onPress={() => openPage("/features")}><Text style={styles.navLink}>Features</Text></Pressable>
+                  <Pressable onPress={() => openPage("/for-photographers")}><Text style={styles.navLink}>For Photographers</Text></Pressable>
+                  <Pressable onPress={() => openPage("/pricing")}><Text style={styles.navLink}>Pricing</Text></Pressable>
+                </View>
+              ) : (
+                <Pressable testID="mobile-hero-menu" onPress={() => setMobileMenuOpen((open) => !open)} style={styles.menuButton} accessibilityLabel="Open menu"><Ionicons name={mobileMenuOpen ? "close" : "menu"} size={25} color={colors.onSurface} /></Pressable>
+              )}
             </View>
-            <View style={[styles.heroCopy, isWide && { maxWidth: 640 }]}>
-              <H1 style={[styles.h1, isWide && styles.h1Wide]}>Your event photos, found in an instant.</H1>
-              <P style={styles.heroSub}>
-                Take a selfie and instantly get every photo of you from your PK Photography event gallery.
-              </P>
-              <View style={[styles.ctaRow, isWide && styles.ctaRowWide]}>
-                <Button testID="continue-client-btn" title="Find my photos" icon="sparkles" onPress={() => router.push("/client-login")} style={isWide ? styles.ctaBtnWide : undefined} />
-                <Button testID="continue-admin-btn" title="Studio sign in" variant="ghost" icon="briefcase-outline" onPress={() => router.push("/admin-login")} style={isWide ? styles.ctaBtnWide : undefined} />
+            {mobileMenuOpen && !isWide ? (
+              <View style={styles.mobileMenu}>
+                {[{ label: "How it works", route: "/how-it-works" }, { label: "Features", route: "/features" }, { label: "For Photographers", route: "/for-photographers" }, { label: "Pricing", route: "/pricing" }].map((item) => <Pressable key={item.route} onPress={() => openPage(item.route)} style={styles.mobileMenuItem}><Text style={styles.mobileMenuText}>{item.label}</Text></Pressable>)}
               </View>
-              <View style={styles.trustRow}>
-                <Ionicons name="star" size={13} color={colors.brand} />
-                <Text style={styles.trust}>12+ years · 4.9 · 380+ Google reviews · Mumbai & Goa</Text>
+            ) : null}
+            <View style={[styles.heroBody, isWide && styles.heroBodyWide]}>
+              <View style={[styles.heroCopy, isWide && styles.heroCopyWide]}>
+                <Text style={styles.eyebrow}>✦ AI-POWERED FACE SEARCH</Text>
+                <H1 style={[styles.h1, isWide && styles.h1Wide]}>Your event photos,{"\n"}found in an <Text style={styles.h1Accent}>instant.</Text></H1>
+                <P style={styles.heroSub}>Take one selfie — our AI scans your face and finds every photo of you across the entire event gallery, in seconds.</P>
+                <View style={[styles.ctaRow, isWide && styles.ctaRowWide]}>
+                  <Button testID="continue-client-btn" title="Find my photos" icon="sparkles" onPress={() => router.push("/client-login")} style={isWide ? styles.ctaBtnWide : undefined} />
+                  <Pressable testID="see-how-it-works-btn" onPress={() => openPage("/how-it-works")} style={styles.secondaryCta}><Ionicons name="play" size={11} color={colors.onSurface} /><Text style={styles.secondaryCtaText}>See how it works</Text></Pressable>
+                </View>
+                {isWide ? (
+                  <View style={styles.badgeRow}>
+                    {BADGES.map((b) => <BadgeCard key={b.title} {...b} style={styles.badgeWide} />)}
+                  </View>
+                ) : null}
               </View>
+              <View style={styles.heroArt}>
+                <HeroConstellation size={isWide ? Math.min(560, Math.max(420, width * 0.4)) : Math.min(width - spacing.xl * 2, 360)} interactive={isWebWide} />
+              </View>
+              {!isWide ? (
+                <View style={styles.badgeGrid}>
+                  {BADGES.map((b) => <BadgeCard key={b.title} {...b} style={styles.badgeMobile} />)}
+                </View>
+              ) : null}
             </View>
           </View>
-        </ImageBackground>
+        </View>
 
         <View style={styles.container}>
           {/* ---------------- HOW IT WORKS ---------------- */}
           <Section style={styles.block}>
-            <H2 style={styles.h2}>How it works</H2>
+            <H2 style={styles.h2}>Hundreds of photos. One selfie.</H2>
             <View style={[styles.steps, isWide && styles.stepsWide]}>
               {STEPS.map((s, i) => (
                 <View key={i} style={[styles.stepCard, isWide && styles.stepCardWide]}>
@@ -193,21 +233,47 @@ export default function Home() {
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: colors.surface },
 
-  // ---- Hero ----
-  hero: { justifyContent: "flex-end", overflow: "hidden" },
-  heroInner: { flex: 1, justifyContent: "space-between", padding: spacing.xl, paddingBottom: spacing["2xl"], gap: spacing.xl },
-  heroInnerWide: { maxWidth: 1160, width: "100%", alignSelf: "center", paddingHorizontal: spacing["3xl"], paddingBottom: spacing["3xl"] },
+  // ---- Cinematic split hero ----
+  hero: { overflow: "hidden", backgroundColor: "#080706" },
+  heroGlowTop: { position: "absolute", top: -240, right: -180, width: 580, height: 580, borderRadius: 290, backgroundColor: "rgba(244,123,74,0.07)" },
+  heroGlowSide: { position: "absolute", bottom: -280, left: -220, width: 540, height: 540, borderRadius: 270, backgroundColor: "rgba(244,123,74,0.045)" },
+  heroInner: { flex: 1, padding: spacing.xl, paddingBottom: spacing["2xl"], gap: spacing.xl },
+  heroInnerWide: { maxWidth: 1200, width: "100%", alignSelf: "center", paddingHorizontal: spacing["3xl"], paddingBottom: spacing["3xl"] },
+  topBar: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 44 },
   logoRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
   logo: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.sm, letterSpacing: 4, fontWeight: "700" },
+  navLinks: { flexDirection: "row", alignItems: "center", gap: spacing.xl },
+  navLink: { color: "rgba(255,255,255,0.78)", fontFamily: fonts.text, fontSize: fontSize.sm },
+  menuButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: radius.pill, backgroundColor: "rgba(8,7,6,0.36)" },
+  mobileMenu: { alignSelf: "flex-end", width: 210, padding: spacing.sm, borderRadius: radius.md, backgroundColor: "rgba(14,13,12,0.92)", borderWidth: 1, borderColor: "rgba(255,255,255,0.14)" },
+  mobileMenuItem: { minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.md },
+  mobileMenuText: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base },
+  heroBody: { gap: spacing.xl, marginTop: spacing.md },
+  heroBodyWide: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing["2xl"], marginTop: 0 },
   heroCopy: { gap: spacing.md },
-  h1: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 46, lineHeight: 50, fontWeight: "700", letterSpacing: -0.5, margin: 0, maxWidth: 520 },
-  h1Wide: { fontSize: 68, lineHeight: 72, maxWidth: 640 },
-  heroSub: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.lg, lineHeight: 24, marginTop: spacing.xs, maxWidth: 380 },
-  ctaRow: { gap: spacing.md, marginTop: spacing.lg },
-  ctaRowWide: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", maxWidth: 520 },
+  heroCopyWide: { flex: 1, maxWidth: 600 },
+  heroArt: { alignItems: "center", justifyContent: "center" },
+  eyebrow: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "700", letterSpacing: 2.2 },
+  h1: { color: colors.onSurface, fontFamily: fonts.display, fontSize: 42, lineHeight: 47, fontWeight: "700", letterSpacing: -0.5, margin: 0, maxWidth: 520 },
+  h1Wide: { fontSize: 64, lineHeight: 68, maxWidth: 640 },
+  h1Accent: { color: colors.brand, fontStyle: "italic" },
+  heroSub: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.lg, lineHeight: 25, marginTop: spacing.xs, maxWidth: 440 },
+  ctaRow: { gap: spacing.md, marginTop: spacing.lg, alignItems: "flex-start" },
+  ctaRowWide: { flexDirection: "row", flexWrap: "wrap", alignItems: "center", maxWidth: 560 },
   ctaBtnWide: { minWidth: 224, paddingHorizontal: spacing.xl },
-  trustRow: { flexDirection: "row", alignItems: "center", gap: spacing.xs, marginTop: spacing.md },
-  trust: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.sm },
+  secondaryCta: { minHeight: 48, flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.sm },
+  secondaryCtaText: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base },
+
+  // ---- Feature badges ----
+  badgeRow: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md, marginTop: spacing.xl },
+  badgeGrid: { flexDirection: "row", flexWrap: "wrap", gap: spacing.md },
+  badge: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.md, backgroundColor: "rgba(255,246,235,0.04)", borderWidth: 1, borderColor: "rgba(255,246,235,0.10)" },
+  badgeWide: { minWidth: 168 },
+  badgeMobile: { width: "47%", flexGrow: 1 },
+  badgeIcon: { width: 32, height: 32, borderRadius: radius.sm, backgroundColor: "rgba(244,123,74,0.12)", alignItems: "center", justifyContent: "center" },
+  badgeTitle: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "700" },
+  badgeText: { color: colors.muted, fontFamily: fonts.text, fontSize: 11, marginTop: 1 },
+
 
   // ---- Shared container ----
   container: { width: "100%", maxWidth: 1160, alignSelf: "center", paddingHorizontal: spacing.xl },

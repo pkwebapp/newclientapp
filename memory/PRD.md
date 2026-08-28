@@ -285,3 +285,15 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
   team size, galleries/month, referral. Applies to ALL incomplete studios (existing too).
   Superadmin + client accounts unaffected.
 - Verified: backend 8/8 pytest (tests/test_studio_onboarding.py) + frontend e2e via testing agent.
+
+## Homepage Hero Redesign (June 2026) — DONE
+- Redesigned hero per user's reference image: dark cinematic split layout.
+- Left: eyebrow "AI-POWERED FACE SEARCH", H1 "Your event photos, found in an instant." (orange italic accent),
+  selfie/face-scan subline, "Find my photos" + "See how it works" CTAs, 4 feature badges
+  (AI Face Search, Private & Secure, Instant Delivery, High Resolution). Trust-row numbers intentionally omitted (user said not required).
+- Right: HeroConstellation (/app/frontend/src/components/HeroConstellation.tsx) — central circular
+  silhouette with orange ring + face-mesh dots, 5 abstract photo tiles (no real faces) connected by
+  glowing lines to a scanning reticle, auto scan animation + "FACE MATCHED · 24 photos of you found" badge.
+- Desktop web: mouse parallax (onMouseMove, depth-based translate) — verified via playwright before/after screenshots.
+- Mobile: stacked simple layout (copy → CTAs → constellation → 2x2 badges), ambient float only.
+- SEO untouched (H1/meta/marketing nav intact). index.tsx hero logic simplified (removed old orbit art/scroll parallax).

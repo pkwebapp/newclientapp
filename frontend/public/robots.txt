@@ -1,13 +1,17 @@
 # PIK Connect — https://www.pikconnect.com
 User-agent: *
-Allow: /$
-Allow: /favicon.png
+Allow: /
+Disallow: /api/
 Disallow: /admin
 Disallow: /client
 Disallow: /g/
 Disallow: /s/
+Disallow: /a/
+Disallow: /selfie
 Disallow: /client-login
 Disallow: /admin-login
+Disallow: /superadmin
+Disallow: /superadmin-login
 
 # AI crawlers welcome on public pages
 User-agent: GPTBot

@@ -7849,6 +7849,65 @@ agent_communication:
 # Verification required: frontend click-through behavior for individual admin/client notifications.
 
 frontend:
+  - task: "Face-free hero redesign + dedicated marketing pages (/how-it-works, /features, /for-photographers, /pricing)"
+    implemented: true
+    working: true
+    file: "app/index.tsx, app/how-it-works.tsx, app/features.tsx, app/for-photographers.tsx, app/pricing.tsx, src/components/MarketingPage.tsx, public/sitemap.xml"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Replaced same-section nav behavior with dedicated Expo Router pages: /how-it-works, /features, 
+            /for-photographers, and /pricing. Added shared native marketing page presentation and updated 
+            sitemap URLs. Replaced the hero photography with a face-free abstract animated AI-lens/orbit 
+            visual, tap-to-preview search signal, mobile hamburger routing, and unique desktop nav routes. 
+            Frontend lint, TypeScript, and web export checks pass. Visual frontend verification is required.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL 8 TESTS PASSED - Public landing experience fully functional on desktop and mobile.
+            
+            Comprehensive verification at desktop (1440x900) and mobile (390x844) viewports completed.
+            
+            HOMEPAGE HERO (FACE-FREE DESIGN):
+            ✓ PIK CONNECT branding, eyebrow, headline, supporting line, CTAs all visible
+            ✓ 0 img tags on page (face-free, image-free hero confirmed)
+            ✓ Abstract animated AI-lens/orbit visual present (no real face/image)
+            ✓ Scan preview interaction works without layout shift
+            ⚠ Minor: Search preview badge did not appear visibly after click (animation timing issue)
+            
+            DESKTOP NAV LINKS (4 DISTINCT PAGES):
+            ✓ /how-it-works → correct content + working Back button
+            ✓ /features → correct content + working Back button
+            ✓ /for-photographers → correct content + working Back button
+            ✓ /pricing → correct content + working Back button
+            
+            MOBILE HAMBURGER MENU:
+            ✓ All 4 menu items visible and route to distinct pages (NOT same section)
+            ✓ Mobile hero elements visible and responsive
+            
+            CTA & SEO:
+            ✓ "Find my photos" CTA routes to /client-login
+            ✓ /robots.txt and /sitemap.xml contain all 4 marketing routes
+            
+            RESPONSIVE DESIGN:
+            ✓ Desktop: Nav links in header, proper spacing, centered content
+            ✓ Mobile: Hamburger menu, stacked layout, proper touch targets
+            ✓ No clipping, overflow, or unreadable text detected
+            
+            ERRORS:
+            ✓ 0 critical console errors
+            ⚠ 17 network errors (non-critical CDN/RUM and font loading, no impact on functionality)
+            
+            USER-REPORTED BUGS FIXED:
+            ✅ Hamburger menu items now route to distinct pages (was: same section)
+            ✅ Real-face hero image removed (now: face-free abstract animated design)
+            
+            Public landing experience is production-ready. 0 critical failures.
+
   - task: "Clickable notification items — admin booking details modal + client routing"
     implemented: true
     working: true
@@ -9503,4 +9562,546 @@ agent_communication:
     - agent: "main"
       message: |
         Source verification passes in this workspace: Super Admin credentials are no longer prefilled, Studio login no longer links to platform-owner login, and host-based role guards are implemented. Production verification remains blocked by the existing deployment serving old code and missing DNS records for studio.pikconnect.com and myspace.pikconnect.com; this cannot be changed from the workspace without publishing/configuring domains.
+
+
+    - agent: "user"
+      message: |
+        User requests removing Studio sign-in from the public client-facing view and moving it exclusively to the Studio domain, along with removing temporary demo/public links.
+    - agent: "main"
+      message: |
+        Removed the Studio sign-in CTA from the public landing screens (`index.tsx` and `login.tsx`). Studio access remains available through the dedicated `studio.pikconnect.com` host routing, while client-facing public view now exposes only Find my photos. Frontend lint and TypeScript checks pass. Frontend verification is requested.
+    - agent: "user"
+      message: |
+        User reports that liked photos and user activity are invisible to admins until face scan, including galleries with face search disabled. Requirement: admins must see likes and activities irrespective of face matching/face-search state.
+    - agent: "main"
+      message: |
+        Updated admin event client aggregation to include all users found in client albums, gallery visitors, or photo likes. Admin rows now show matched count, liked count, activity count, and last activity, and liked-photo drill-down remains available even without a face scan or when face search is disabled. Frontend/backend lint and compile checks pass. Backend regression testing is required.
+
+
+#====================================================================================================
+# NEW TASK (this session) — Fix likes/activity visibility bug (admins can't see likes until face scan)
+#====================================================================================================
+
+user_problem_statement: |
+  User reports that liked photos and user activity are invisible to admins until face scan, 
+  including galleries with face search disabled. Requirement: admins must see likes and 
+  activities irrespective of face matching/face-search state.
+
+backend:
+  - task: "Fix admin event client aggregation to show likes/activity without face scan"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Updated admin event client aggregation to include all users found in client albums, 
+            gallery visitors, or photo likes. Admin rows now show matched count, liked count, 
+            activity count, and last activity, and liked-photo drill-down remains available 
+            even without a face scan or when face search is disabled. Frontend/backend lint 
+            and compile checks pass. Backend regression testing is required.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL 19 TESTS PASSED - BUG FIX FULLY VERIFIED
+            
+            Backend-only regression test for the reported likes/activity visibility bug completed successfully.
+            Followed Testing Protocol exactly as specified in review_request.
+            
+            TEST SCENARIOS VERIFIED:
+            1. ✅ Gallery with face_search_enabled=true, client does NOT complete face scan, likes photo
+            2. ✅ Gallery with face_search_enabled=false, client likes photo
+            3. ✅ Admin GET /api/events/{event_id}/clients shows clients with liked_count > 0
+            4. ✅ Admin GET /api/events/{event_id}/clients/{client_user_id}/photos returns liked photos
+            5. ✅ list_visitors still reports liked_count correctly
+            
+            CRITICAL BUG FIX VERIFICATION:
+            
+            SCENARIO 1: face_search_enabled=true, NO face scan completed
+            • Created event evt_aec34e2679bb with face_search_enabled=true
+            • Client 1 (user_6a09d37b0ab3, +919876540001) registered as visitor
+            • Client 1 did NOT perform face scan (no selfie search)
+            • Client 1 liked photo pho_b2d6f2a7b433
+            • ✅ BUG FIX VERIFIED: Client 1 appears in admin GET /api/events/{event_id}/clients
+            • ✅ Client 1 data:
+              - matched_count: 0 (no face scan, correct)
+              - liked_count: 1 (> 0, BUG FIXED)
+              - activity_count: 2 (> 0, BUG FIXED)
+              - last_activity_at: 2026-08-28T18:27:18.354976+00:00 (set correctly)
+            • ✅ Admin GET /api/events/{event_id}/clients/{client_user_id}/photos:
+              - matched: [] (empty, no face scan)
+              - liked: [pho_b2d6f2a7b433] (liked photo appears, BUG FIXED)
+            • ✅ list_visitors reports liked_count = 1 (> 0, working correctly)
+            
+            SCENARIO 2: face_search_enabled=false
+            • Created event evt_ffc9a6d2a4fc with face_search_enabled=false
+            • Client 2 (user_f97330e4b386, +919876540002) registered as visitor
+            • Client 2 liked photo pho_c935a1e75662
+            • ✅ BUG FIX VERIFIED: Client 2 appears in admin GET /api/events/{event_id}/clients
+            • ✅ Client 2 data:
+              - matched_count: 0 (face search disabled, correct)
+              - liked_count: 1 (> 0, BUG FIXED)
+              - activity_count: 2 (> 0, BUG FIXED)
+              - last_activity_at: 2026-08-28T18:27:18.990490+00:00 (set correctly)
+            • ✅ Admin GET /api/events/{event_id}/clients/{client_user_id}/photos:
+              - matched: [] (empty, face search disabled)
+              - liked: [pho_c935a1e75662] (liked photo appears, BUG FIXED)
+            • ✅ list_visitors reports liked_count = 1 (> 0, working correctly)
+            
+            KEY FINDINGS:
+            ✅ Clients now appear in admin clients list even without face scan
+            ✅ Clients now appear in admin clients list when face_search_enabled=false
+            ✅ liked_count > 0 reported correctly in both scenarios
+            ✅ activity_count > 0 reported correctly in both scenarios
+            ✅ last_activity_at is set correctly in both scenarios
+            ✅ Admin can view liked photos even without face scan
+            ✅ Admin can view liked photos when face_search_enabled=false
+            ✅ matched list is empty/independent when no face scan (correct behavior)
+            ✅ list_visitors reports liked_count correctly in both scenarios
+            ✅ No 500 errors detected in any endpoint
+            ✅ No tracebacks in backend logs
+            
+            BACKEND LOGS CHECK:
+            ✅ No errors or tracebacks detected in /var/log/supervisor/backend.*.log
+            ✅ All API requests returned correct status codes (200 OK)
+            ✅ Backend supervisor: RUNNING and stable throughout testing
+            
+            CLEANUP:
+            ✅ Deleted throwaway event 1 (evt_aec34e2679bb)
+            ✅ Deleted throwaway event 2 (evt_ffc9a6d2a4fc)
+            ✅ All test data cleaned up successfully
+            
+            The reported bug is completely FIXED. Admins can now see likes and activities 
+            irrespective of face matching/face-search state. The fix correctly aggregates 
+            users from client_albums, gallery_visitors, AND photo_likes collections, ensuring 
+            all client activity is visible to admins.
+            
+            Backend is production-ready. 0 failures.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 9
+  run_ui: false
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: |
+        Updated admin event client aggregation to include all users found in client albums, 
+        gallery visitors, or photo likes. Admin rows now show matched count, liked count, 
+        activity count, and last activity, and liked-photo drill-down remains available 
+        even without a face scan or when face search is disabled. Frontend/backend lint 
+        and compile checks pass. Backend regression testing is required.
+    - agent: "testing"
+      message: |
+        ✅ BACKEND REGRESSION TEST COMPLETE - BUG FIX FULLY VERIFIED (ALL 19 TESTS PASSED)
+        
+        Tested backend-only regression for the reported likes/activity visibility bug.
+        Followed Testing Protocol exactly as specified in review_request.
+        
+        CRITICAL BUG FIX VERIFIED:
+        ✅ Clients now appear in admin clients list even without face scan
+        ✅ Clients now appear in admin clients list when face_search_enabled=false
+        ✅ liked_count, activity_count, and last_activity_at reported correctly
+        ✅ Admin can view liked photos in both scenarios
+        ✅ matched list is empty/independent when no face scan (correct)
+        ✅ list_visitors reports liked_count correctly
+        ✅ No 500 errors or tracebacks detected
+        
+        TEST SCENARIOS:
+        1. Event with face_search_enabled=true, client does NOT complete face scan, likes photo
+           → Client appears in admin clients list with liked_count=1, activity_count=2
+        2. Event with face_search_enabled=false, client likes photo
+           → Client appears in admin clients list with liked_count=1, activity_count=2
+        
+        The fix correctly aggregates users from client_albums, gallery_visitors, AND 
+        photo_likes collections. Backend is production-ready. 0 failures.
+
+    - agent: "main"
+      message: |
+        Backend regression testing passed all 19 likes/activity visibility checks. Expo was restarted and the web preview returns 200. Frontend verification is ready for the admin event client list and liked-photo drill-down.
+
+    - agent: "user"
+      message: |
+        User reports that deleting a client's face data still leaves the client in Individual access and activity lists. Screenshot shows “Face data & album deleted” while the client's individual access remains. User expects client gallery data to be removed completely.
+    - agent: "main"
+      message: |
+        Changed the admin deletion action to remove all gallery-specific client data: Rekognition face signatures, matched albums, likes, visitor/activity records, gallery shares, consent records, and access grants. The global client account and other galleries remain intact. Updated the UI wording to “Delete all client gallery data?” and renamed the section to Client activity. Backend verification is required.
+
+
+    - agent: "testing"
+      message: |
+        ✅ ALL 25 TESTS PASSED - CLIENT GALLERY DATA DELETION BUG FULLY FIXED
+        
+        Backend-only verification for the reported deletion bug completed successfully.
+        Followed Testing Protocol exactly as specified in review_request.
+        
+        TEST SETUP (15 steps):
+        • Created 2 throwaway events (Event 1 for deletion test, Event 2 for isolation test)
+        • Uploaded 2 photos to Event 1, 1 photo to Event 2
+        • Created 2 client users (Client 1 for deletion, Client 2 for isolation)
+        • Client 1 registered as visitor for Event 1 (creates gallery_visitor)
+        • Client 2 registered as visitor for Event 2 (unrelated)
+        • Admin granted full gallery access to Client 1 for Event 1 (creates access_grant)
+        • Client 1 gave consent for Event 1 (creates consent_log)
+        • Client 1 liked photo in Event 1 (creates photo_like)
+        • Client 1 created gallery share for Event 1 (creates gallery_share)
+        • Client 1 performed selfie search (creates client_album with face records)
+        
+        VERIFICATION BEFORE DELETION (4 tests):
+        16. ✅ Client 1 has 1 access grant in Event 1
+        17. ✅ Client 1 appears in clients list with liked_count=1
+        18. ✅ Client 1 has 1 visitor record in Event 1
+        19. ✅ Client 1 has 1 liked photo in Event 1
+        
+        MAIN TEST - DELETION ENDPOINT (1 test):
+        20. ✅ DELETE /api/events/{event_id}/clients/{client_user_id}/face-data → 200
+            • Response: {"status": "deleted", "faces_removed": 0, "gallery_data_removed": true}
+            • Endpoint returns correct response structure ✓
+        
+        VERIFICATION AFTER DELETION (4 tests):
+        21. ✅ Client 1 access grant REMOVED from GET /api/events/{event_id}/access
+            • Before: 1 grant found
+            • After: 0 grants found (correctly removed)
+        
+        22. ✅ Client 1 REMOVED from GET /api/events/{event_id}/clients
+            • Before: Client appeared in list with liked_count=1
+            • After: Client not in list (correctly removed)
+        
+        23. ✅ Client 1 REMOVED from GET /api/events/{event_id}/visitors
+            • Before: 1 visitor record found
+            • After: 0 visitor records found (correctly removed)
+        
+        24. ✅ Client 1 liked photos REMOVED from admin liked-photo endpoint
+            • GET /api/events/{event_id}/clients/{client_user_id}/photos → 200
+            • liked: [] (empty, correctly removed)
+            • matched: [] (empty, correctly removed)
+        
+        ISOLATION TESTS (3 tests):
+        25. ✅ Global Client 1 user account STILL EXISTS
+            • Can request OTP with same phone number (user not deleted globally)
+            • Only gallery-specific data removed, global account intact ✓
+        
+        26. ✅ Event 2 (unrelated) data REMAINS INTACT
+            • Client 2 visitor record still exists in Event 2
+            • Deletion of Client 1 from Event 1 did not affect Event 2 ✓
+        
+        27. ✅ Client 2 in Event 2 UNAFFECTED by Client 1 deletion
+            • Client 2 still appears in Event 2 clients list
+            • Deletion is properly scoped to specific client + event ✓
+        
+        ERROR CHECKING (1 test):
+        28. ✅ No backend errors/tracebacks detected
+            • Checked /var/log/supervisor/backend.err.log
+            • No tracebacks, exceptions, or 500 errors related to deletion
+        
+        CLEANUP:
+        • Deleted Event 1 (evt_4cfcc5cf3f3f)
+        • Deleted Event 2 (evt_054bf2a0c6e4)
+        • All throwaway data cleaned up successfully
+        
+        KEY FINDINGS:
+        ✅ BUG COMPLETELY FIXED - Deletion endpoint now removes ALL gallery-specific client data:
+           • access_grants (removed from Individual access list)
+           • gallery_visitors (removed from activity list)
+           • photo_likes (removed from liked photos)
+           • client_albums (removed)
+           • consent_logs (removed)
+           • gallery_shares (removed)
+           • face records (removed from Rekognition if present)
+        
+        ✅ Global client user account preserved (not deleted)
+        ✅ Unrelated gallery data preserved (proper isolation)
+        ✅ Endpoint does not affect different clients (proper scoping)
+        ✅ No 500 errors or tracebacks detected
+        ✅ Response structure correct: {status:"deleted", faces_removed:N, gallery_data_removed:true}
+        
+        The reported bug is COMPLETELY FIXED. After calling DELETE /api/events/{event_id}/clients/{client_user_id}/face-data,
+        the client no longer appears in Individual access list, activity list, or any gallery-specific endpoints.
+        The global client account remains intact for use in other galleries or studios.
+        
+        Backend is production-ready. 0 failures.
+
+
+
+#====================================================================================================
+# NEW TASK (this session) — Fix client gallery data deletion bug
+#====================================================================================================
+
+user_problem_statement: |
+  User reports that deleting a client's face data still leaves the client in Individual access 
+  and activity lists. Screenshot shows "Face data & album deleted" while the client's individual 
+  access remains. User expects client gallery data to be removed completely.
+
+backend:
+  - task: "Fix DELETE /api/events/{event_id}/clients/{client_user_id}/face-data to remove all gallery data"
+    implemented: true
+    working: true
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Changed the admin deletion action to remove all gallery-specific client data: 
+            Rekognition face signatures, matched albums, likes, visitor/activity records, 
+            gallery shares, consent records, and access grants. The global client account 
+            and other galleries remain intact. Updated the UI wording to "Delete all client 
+            gallery data?" and renamed the section to Client activity. Backend verification 
+            is required.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL 25 TESTS PASSED - CLIENT GALLERY DATA DELETION BUG FULLY FIXED
+            
+            Backend-only verification for the reported deletion bug completed successfully.
+            Followed Testing Protocol exactly as specified in review_request.
+            
+            TEST SETUP (15 steps):
+            • Created 2 throwaway events (Event 1 for deletion test, Event 2 for isolation test)
+            • Uploaded 2 photos to Event 1, 1 photo to Event 2
+            • Created 2 client users (Client 1 for deletion, Client 2 for isolation)
+            • Client 1 registered as visitor for Event 1 (creates gallery_visitor)
+            • Client 2 registered as visitor for Event 2 (unrelated)
+            • Admin granted full gallery access to Client 1 for Event 1 (creates access_grant)
+            • Client 1 gave consent for Event 1 (creates consent_log)
+            • Client 1 liked photo in Event 1 (creates photo_like)
+            • Client 1 created gallery share for Event 1 (creates gallery_share)
+            • Client 1 performed selfie search (creates client_album with face records)
+            
+            VERIFICATION BEFORE DELETION (4 tests):
+            16. ✅ Client 1 has 1 access grant in Event 1
+            17. ✅ Client 1 appears in clients list with liked_count=1
+            18. ✅ Client 1 has 1 visitor record in Event 1
+            19. ✅ Client 1 has 1 liked photo in Event 1
+            
+            MAIN TEST - DELETION ENDPOINT (1 test):
+            20. ✅ DELETE /api/events/{event_id}/clients/{client_user_id}/face-data → 200
+                • Response: {"status": "deleted", "faces_removed": 0, "gallery_data_removed": true}
+                • Endpoint returns correct response structure ✓
+            
+            VERIFICATION AFTER DELETION (4 tests):
+            21. ✅ Client 1 access grant REMOVED from GET /api/events/{event_id}/access
+                • Before: 1 grant found
+                • After: 0 grants found (correctly removed)
+            
+            22. ✅ Client 1 REMOVED from GET /api/events/{event_id}/clients
+                • Before: Client appeared in list with liked_count=1
+                • After: Client not in list (correctly removed)
+            
+            23. ✅ Client 1 REMOVED from GET /api/events/{event_id}/visitors
+                • Before: 1 visitor record found
+                • After: 0 visitor records found (correctly removed)
+            
+            24. ✅ Client 1 liked photos REMOVED from admin liked-photo endpoint
+                • GET /api/events/{event_id}/clients/{client_user_id}/photos → 200
+                • liked: [] (empty, correctly removed)
+                • matched: [] (empty, correctly removed)
+            
+            ISOLATION TESTS (3 tests):
+            25. ✅ Global Client 1 user account STILL EXISTS
+                • Can request OTP with same phone number (user not deleted globally)
+                • Only gallery-specific data removed, global account intact ✓
+            
+            26. ✅ Event 2 (unrelated) data REMAINS INTACT
+                • Client 2 visitor record still exists in Event 2
+                • Deletion of Client 1 from Event 1 did not affect Event 2 ✓
+            
+            27. ✅ Client 2 in Event 2 UNAFFECTED by Client 1 deletion
+                • Client 2 still appears in Event 2 clients list
+                • Deletion is properly scoped to specific client + event ✓
+            
+            ERROR CHECKING (1 test):
+            28. ✅ No backend errors/tracebacks detected
+                • Checked /var/log/supervisor/backend.err.log
+                • No tracebacks, exceptions, or 500 errors related to deletion
+            
+            CLEANUP:
+            • Deleted Event 1 (evt_4cfcc5cf3f3f)
+            • Deleted Event 2 (evt_054bf2a0c6e4)
+            • All throwaway data cleaned up successfully
+            
+            KEY FINDINGS:
+            ✅ BUG COMPLETELY FIXED - Deletion endpoint now removes ALL gallery-specific client data:
+               • access_grants (removed from Individual access list)
+               • gallery_visitors (removed from activity list)
+               • photo_likes (removed from liked photos)
+               • client_albums (removed)
+               • consent_logs (removed)
+               • gallery_shares (removed)
+               • face records (removed from Rekognition if present)
+            
+            ✅ Global client user account preserved (not deleted)
+            ✅ Unrelated gallery data preserved (proper isolation)
+            ✅ Endpoint does not affect different clients (proper scoping)
+            ✅ No 500 errors or tracebacks detected
+            ✅ Response structure correct: {status:"deleted", faces_removed:N, gallery_data_removed:true}
+            
+            The reported bug is COMPLETELY FIXED. After calling DELETE /api/events/{event_id}/clients/{client_user_id}/face-data,
+            the client no longer appears in Individual access list, activity list, or any gallery-specific endpoints.
+            The global client account remains intact for use in other galleries or studios.
+            
+            Backend is production-ready. 0 failures.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 10
+  run_ui: false
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: |
+        Changed the admin deletion action to remove all gallery-specific client data: Rekognition 
+        face signatures, matched albums, likes, visitor/activity records, gallery shares, consent 
+        records, and access grants. The global client account and other galleries remain intact. 
+        Updated the UI wording to "Delete all client gallery data?" and renamed the section to 
+        Client activity. Backend verification is required.
+    - agent: "testing"
+      message: |
+        ✅ BACKEND DELETION BUG TESTING COMPLETE - ALL 25 TESTS PASSED (100% success rate)
+        
+        Comprehensive backend-only verification for the reported deletion bug completed successfully.
+        Created throwaway gallery/client fixture with all required data (access_grant, gallery_visitor, 
+        photo_like, client_album with face records, consent_log, gallery_share).
+        
+        CRITICAL BUG FIX VERIFIED:
+        ✅ Deletion endpoint removes ALL gallery-specific client data
+        ✅ Client removed from Individual access list (GET /api/events/{event_id}/access)
+        ✅ Client removed from activity list (GET /api/events/{event_id}/clients)
+        ✅ Client removed from visitors list (GET /api/events/{event_id}/visitors)
+        ✅ Liked photos removed (GET /api/events/{event_id}/clients/{client_user_id}/photos)
+        ✅ Global client user account preserved (not deleted)
+        ✅ Unrelated gallery data preserved (proper isolation)
+        ✅ Endpoint does not affect different clients (proper scoping)
+        ✅ No 500 errors or tracebacks detected
+        
+        The bug is COMPLETELY FIXED. Backend is production-ready. 0 failures.
+    - agent: "main"
+      message: |
+        Backend deletion regression passed. Expo restarted and web root returns 200. Per protocol, explicit permission is requested before frontend verification of the delete-all-gallery-data modal and post-delete access/activity lists.
+
+    - agent: "user"
+      message: |
+        User supplied a PIK Connect SEO audit and asked for a careful brainstorm plus implementation without compromising the existing clean UI, usability, or performance. Priorities: one canonical tag, robots.txt, sitemap.xml, metadata, structured data, natural keyword signals, crawlability, and future SEO-ready routing.
+    - agent: "main"
+      message: |
+        Implemented SEO improvements in the Expo web document: updated title/description/Open Graph/Twitter metadata, added SoftwareApplication JSON-LD, retained en-IN language and a single canonical tag, improved natural homepage keyword signals without adding a content-heavy section, and strengthened robots.txt private-route exclusions while allowing the public homepage. Confirmed static export contains exactly one canonical, JSON-LD, robots.txt, sitemap.xml, and llms.txt. TypeScript/lint/export checks pass. Frontend visual/metadata verification is requested.
+
+    - agent: "user"
+      message: |
+        User requested a premium cinematic, minimalist, photography-first PIK Connect landing hero with mobile-first rendering and one subtle interactive AI face-search moment. Preserve existing routes/functionality and avoid a dashboard-like or crowded SaaS design.
+    - agent: "main"
+      message: |
+        Redesigned the public landing hero only: replaced the generic hero image with a cinematic editorial image, added restrained AI face-search scan interaction on tap, subtle scroll parallax, face-found recognition badge, mobile menu, desktop editorial nav, concise eyebrow/headline/supporting copy/CTAs, and a continuous “Hundreds of photos. One selfie.” scroll section. Existing auth/gallery routes and backend functionality are unchanged. Frontend lint, TypeScript, and static export checks pass. Visual frontend verification is required.
+
+    - agent: "user"
+      message: |
+        User reports all public hamburger links incorrectly open the same section. User wants dedicated How it works, Features, For Photographers, and Pricing sections/pages using existing product and subscription data. User also requests removing the real-face hero image and replacing it with a clean, simple, interactive abstract animation focused on Face Search, QR gallery sharing, and digital flipbooks.
+    - agent: "main"
+      message: |
+        Replaced same-section nav behavior with dedicated Expo Router pages: /how-it-works, /features, /for-photographers, and /pricing. Added shared native marketing page presentation and updated sitemap URLs. Replaced the hero photography with a face-free abstract animated AI-lens/orbit visual, tap-to-preview search signal, mobile hamburger routing, and unique desktop nav routes. Frontend lint, TypeScript, and web export checks pass. Visual frontend verification is required.
+    - agent: "testing"
+      message: |
+        ✅ PUBLIC LANDING EXPERIENCE VERIFICATION COMPLETE - ALL 8 TESTS PASSED
+        
+        Comprehensive frontend verification of the face-free hero redesign and dedicated marketing pages 
+        completed successfully on both desktop (1440x900) and mobile (390x844) viewports.
+        
+        HOMEPAGE HERO (FACE-FREE DESIGN) - ✅ VERIFIED:
+        ✓ PIK CONNECT branding visible
+        ✓ Eyebrow "✦ AI-POWERED FACE SEARCH" visible
+        ✓ Headline "Your event photos, found in an instant." visible
+        ✓ Supporting line "Take a selfie and instantly find every photo of you." visible
+        ✓ "Find my photos" CTA button visible
+        ✓ "See how it works" button visible
+        ✓ 0 img tags on page (face-free, image-free hero confirmed)
+        ✓ Abstract animated AI-lens/orbit visual present (no real face/image)
+        
+        SCAN PREVIEW INTERACTION - ✅ VERIFIED:
+        ✓ Scan target clickable (testID="hero-scan-preview")
+        ✓ No layout shift detected after interaction
+        ✓ Main elements remain visible after interaction
+        ⚠ Minor: Search preview badge ("SEARCH PREVIEW" / "18 photos ready to explore") did not appear 
+          visibly after click, but interaction works without breaking layout
+        
+        DESKTOP NAV LINKS (4 DISTINCT PAGES) - ✅ ALL PASS:
+        ✓ /how-it-works → "From shutter to share, without the scramble." content visible
+        ✓ /features → "The technology disappears. The experience stays." content visible
+        ✓ /for-photographers → "More time behind the camera." content visible
+        ✓ /pricing → "Choose the room you need to grow." content visible
+        ✓ Each page has working Back button (testID="marketing-back")
+        ✓ Back button navigates to homepage correctly
+        
+        MOBILE HAMBURGER MENU - ✅ VERIFIED:
+        ✓ Hamburger menu button visible (testID="mobile-hero-menu")
+        ✓ All 4 menu items visible when opened: How it works, Features, For Photographers, Pricing
+        ✓ Each menu item routes to its own distinct page (NOT same section)
+        ✓ Mobile hero elements visible: PIK CONNECT, headline, CTA
+        
+        MOBILE NAV ROUTING (4 DISTINCT PAGES) - ✅ ALL PASS:
+        ✓ How it works menu item → /how-it-works page with correct content
+        ✓ Features menu item → /features page with correct content
+        ✓ For Photographers menu item → /for-photographers page with correct content
+        ✓ Pricing menu item → /pricing page with correct content
+        
+        CTA ROUTING - ✅ VERIFIED:
+        ✓ "Find my photos" CTA routes to /client-login correctly
+        
+        SEO FILES - ✅ VERIFIED:
+        ✓ /robots.txt accessible and contains proper directives
+        ✓ /sitemap.xml accessible and contains all 4 marketing routes:
+          • /how-it-works
+          • /features
+          • /for-photographers
+          • /pricing
+        
+        RESPONSIVE DESIGN - ✅ VERIFIED:
+        ✓ Desktop (1440x900): Nav links in header, proper spacing, centered content
+        ✓ Mobile (390x844): Hamburger menu, stacked layout, proper touch targets
+        ✓ No clipping, overflow, or unreadable text detected
+        
+        ERRORS DETECTED:
+        ✓ 0 critical console errors
+        ⚠ 17 network errors (non-critical):
+          • CDN/RUM errors (Cloudflare analytics)
+          • Ionicons font loading errors (fonts still render correctly)
+          • These do not affect functionality or user experience
+        
+        USER-REPORTED BUG FIXED:
+        ✅ Hamburger menu items now route to distinct pages (was: same section)
+        ✅ Real-face hero image removed (now: face-free abstract animated design)
+        
+        The public landing experience is production-ready. All navigation works correctly, 
+        the hero is completely face-free with abstract animated design, and all marketing 
+        pages are accessible via distinct routes on both desktop and mobile. 0 critical failures.
+
+    - agent: "main"
+      message: |
+        Frontend tester confirmed the dedicated marketing routes and face-free abstract hero work. A minor timing observation noted the scan preview badge was difficult to see immediately, so its initial animated opacity was raised slightly while preserving the restrained effect. A focused frontend retest is requested.
+
+    - agent: "user"
+      message: |
+        User clarified the dedicated marketing links should not all scroll to one section, and requested a cleaner animated face-free hero based on the supplied reference layout. Desktop may use subtle mouse interaction; mobile should remain simple and mobile-first. The hero should emphasize Face Search, QR share galleries, and digital flipbooks without real faces or imagery.
+    - agent: "main"
+      message: |
+        Refined the public homepage to a face-free abstract cinematic hero: editorial left-copy/right-visual balance on desktop, centered mobile visual, animated orbit/lens geometry, hover-or-tap scan preview, orange recognition pulse, concise SEO-aware headline/support, and dedicated menu routes. Added dedicated native pages for How it works, Features, For Photographers, and Pricing using existing subscription feature data. Updated sitemap. Frontend lint, TypeScript, and web export checks pass; focused visual frontend testing is required.
 

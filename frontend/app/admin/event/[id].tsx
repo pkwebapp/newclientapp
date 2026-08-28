@@ -429,7 +429,7 @@ export default function AdminEvent() {
     setConfirmDelete(null);
     try {
       await api.del(`/events/${id}/clients/${c.client_user_id}/face-data`);
-      toast.show("Face data & album deleted", "info");
+      toast.show("Client gallery data deleted", "info");
       load();
     } catch {
       toast.show("Could not delete", "error");
@@ -841,8 +841,8 @@ export default function AdminEvent() {
               ))
             )}
 
-            <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Face data ({clients.length})</Text>
-            <Text style={styles.muted}>Clients who have searched. Delete removes their face signature & album.</Text>
+            <Text style={[styles.sectionTitle, { marginTop: spacing.xl }]}>Client activity ({clients.length})</Text>
+            <Text style={styles.muted}>People who viewed, liked, or scanned this gallery. Delete removes all gallery data for a client.</Text>
             {clients.map((c) => (
               <View key={c.client_user_id} style={styles.grantRow} testID={`client-${c.client_user_id}`}>
                 <Pressable
@@ -858,11 +858,11 @@ export default function AdminEvent() {
                   <Ionicons name="person-circle-outline" size={22} color={colors.brand} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.grantValue}>{c.name || c.email || c.phone}</Text>
-                    <Text style={styles.muted}>{c.matched_count} matched · tap to view galleries</Text>
+                    <Text style={styles.muted}>{c.matched_count || 0} matched · {c.liked_count || 0} liked · {c.activity_count || 0} activities</Text>
                   </View>
                   <Ionicons name="chevron-forward" size={18} color={colors.muted} />
                 </Pressable>
-                <Pressable testID={`delete-face-${c.client_user_id}`} onPress={() => setConfirmDelete(c)} hitSlop={8} style={{ paddingLeft: spacing.sm }}>
+                <Pressable testID={`delete-client-data-${c.client_user_id}`} onPress={() => setConfirmDelete(c)} hitSlop={8} style={{ paddingLeft: spacing.sm }}>
                   <Ionicons name="trash-outline" size={20} color={colors.onError} />
                 </Pressable>
               </View>
@@ -1094,9 +1094,9 @@ export default function AdminEvent() {
         <Pressable style={styles.modalBg} onPress={() => setConfirmDelete(null)}>
           <View style={styles.modalCard} testID="delete-confirm-modal">
             <Ionicons name="trash-outline" size={28} color={colors.onError} />
-            <Text style={styles.modalTitle}>Delete face data?</Text>
+            <Text style={styles.modalTitle}>Delete all client gallery data?</Text>
             <Text style={styles.modalText}>
-              This removes {confirmDelete?.name || "this client"}’s face signature and matched album for this event. They can re-scan later.
+              This removes {confirmDelete?.name || "this client"}’s access, likes, visitor activity, face signature, and matched album for this gallery. Their global account and other galleries are not deleted. This cannot be undone.
             </Text>
             <Button testID="confirm-delete-btn" title="Delete" variant="danger" onPress={() => deleteFaceData(confirmDelete)} />
             <Pressable onPress={() => setConfirmDelete(null)} style={{ marginTop: spacing.md, alignItems: "center" }}>

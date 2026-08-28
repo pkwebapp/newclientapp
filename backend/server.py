@@ -1491,26 +1491,51 @@ async def remove_event_client_assignment(event_id: str, client_id: str,
 async def list_event_clients(event_id: str, admin: dict = Depends(require_admin)):
     await admin_event_or_404(event_id, admin)
     albums = await db.client_albums.find({"event_id": event_id}, {"_id": 0}).to_list(2000)
+    visitors = await db.gallery_visitors.find({"event_id": event_id}, {"_id": 0}).to_list(5000)
+    likes = await db.photo_likes.find({"event_id": event_id}, {"_id": 0, "client_user_id": 1, "created_at": 1}).to_list(20000)
+    album_by_user = {a["client_user_id"]: a for a in albums if a.get("client_user_id")}
+    visitor_by_user: dict[str, list[dict]] = {}
+    for visitor in visitors:
+        if visitor.get("client_user_id"):
+            visitor_by_user.setdefault(visitor["client_user_id"], []).append(visitor)
+    likes_by_user: dict[str, list[dict]] = {}
+    for like in likes:
+        if like.get("client_user_id"):
+            likes_by_user.setdefault(like["client_user_id"], []).append(like)
+    client_ids = set(album_by_user) | set(visitor_by_user) | set(likes_by_user)
     out = []
-    for a in albums:
-        u = await db.users.find_one({"user_id": a["client_user_id"]}, {"_id": 0, "password_hash": 0})
+    for client_user_id in client_ids:
+        u = await db.users.find_one({"user_id": client_user_id}, {"_id": 0, "password_hash": 0})
+        user_visitors = visitor_by_user.get(client_user_id, [])
+        user_likes = likes_by_user.get(client_user_id, [])
+        album = album_by_user.get(client_user_id) or {}
+        activity_dates = [v.get("last_seen_at") or v.get("created_at") for v in user_visitors]
+        activity_dates.extend(l.get("created_at") for l in user_likes)
+        activity_dates = [d for d in activity_dates if d]
         out.append({
-            "client_user_id": a["client_user_id"],
-            "name": u.get("name") if u else None,
+            "client_user_id": client_user_id,
+            "name": u.get("name") if u else (user_visitors[0].get("name") if user_visitors else None),
             "email": u.get("email") if u else None,
-            "phone": u.get("phone") if u else None,
-            "matched_count": len(a.get("photo_ids", [])),
-            "last_searched_at": a.get("last_searched_at"),
+            "phone": u.get("phone") if u else (user_visitors[0].get("phone") if user_visitors else None),
+            "matched_count": len(album.get("photo_ids", [])),
+            "liked_count": len(user_likes),
+            "activity_count": len(user_visitors) + len(user_likes),
+            "last_activity_at": max(activity_dates) if activity_dates else None,
+            "last_searched_at": album.get("last_searched_at"),
         })
-    return out
+    return sorted(out, key=lambda row: row.get("last_activity_at") or "", reverse=True)
 
 
 @api_router.delete("/events/{event_id}/clients/{client_user_id}/face-data")
 async def delete_client_face_data(event_id: str, client_user_id: str, admin: dict = Depends(require_admin)):
-    """Right-to-be-forgotten: remove this person's indexed faces from the AWS
-    Rekognition collection (DeleteFaces) so they can never be matched again, and
-    delete their matched album + consent. (Raw selfies are never stored.)"""
+    """Remove all gallery-specific data for this client.
+
+    Face signatures, matched albums, likes, visitors, access grants, consent
+    records, and gallery shares are removed. The global client account is not
+    deleted because it may be used by another studio or gallery.
+    """
     event = await admin_event_or_404(event_id, admin)
+    u = await db.users.find_one({"user_id": client_user_id}, {"_id": 0, "email": 1, "phone": 1})
     album = await db.client_albums.find_one(
         {"event_id": event_id, "client_user_id": client_user_id}, {"_id": 0}
     )
@@ -1534,7 +1559,15 @@ async def delete_client_face_data(event_id: str, client_user_id: str, admin: dic
 
     await db.client_albums.delete_many({"event_id": event_id, "client_user_id": client_user_id})
     await db.consent_logs.delete_many({"event_id": event_id, "client_user_id": client_user_id})
-    return {"status": "deleted", "faces_removed": deleted_faces}
+    await db.photo_likes.delete_many({"event_id": event_id, "client_user_id": client_user_id})
+    await db.gallery_visitors.delete_many({"event_id": event_id, "client_user_id": client_user_id})
+    await db.gallery_shares.delete_many({"event_id": event_id, "client_user_id": client_user_id})
+    grant_or = [{"client_phone": {"$in": phone_variants(u["phone"])}}] if u and u.get("phone") else []
+    if u and u.get("email"):
+        grant_or.append({"client_email": u["email"].lower()})
+    if grant_or:
+        await db.access_grants.delete_many({"event_id": event_id, "$or": grant_or})
+    return {"status": "deleted", "faces_removed": deleted_faces, "gallery_data_removed": True}
 
 
 # ---------------------------------------------------------------------------
