@@ -12,6 +12,35 @@ type PageKind = "how-it-works" | "features" | "for-photographers" | "pricing";
 
 type Feature = { icon: keyof typeof Ionicons.glyphMap; title: string; text: string };
 
+const SITE = "https://www.pikconnect.com";
+
+const META: Record<PageKind, { title: string; description: string; keywords: string; path: string }> = {
+  "how-it-works": {
+    title: "How PIK Connect Works | AI Photo Face Search",
+    description: "See how PIK Connect delivers event photos: create a private gallery, share one QR code, and let guests find themselves in seconds with AI face search.",
+    keywords: "how it works, AI face search, event photo gallery, QR code gallery, find my photos selfie, photo delivery for photographers",
+    path: "/how-it-works",
+  },
+  features: {
+    title: "Features: AI Face Search & Digital Albums | PIK Connect",
+    description: "Explore PIK Connect features — AI face search, QR-shared private galleries, digital flipbook albums and client management built for photographers.",
+    keywords: "AI face search, digital albums, flipbook, private photo gallery, QR share, client management, photography software features",
+    path: "/features",
+  },
+  "for-photographers": {
+    title: "For Photographers: Photo Delivery Workflow | PIK Connect",
+    description: "PIK Connect helps photographers capture leads, send quotes, collect payments and deliver private galleries and flipbooks — all in one calm workspace.",
+    keywords: "photography CRM, photo delivery, private galleries, digital albums, client management, leads and quotes for photographers",
+    path: "/for-photographers",
+  },
+  pricing: {
+    title: "Pricing Plans for Photography Studios | PIK Connect",
+    description: "Simple PIK Connect plans for studios — galleries, digital albums, storage and AI face search. Standard at ₹499/mo and Pro at ₹999/mo.",
+    keywords: "photography pricing, studio plans, photo gallery pricing, digital album plans, PIK Connect pricing",
+    path: "/pricing",
+  },
+};
+
 const PLANS = [
   { name: "Standard", price: "₹499", note: "For growing studios", features: ["20 galleries", "30 Google Drive galleries", "10 albums", "5 GB storage", "500 clients"] },
   { name: "Pro", price: "₹999", note: "For busy photography teams", features: ["50 galleries", "100 Google Drive galleries", "50 albums", "15 GB storage", "Unlimited clients"] },
@@ -35,12 +64,21 @@ export default function MarketingPage({ kind }: { kind: PageKind }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const copy = COPY[kind];
+  const meta = META[kind];
   const isPhotographer = kind === "for-photographers";
   return (
     <View style={styles.container}>
       <Head>
-        <title>{`${copy.title} | PIK Connect`}</title>
-        <meta name="description" content={copy.intro} />
+        <title>{meta.title}</title>
+        <meta name="description" content={meta.description} />
+        <meta name="keywords" content={meta.keywords} />
+        <link rel="canonical" href={`${SITE}${meta.path}`} />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content={meta.title} />
+        <meta property="og:description" content={meta.description} />
+        <meta property="og:url" content={`${SITE}${meta.path}`} />
+        <meta name="twitter:title" content={meta.title} />
+        <meta name="twitter:description" content={meta.description} />
       </Head>
       <RevealScroll contentContainerStyle={[styles.page, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing["3xl"] }]} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>

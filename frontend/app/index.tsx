@@ -15,7 +15,6 @@ import { fonts, fontSize, radius, spacing } from "@/src/theme";
 import { getAppSurface } from "@/src/navigation/host-routing";
 
 const SITE = "https://www.pikconnect.com";
-const OG_IMAGE = `${SITE}/pik-connect-share-card.png`;
 const TITLE = "AI Face Search Photo Gallery for Events | PIK Connect";
 const DESC =
   "Find your event photos in seconds with one selfie. PIK Connect is a private photo gallery with AI face search and digital albums for photographers.";
@@ -39,6 +38,12 @@ const BADGES = [
   { icon: "shield-checkmark-outline", title: "Private & Secure", text: "Your data stays safe" },
   { icon: "flash-outline", title: "Instant Delivery", text: "Results in seconds" },
   { icon: "albums-outline", title: "Digital Album", text: "Your private album" },
+];
+
+const WHY = [
+  { icon: "scan-outline", title: "AI face search that just works", text: "PIK Connect scans the entire event gallery and surfaces every photo of you from a single selfie — no scrolling through hundreds of images to find your face." },
+  { icon: "shield-checkmark-outline", title: "Private and secure by default", text: "Every gallery is a private, secure link. Your selfie is used only to match your photos and is never shared, so your memories stay yours." },
+  { icon: "flash-outline", title: "Instant delivery, anywhere", text: "Guests open the gallery on any phone or laptop, find themselves in seconds, then save and share full-quality photos or revisit their digital album anytime." },
 ];
 
 const NAV_ITEMS = [
@@ -116,16 +121,13 @@ export default function Home() {
         <title>{TITLE}</title>
         <meta name="description" content={DESC} />
         <meta name="keywords" content={KEYWORDS} />
-        <meta name="robots" content="index, follow" />
+        <link rel="canonical" href={`${SITE}/`} />
         <meta property="og:type" content="website" />
         <meta property="og:title" content={TITLE} />
         <meta property="og:description" content={DESC} />
         <meta property="og:url" content={`${SITE}/`} />
-        <meta property="og:image" content={OG_IMAGE} />
-        <meta name="twitter:card" content="summary_large_image" />
         <meta name="twitter:title" content={TITLE} />
         <meta name="twitter:description" content={DESC} />
-        <meta name="twitter:image" content={OG_IMAGE} />
       </Head>
 
       <RevealScroll style={styles.page} contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false}>
@@ -201,6 +203,31 @@ export default function Home() {
                     </View>
                     <H3 style={styles.stepTitle}>{s.title}</H3>
                     <P style={styles.stepText}>{s.text}</P>
+                  </View>
+                ))}
+              </View>
+            </Section>
+          </Reveal>
+
+          {/* ---------------- WHY PIK CONNECT ---------------- */}
+          <Reveal delay={60}>
+            <Section style={styles.block}>
+              <H2 style={styles.h2}>Why PIK Connect</H2>
+              <P style={styles.whyLead}>
+                PIK Connect turns a crowded event photo gallery into a personal collection. Instead of emailing zip
+                files or scrolling endless albums, guests take one selfie and AI face search does the rest — a faster,
+                more private way for photographers to deliver photos and for guests to find every shot of themselves.
+              </P>
+              <View style={[styles.whyGrid, isWide && styles.whyGridWide]}>
+                {WHY.map((w) => (
+                  <View key={w.title} style={[styles.whyRow, isWide && styles.whyRowWide]}>
+                    <View style={styles.whyIcon}>
+                      <Ionicons name={w.icon as any} size={20} color={PAL.accent} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <H3 style={styles.whyTitle}>{w.title}</H3>
+                      <P style={styles.whyText}>{w.text}</P>
+                    </View>
                   </View>
                 ))}
               </View>
@@ -323,6 +350,16 @@ const styles = StyleSheet.create({
   stepIcon: { width: 44, height: 44, borderRadius: radius.pill, backgroundColor: "rgba(226,98,60,0.12)", alignItems: "center", justifyContent: "center", marginBottom: spacing.sm },
   stepTitle: { color: PAL.ink, fontFamily: fonts.display, fontSize: fontSize.xl, fontWeight: "700", margin: 0 },
   stepText: { color: PAL.inkSoft, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 21, margin: 0 },
+
+  // ---- Why PIK Connect ----
+  whyLead: { color: PAL.inkSoft, fontFamily: fonts.text, fontSize: fontSize.lg, lineHeight: 26, margin: 0, marginTop: -spacing.md, marginBottom: spacing.xl, maxWidth: 760 },
+  whyGrid: { gap: spacing.lg },
+  whyGridWide: { flexDirection: "row", gap: spacing.lg },
+  whyRow: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md },
+  whyRowWide: { flex: 1, flexDirection: "column", backgroundColor: PAL.card, borderWidth: 1, borderColor: PAL.cardBorder, borderRadius: radius.lg, padding: spacing.xl },
+  whyIcon: { width: 44, height: 44, borderRadius: radius.pill, backgroundColor: "rgba(226,98,60,0.12)", alignItems: "center", justifyContent: "center", marginBottom: spacing.sm },
+  whyTitle: { color: PAL.ink, fontFamily: fonts.display, fontSize: fontSize.xl, fontWeight: "700", margin: 0 },
+  whyText: { color: PAL.inkSoft, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 21, margin: 0, marginTop: spacing.xs },
 
   // ---- FAQ ----
   faqWrap: { maxWidth: 760 },

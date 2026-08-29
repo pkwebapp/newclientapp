@@ -167,34 +167,16 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="geo.placename" content="Mumbai, Goa" />
         <meta property="og:site_name" content="PIK Connect" />
         <meta property="og:locale" content="en_IN" />
-        <title>AI Face Search Photo Gallery for Events | PIK Connect</title>
-        <meta
-          name="description"
-          content="Find your event photos in seconds with one selfie. PIK Connect is a private photo gallery with AI face search and digital albums for photographers."
-        />
-        <meta
-          name="keywords"
-          content="PIK Connect, event photo gallery, AI face search, find my photos selfie, digital album, private photo gallery, photo sharing, wedding photographer Mumbai, event photographer Goa, destination wedding photographer Goa"
-        />
-        <meta property="og:type" content="website" />
-        <meta property="og:title" content="AI Face Search Photo Gallery for Events | PIK Connect" />
-        <meta
-          property="og:description"
-          content="Take one selfie and find every event photo of you. Private photo gallery, AI face search and digital albums."
-        />
-        <meta property="og:url" content={SITE + "/"} />
         <meta property="og:image" content={OG_IMAGE} />
         <meta property="og:image:alt" content="PIK Connect private photo gallery for photographers" />
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="AI Face Search Photo Gallery for Events | PIK Connect" />
-        <meta
-          name="twitter:description"
-          content="Take one selfie and find every event photo of you. Private photo gallery, AI face search and digital albums."
-        />
         <meta name="twitter:image" content={OG_IMAGE} />
-        <link rel="canonical" href={SITE + "/"} />
+        {/* Fallback <title> for non-indexable app routes without their own <Head>.
+            Public, indexable routes (home + marketing) set title/description/
+            canonical/og per-page via expo-router <Head>. */}
+        <title>AI Face Search Photo Gallery for Events | PIK Connect</title>
         <link rel="icon" type="image/svg+xml" href={FAVICON} />
         <link rel="alternate icon" type="image/png" href="/favicon.png" />
         <link rel="apple-touch-icon" href="/favicon.png" />
