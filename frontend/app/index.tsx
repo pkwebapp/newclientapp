@@ -138,6 +138,10 @@ export default function Home() {
               {isWide ? (
                 <View style={styles.navLinks}>
                   {NAV_ITEMS.map((item) => <Pressable key={item.route} onPress={() => openPage(item.route)}><Text style={styles.navLink}>{item.label}</Text></Pressable>)}
+                  <Pressable testID="studio-login-web" onPress={() => openPage("/admin-login")} style={styles.studioLoginBtn}>
+                    <Ionicons name="lock-closed-outline" size={14} color={PAL.accent} />
+                    <Text style={styles.studioLoginText}>Studio Login</Text>
+                  </Pressable>
                 </View>
               ) : (
                 <Pressable testID="mobile-hero-menu" onPress={() => setMobileMenuOpen((open) => !open)} style={styles.menuButton} accessibilityLabel="Open menu"><Ionicons name={mobileMenuOpen ? "close" : "menu"} size={25} color={PAL.ink} /></Pressable>
@@ -146,6 +150,10 @@ export default function Home() {
             {mobileMenuOpen && !isWide ? (
               <View style={styles.mobileMenu}>
                 {NAV_ITEMS.map((item) => <Pressable key={item.route} onPress={() => openPage(item.route)} style={styles.mobileMenuItem}><Text style={styles.mobileMenuText}>{item.label}</Text></Pressable>)}
+                <Pressable testID="studio-login-mobile" onPress={() => openPage("/admin-login")} style={styles.mobileStudioItem}>
+                  <Ionicons name="lock-closed-outline" size={16} color={PAL.accent} />
+                  <Text style={styles.mobileStudioText}>Studio Login</Text>
+                </Pressable>
               </View>
             ) : null}
             <View style={[styles.heroBody, isWide && styles.heroBodyWide]}>
@@ -256,10 +264,14 @@ const styles = StyleSheet.create({
   logo: { color: PAL.ink, fontFamily: fonts.text, fontSize: fontSize.sm, letterSpacing: 4, fontWeight: "700" },
   navLinks: { flexDirection: "row", alignItems: "center", gap: spacing.xl },
   navLink: { color: PAL.inkSoft, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "500" },
+  studioLoginBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: "rgba(226,98,60,0.35)", backgroundColor: "rgba(226,98,60,0.08)" },
+  studioLoginText: { color: PAL.accent, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "700" },
   menuButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: radius.pill, backgroundColor: "rgba(36,29,22,0.06)" },
   mobileMenu: { alignSelf: "flex-end", width: 210, padding: spacing.sm, borderRadius: radius.md, backgroundColor: PAL.card, borderWidth: 1, borderColor: PAL.cardBorder, zIndex: 20, shadowColor: "#3A2C1D", shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, elevation: 8 },
   mobileMenuItem: { minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.md },
   mobileMenuText: { color: PAL.ink, fontFamily: fonts.text, fontSize: fontSize.base },
+  mobileStudioItem: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingHorizontal: spacing.md, marginTop: spacing.xs, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: PAL.cardBorder },
+  mobileStudioText: { color: PAL.accent, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
   heroBody: { gap: spacing.xl, marginTop: spacing.lg },
   heroBodyWide: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: spacing["2xl"], marginTop: 0 },
   heroCopy: { gap: spacing.md },

@@ -35,6 +35,7 @@ export default function MarketingPage({ kind }: { kind: PageKind }) {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const copy = COPY[kind];
+  const isPhotographer = kind === "for-photographers";
   return (
     <View style={styles.container}>
       <Head>
@@ -45,7 +46,7 @@ export default function MarketingPage({ kind }: { kind: PageKind }) {
         <View style={styles.header}>
           <Pressable testID="marketing-back" onPress={() => router.back()} style={styles.backButton} accessibilityLabel="Go back"><Ionicons name="arrow-back" size={20} color={colors.onSurface} /></Pressable>
           <View style={styles.brand}><Ionicons name="aperture-outline" size={20} color={colors.brand} /><Text style={styles.brandText}>PIK CONNECT</Text></View>
-          <Button title="Find my photos" onPress={() => router.push("/client-login")} style={styles.headerCta} />
+          <Button testID="marketing-header-cta" title={isPhotographer ? "Studio Login" : "Find my photos"} icon={isPhotographer ? "lock-closed" : undefined} onPress={() => router.push(isPhotographer ? "/admin-login" : "/client-login")} style={styles.headerCta} />
         </View>
         <Reveal>
           <View style={styles.hero}>
@@ -61,7 +62,15 @@ export default function MarketingPage({ kind }: { kind: PageKind }) {
           {kind === "pricing" ? <Pricing /> : null}
         </Reveal>
         <Reveal>
-          <View style={styles.bottomCta}><Text style={styles.bottomTitle}>Ready when your next gallery is?</Text><Button title="Find my photos" icon="sparkles" onPress={() => router.push("/client-login")} /></View>
+          <View style={styles.bottomCta}>
+            <Text style={styles.bottomTitle}>{isPhotographer ? "Ready to run a calmer studio?" : "Ready when your next gallery is?"}</Text>
+            <Button testID="marketing-bottom-cta" title={isPhotographer ? "Studio Login" : "Find my photos"} icon={isPhotographer ? "lock-closed" : "sparkles"} onPress={() => router.push(isPhotographer ? "/admin-login" : "/client-login")} />
+            {isPhotographer ? (
+              <Pressable testID="marketing-bottom-secondary" onPress={() => router.push("/client-login")} style={styles.bottomSecondary}>
+                <Text style={styles.bottomSecondaryText}>Are you a guest? Find my photos</Text>
+              </Pressable>
+            ) : null}
+          </View>
         </Reveal>
       </RevealScroll>
     </View>
@@ -123,4 +132,6 @@ const styles = StyleSheet.create({
   planFeature: { flexDirection: "row", gap: spacing.sm, alignItems: "center", marginTop: spacing.sm },
   bottomCta: { alignItems: "center", paddingVertical: spacing["3xl"], marginTop: spacing["3xl"], borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border },
   bottomTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"], marginBottom: spacing.lg, textAlign: "center" },
+  bottomSecondary: { marginTop: spacing.lg, minHeight: 44, justifyContent: "center" },
+  bottomSecondaryText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "600" },
 });
