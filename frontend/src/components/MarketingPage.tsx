@@ -66,9 +66,14 @@ export default function MarketingPage({ kind }: { kind: PageKind }) {
             <Text style={styles.bottomTitle}>{isPhotographer ? "Ready to run a calmer studio?" : "Ready when your next gallery is?"}</Text>
             <Button testID="marketing-bottom-cta" title={isPhotographer ? "Studio Login" : "Find my photos"} icon={isPhotographer ? "lock-closed" : "sparkles"} onPress={() => router.push(isPhotographer ? "/admin-login" : "/client-login")} />
             {isPhotographer ? (
-              <Pressable testID="marketing-bottom-secondary" onPress={() => router.push("/client-login")} style={styles.bottomSecondary}>
-                <Text style={styles.bottomSecondaryText}>Are you a guest? Find my photos</Text>
-              </Pressable>
+              <>
+                <Pressable testID="marketing-bottom-signup" onPress={() => router.push("/admin-login?mode=register")} style={styles.bottomSecondary}>
+                  <Text style={styles.bottomSignupText}>New studio? Start free</Text>
+                </Pressable>
+                <Pressable testID="marketing-bottom-secondary" onPress={() => router.push("/client-login")} style={styles.bottomSecondary}>
+                  <Text style={styles.bottomSecondaryText}>Are you a guest? Find my photos</Text>
+                </Pressable>
+              </>
             ) : null}
           </View>
         </Reveal>
@@ -134,4 +139,5 @@ const styles = StyleSheet.create({
   bottomTitle: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"], marginBottom: spacing.lg, textAlign: "center" },
   bottomSecondary: { marginTop: spacing.lg, minHeight: 44, justifyContent: "center" },
   bottomSecondaryText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "600" },
+  bottomSignupText: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
 });

@@ -142,6 +142,9 @@ export default function Home() {
                     <Ionicons name="lock-closed-outline" size={14} color={PAL.accent} />
                     <Text style={styles.studioLoginText}>Studio Login</Text>
                   </Pressable>
+                  <Pressable testID="studio-signup-web" onPress={() => openPage("/admin-login?mode=register")}>
+                    <Text style={styles.studioSignupText}>New studio? Start free</Text>
+                  </Pressable>
                 </View>
               ) : (
                 <Pressable testID="mobile-hero-menu" onPress={() => setMobileMenuOpen((open) => !open)} style={styles.menuButton} accessibilityLabel="Open menu"><Ionicons name={mobileMenuOpen ? "close" : "menu"} size={25} color={PAL.ink} /></Pressable>
@@ -153,6 +156,9 @@ export default function Home() {
                 <Pressable testID="studio-login-mobile" onPress={() => openPage("/admin-login")} style={styles.mobileStudioItem}>
                   <Ionicons name="lock-closed-outline" size={16} color={PAL.accent} />
                   <Text style={styles.mobileStudioText}>Studio Login</Text>
+                </Pressable>
+                <Pressable testID="studio-signup-mobile" onPress={() => openPage("/admin-login?mode=register")} style={styles.mobileMenuItem}>
+                  <Text style={styles.studioSignupText}>New studio? Start free</Text>
                 </Pressable>
               </View>
             ) : null}
@@ -266,6 +272,7 @@ const styles = StyleSheet.create({
   navLink: { color: PAL.inkSoft, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "500" },
   studioLoginBtn: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, borderRadius: radius.pill, borderWidth: 1, borderColor: "rgba(226,98,60,0.35)", backgroundColor: "rgba(226,98,60,0.08)" },
   studioLoginText: { color: PAL.accent, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "700" },
+  studioSignupText: { color: PAL.inkSoft, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
   menuButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: radius.pill, backgroundColor: "rgba(36,29,22,0.06)" },
   mobileMenu: { alignSelf: "flex-end", width: 210, padding: spacing.sm, borderRadius: radius.md, backgroundColor: PAL.card, borderWidth: 1, borderColor: PAL.cardBorder, zIndex: 20, shadowColor: "#3A2C1D", shadowOpacity: 0.18, shadowRadius: 20, shadowOffset: { width: 0, height: 10 }, elevation: 8 },
   mobileMenuItem: { minHeight: 44, justifyContent: "center", paddingHorizontal: spacing.md },
