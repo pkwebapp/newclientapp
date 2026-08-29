@@ -133,14 +133,6 @@ const schema = {
             text: "It's free for guests finding their photos. For studios, plans start at ₹499/mo (Standard) and ₹999/mo (Pro), scaling galleries, albums, storage and clients as your studio grows.",
           },
         },
-        {
-          "@type": "Question",
-          name: "Which cities do you cover?",
-          acceptedAnswer: {
-            "@type": "Answer",
-            text: "PK Photography runs studios in Andheri West, Mumbai and Morjim, Goa — and takes on destination and pan-India shoots for weddings, events and portraits.",
-          },
-        },
       ],
     },
     {

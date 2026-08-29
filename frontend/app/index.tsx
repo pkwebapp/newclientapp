@@ -36,7 +36,6 @@ const FAQS = [
   { q: "What if the AI misses some of my photos?", a: "Try retaking your selfie in good, even lighting facing the camera. Face search works best with a clear, front-facing shot. If some shots still don't appear, your photographer can help surface them." },
   { q: "I'm a photographer — how does PIK Connect help my studio?", a: "PIK Connect gives you private client galleries, one-tap QR sharing and AI face search for guests, plus a light studio workspace to manage leads, quotes, payments, shoots and digital albums — all in one place." },
   { q: "How much does PIK Connect cost?", a: "It's free for guests finding their photos. For studios, plans start at ₹499/mo (Standard) and ₹999/mo (Pro), scaling galleries, albums, storage and clients as your studio grows." },
-  { q: "Which cities do you cover?", a: "PK Photography runs studios in Andheri West, Mumbai and Morjim, Goa — and takes on destination and pan-India shoots for weddings, events and portraits." },
 ];
 
 const BADGES = [
