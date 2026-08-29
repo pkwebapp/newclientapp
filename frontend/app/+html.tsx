@@ -53,6 +53,7 @@ const schema = {
       dateModified: "2026-06-01",
       offers: { "@type": "Offer", price: "499", priceCurrency: "INR" },
       publisher: { "@id": `${STUDIO_SITE}/#org` },
+      dateModified: "2026-08-01",
     },
     {
       "@type": "Service",
