@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "expo-router";
-import { Pressable, StyleSheet, Text, View, Linking } from "react-native";
+import { Pressable, StyleSheet, Text, View, Linking, Platform } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,7 +19,7 @@ import { APP_DOMAIN, getAppSurface } from "@/src/navigation/host-routing";
 export default function ClientLogin() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signInWithToken } = useAuth();
+  const { signInWithToken, startGoogleLogin } = useAuth();
   const toast = useToast();
   const { isDesktop } = useResponsive();
   const surface = getAppSurface();
@@ -30,6 +30,19 @@ export default function ClientLogin() {
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
+
+  const google = async () => {
+    setGoogleLoading(true);
+    try {
+      await startGoogleLogin("client");
+      if (Platform.OS !== "web") router.replace("/client");
+    } catch {
+      toast.show("Google sign-in failed", "error");
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   const requestOtp = async () => {
     if (!value.trim()) {
@@ -157,6 +170,21 @@ export default function ClientLogin() {
                 />
               )}
               <Button testID="request-otp-btn" title="Send code" loading={loading} onPress={requestOtp} />
+
+              <View style={styles.divider}>
+                <View style={styles.line} />
+                <Text style={styles.or}>OR</Text>
+                <View style={styles.line} />
+              </View>
+
+              <Button
+                testID="client-google-btn"
+                title="Continue with Google"
+                variant="secondary"
+                icon="logo-google"
+                loading={googleLoading}
+                onPress={google}
+              />
             </View>
           </>
         ) : (
@@ -230,5 +258,8 @@ const styles = StyleSheet.create({
   tabActive: { backgroundColor: colors.brand },
   tabText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
   tabTextActive: { color: colors.onBrand, fontWeight: "600" },
+  divider: { flexDirection: "row", alignItems: "center", marginVertical: spacing.xl },
+  line: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.borderStrong },
+  or: { color: colors.muted, marginHorizontal: spacing.md, fontFamily: fonts.text, fontSize: fontSize.sm },
   toggle: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base },
 });

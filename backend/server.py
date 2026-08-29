@@ -203,6 +203,7 @@ class AdminLogin(BaseModel):
 
 class SessionExchange(BaseModel):
     session_id: str
+    role: Optional[str] = "admin"
 
 
 class OtpRequest(BaseModel):
@@ -253,7 +254,9 @@ async def admin_login(body: AdminLogin):
 @api_router.post("/auth/session")
 async def google_session(body: SessionExchange):
     """Exchange an Emergent Google OAuth session_id for a session token.
-    Google sign-in creates/logs in a studio admin."""
+    The `role` intent decides what a NEW account becomes: "client" for the
+    guest login, "admin" (default) for the studio login. Existing accounts are
+    reused by email regardless of intent."""
     async with httpx.AsyncClient(timeout=30) as hc:
         resp = await hc.get(
             "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
@@ -267,18 +270,34 @@ async def google_session(body: SessionExchange):
         raise HTTPException(status_code=401, detail="No email from provider")
     user = await db.users.find_one({"email": email})
     if not user:
-        user = {
-            "user_id": new_user_id(),
-            "role": "admin",
-            "name": data.get("name") or email.split("@")[0],
-            "email": email,
-            "phone": None,
-            "password_hash": None,
-            "picture": data.get("picture"),
-            "auth_provider": "google",
-            "created_at": now_iso(),
-            **plans.new_studio_plan_fields(),
-        }
+        name = data.get("name") or email.split("@")[0]
+        if body.role == "client":
+            user = {
+                "user_id": new_user_id(),
+                "role": "client",
+                "name": name,
+                "email": email,
+                "phone": None,
+                "password_hash": None,
+                "picture": data.get("picture"),
+                "auth_provider": "google",
+                "verified_email": True,
+                "verified_phone": False,
+                "created_at": now_iso(),
+            }
+        else:
+            user = {
+                "user_id": new_user_id(),
+                "role": "admin",
+                "name": name,
+                "email": email,
+                "phone": None,
+                "password_hash": None,
+                "picture": data.get("picture"),
+                "auth_provider": "google",
+                "created_at": now_iso(),
+                **plans.new_studio_plan_fields(),
+            }
         await db.users.insert_one(user)
     token = await create_session(user["user_id"])
     return {"session_token": token, "user": _public_user(user)}

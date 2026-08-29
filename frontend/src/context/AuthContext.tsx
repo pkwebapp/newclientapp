@@ -10,6 +10,7 @@ import { storage } from "@/src/utils/storage";
 WebBrowser.maybeCompleteAuthSession();
 
 const TOKEN_KEY = "lumiere_session_token";
+const GOOGLE_ROLE_KEY = "pik_google_role";
 
 export type User = {
   user_id: string;
@@ -30,7 +31,7 @@ type AuthState = {
   signInWithToken: (token: string) => Promise<User | null>;
   signOut: () => Promise<void>;
   refresh: () => Promise<void>;
-  startGoogleLogin: () => Promise<void>;
+  startGoogleLogin: (role?: "admin" | "client") => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState>({} as AuthState);
@@ -61,10 +62,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const exchangeGoogle = useCallback(
-    async (sessionId: string) => {
+    async (sessionId: string, role: "admin" | "client" = "admin") => {
       if (exchanged.has(sessionId)) return;
       exchanged.add(sessionId);
-      const res = await api.post("/auth/session", { session_id: sessionId });
+      const res = await api.post("/auth/session", { session_id: sessionId, role });
       await applyToken(res.session_token);
     },
     [applyToken]
@@ -80,7 +81,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const m = raw.match(/session_id=([^&#\s]+)/);
           if (m) {
             try {
-              await exchangeGoogle(decodeURIComponent(m[1]));
+              const savedRole = await storage.getItem<string>(GOOGLE_ROLE_KEY, "admin");
+              await exchangeGoogle(decodeURIComponent(m[1]), savedRole === "client" ? "client" : "admin");
+              await storage.removeItem(GOOGLE_ROLE_KEY);
               window.history.replaceState(window.history.state, "", window.location.pathname);
             } catch {}
             setLoading(false);
@@ -125,7 +128,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {}
   }, []);
 
-  const startGoogleLogin = useCallback(async () => {
+  const startGoogleLogin = useCallback(async (role: "admin" | "client" = "admin") => {
+    await storage.setItem(GOOGLE_ROLE_KEY, role);
     if (Platform.OS === "web") {
       const redirect = window.location.origin + "/";
       window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirect)}`;
@@ -145,10 +149,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (!url) url = await Linking.getInitialURL();
       if (url) {
         const m = url.match(/[?#&]session_id=([^&#]+)/);
-        if (m) await exchangeGoogle(decodeURIComponent(m[1]));
+        if (m) await exchangeGoogle(decodeURIComponent(m[1]), role);
       }
     } finally {
       sub.remove();
+      await storage.removeItem(GOOGLE_ROLE_KEY);
     }
   }, [exchangeGoogle]);
 
