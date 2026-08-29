@@ -8,7 +8,7 @@ import requests
 import sys
 
 # Backend URL from frontend/.env
-BASE_URL = "https://app-hub-525.preview.emergentagent.com/api"
+BASE_URL = "https://client-dashboard-207.preview.emergentagent.com/api"
 
 # Test credentials from /app/memory/test_credentials.md
 ADMIN_EMAIL = "admin@lumiere.studio"

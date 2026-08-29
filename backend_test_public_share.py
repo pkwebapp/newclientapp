@@ -8,7 +8,7 @@ import sys
 import time
 
 # Configuration
-BASE_URL = "https://app-hub-525.preview.emergentagent.com/api"
+BASE_URL = "https://client-dashboard-207.preview.emergentagent.com/api"
 ADMIN_EMAIL = "admin@lumiere.studio"
 ADMIN_PASSWORD = "Admin@12345"
 
