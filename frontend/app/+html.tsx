@@ -160,6 +160,22 @@ export default function Root({ children }: PropsWithChildren) {
           dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
         />
         <ScrollViewStyleReset />
+        <style
+          dangerouslySetInnerHTML={{
+            __html: `
+              /* Paint the browser canvas in the app background so no white
+                 strip can ever show through on mobile first load, while the
+                 dynamic address bar is settling. */
+              html, body, #root { background-color: #D8D0C4; }
+              html, body { overscroll-behavior-y: none; }
+              /* Track the *dynamic* visible viewport (address bar show/hide)
+                 instead of the stale 100% computed at first paint. */
+              @supports (height: 100dvh) {
+                html, body, #root { height: 100dvh; }
+              }
+            `,
+          }}
+        />
       </head>
       <body>{children}</body>
     </html>

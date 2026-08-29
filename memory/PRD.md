@@ -313,3 +313,8 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - NEW `/app/frontend/src/components/Reveal.tsx`: RevealScroll + Reveal (scroll-into-view fade/slide). Used on landing page sections and marketing page sections.
 - Intentionally dark: camera selfie overlay, fullscreen photo viewer, toasts. Guest share links (/g/*, /a/*, /s/*) still dark — candidate follow-up.
 - Tested (iteration_5): all client screens light on mobile+desktop, admin dark regression passed, 0 console errors.
+
+## June 2026 — White strip on mobile first load (recurrence, ROOT-CAUSE FIX)
+- Root cause: html/body/#root had NO background color (transparent) — browser's default white canvas showed through the viewport-height gap while the mobile address bar settled on first load.
+- Fix: `app/+html.tsx` now injects CSS painting html/body/#root in app beige (#D8D0C4), `overscroll-behavior-y: none`, and `height: 100dvh` (dynamic viewport) so root tracks the real visible area.
+- Zero UI/layout change; scrolling verified working after fix.
