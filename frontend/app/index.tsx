@@ -28,9 +28,15 @@ const STEPS = [
 ];
 
 const FAQS = [
-  { q: "How do I find my photos?", a: "Open the gallery link from PK Photography, take a selfie, and PIK Connect surfaces every photo of you instantly." },
-  { q: "Is my gallery private?", a: "Yes — every gallery is a private, secure link, and your selfie is used only to match your photos." },
-  { q: "Which cities do you cover?", a: "Studios in Andheri West, Mumbai and Morjim, Goa — plus destination and pan-India shoots." },
+  { q: "How do I find my photos?", a: "Open the private gallery link your photographer shares (or scan their QR code), take one quick selfie, and PIK Connect's AI face search instantly surfaces every photo of you across the whole event gallery — no scrolling through hundreds of images." },
+  { q: "Do I need an app or an account?", a: "No. PIK Connect opens right in your browser on any phone or laptop. There's no app to download and no account to create — just the gallery link and a selfie to find yourself." },
+  { q: "Is my gallery private and secure?", a: "Yes. Every gallery is a private, secure link that only people with the link can open. Your selfie is used solely to match your face to your photos — it's never shared, sold or used for anything else." },
+  { q: "Can I download and share my photos?", a: "Absolutely. Once the AI finds you, you can view and save every match in full quality, share them directly, and return to your personal digital album from the same link whenever you like." },
+  { q: "What is a digital album or flipbook?", a: "Photographers can turn a designed album PDF into a realistic, page-turning flipbook you can flip through and share online — a beautiful way to relive the event beyond individual photos." },
+  { q: "What if the AI misses some of my photos?", a: "Try retaking your selfie in good, even lighting facing the camera. Face search works best with a clear, front-facing shot. If some shots still don't appear, your photographer can help surface them." },
+  { q: "I'm a photographer — how does PIK Connect help my studio?", a: "PIK Connect gives you private client galleries, one-tap QR sharing and AI face search for guests, plus a light studio workspace to manage leads, quotes, payments, shoots and digital albums — all in one place." },
+  { q: "How much does PIK Connect cost?", a: "It's free for guests finding their photos. For studios, plans start at ₹499/mo (Standard) and ₹999/mo (Pro), scaling galleries, albums, storage and clients as your studio grows." },
+  { q: "Which cities do you cover?", a: "PK Photography runs studios in Andheri West, Mumbai and Morjim, Goa — and takes on destination and pan-India shoots for weddings, events and portraits." },
 ];
 
 const BADGES = [
@@ -238,6 +244,9 @@ export default function Home() {
           <Reveal>
             <Section style={styles.block}>
               <H2 style={styles.h2}>Questions, answered</H2>
+              <P style={styles.faqLead}>
+                Everything guests and photographers ask about finding photos, privacy and running a studio on PIK Connect.
+              </P>
               <View style={styles.faqWrap}>
                 {FAQS.map((f) => (
                   <FaqRow key={f.q} q={f.q} a={f.a} />
@@ -362,6 +371,7 @@ const styles = StyleSheet.create({
   whyText: { color: PAL.inkSoft, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 21, margin: 0, marginTop: spacing.xs },
 
   // ---- FAQ ----
+  faqLead: { color: PAL.inkSoft, fontFamily: fonts.text, fontSize: fontSize.lg, lineHeight: 26, margin: 0, marginTop: -spacing.md, marginBottom: spacing.lg, maxWidth: 760 },
   faqWrap: { maxWidth: 760 },
   faqItem: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: "rgba(36,29,22,0.14)" },
   faqHead: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: spacing.lg, gap: spacing.md },

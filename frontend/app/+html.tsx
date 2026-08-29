@@ -74,15 +74,63 @@ const schema = {
           name: "How do I find my photos?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Open the gallery link from PK Photography, take a selfie, and PIK Connect surfaces every photo of you instantly with AI face search.",
+            text: "Open the private gallery link your photographer shares (or scan their QR code), take one quick selfie, and PIK Connect's AI face search instantly surfaces every photo of you across the whole event gallery — no scrolling through hundreds of images.",
           },
         },
         {
           "@type": "Question",
-          name: "Is my gallery private?",
+          name: "Do I need an app or an account?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Yes — every gallery is a private, secure link, and your selfie is used only to match your photos.",
+            text: "No. PIK Connect opens right in your browser on any phone or laptop. There's no app to download and no account to create — just the gallery link and a selfie to find yourself.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "Is my gallery private and secure?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Yes. Every gallery is a private, secure link that only people with the link can open. Your selfie is used solely to match your face to your photos — it's never shared, sold or used for anything else.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "Can I download and share my photos?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Absolutely. Once the AI finds you, you can view and save every match in full quality, share them directly, and return to your personal digital album from the same link whenever you like.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "What is a digital album or flipbook?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Photographers can turn a designed album PDF into a realistic, page-turning flipbook you can flip through and share online — a beautiful way to relive the event beyond individual photos.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "What if the AI misses some of my photos?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Try retaking your selfie in good, even lighting facing the camera. Face search works best with a clear, front-facing shot. If some shots still don't appear, your photographer can help surface them.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "I'm a photographer — how does PIK Connect help my studio?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "PIK Connect gives you private client galleries, one-tap QR sharing and AI face search for guests, plus a light studio workspace to manage leads, quotes, payments, shoots and digital albums — all in one place.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "How much does PIK Connect cost?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "It's free for guests finding their photos. For studios, plans start at ₹499/mo (Standard) and ₹999/mo (Pro), scaling galleries, albums, storage and clients as your studio grows.",
           },
         },
         {
@@ -90,7 +138,7 @@ const schema = {
           name: "Which cities do you cover?",
           acceptedAnswer: {
             "@type": "Answer",
-            text: "Studios in Andheri West, Mumbai and Morjim, Goa — plus destination and pan-India shoots.",
+            text: "PK Photography runs studios in Andheri West, Mumbai and Morjim, Goa — and takes on destination and pan-India shoots for weddings, events and portraits.",
           },
         },
       ],
