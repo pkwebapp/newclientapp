@@ -304,3 +304,12 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - Face photos generated with Gemini Nano Banana (same woman across selfie + 3 event candids), uploaded to Cloudinary under `pikconnect/hero/*` (script: `/app/backend/scripts/gen_hero_assets.py`).
 - Feature badge "High Resolution / Full-quality photos" replaced with "Digital Album / Your private album".
 - Desktop hero fills first viewport up to CTA; badge strip, How-it-works, FAQ, footer scroll below (all restyled to match mid-tone palette).
+
+## Mid-tone Theme Extension + Scroll Reveal (June 2026)
+- Added `lightColors` palette + `Palette` type in `/app/frontend/src/theme.ts` (same semantic keys as dark `colors`, plus `shellBlur`).
+- NEW `/app/frontend/src/theme-context.tsx`: `ThemeProvider` (scheme light/dark), `usePalette`, `useThemedStyles`. Default = dark, so admin/superadmin surfaces are untouched.
+- Shared components refactored palette-aware (makeStyles factory + hooks): ui.tsx (Button, TextField, GlassHeader, Pill, EmptyState, Toast, LuxeLoader), MobileShell, DesktopShell, PhoneField, PhotoGrid, DatePickerField, NotificationBell.
+- Light theme applied to: marketing pages (MarketingPage.tsx via `lightColors as colors` import swap), /client-login (wrapped in ThemeProvider light), all /client/* screens (import swap + ThemeProvider in client/_layout.tsx).
+- NEW `/app/frontend/src/components/Reveal.tsx`: RevealScroll + Reveal (scroll-into-view fade/slide). Used on landing page sections and marketing page sections.
+- Intentionally dark: camera selfie overlay, fullscreen photo viewer, toasts. Guest share links (/g/*, /a/*, /s/*) still dark — candidate follow-up.
+- Tested (iteration_5): all client screens light on mobile+desktop, admin dark regression passed, 0 console errors.

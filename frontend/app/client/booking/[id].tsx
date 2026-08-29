@@ -5,7 +5,7 @@ import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { api } from "@/src/api/client";
 import { Button, GlassHeader, Pill, TextField, useToast } from "@/src/components/ui";
 import DatePickerField, { isValidIsoDate } from "@/src/components/DatePickerField";
-import { colors, fonts, fontSize, spacing } from "@/src/theme";
+import { lightColors as colors, fonts, fontSize, spacing } from "@/src/theme";
 export default function ClientBookingDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();

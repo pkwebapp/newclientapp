@@ -11,7 +11,7 @@ import { api, ApiError } from "@/src/api/client";
 import { Button, GlassHeader, TextField, useToast } from "@/src/components/ui";
 import DatePickerField, { isValidIsoDate } from "@/src/components/DatePickerField";
 import { PhoneField, isPhoneNumberValid } from "@/src/components/PhoneField";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { lightColors as colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
 const GENDERS = ["Male", "Female", "Non-binary", "Prefer not to say"];
 

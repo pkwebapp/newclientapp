@@ -18,7 +18,7 @@ import * as Haptics from "expo-haptics";
 
 import { api, ApiError } from "@/src/api/client";
 import { Button, GlassHeader, useToast } from "@/src/components/ui";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { lightColors as colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { goBackOr } from "@/src/navigation/back";
 
 

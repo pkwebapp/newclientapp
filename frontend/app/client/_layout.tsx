@@ -7,7 +7,8 @@ import { useResponsive } from "@/src/hooks/use-responsive";
 import { MobileShell } from "@/src/components/MobileShell";
 import { DesktopShell } from "@/src/components/DesktopShell";
 
-import { colors, fonts, fontSize } from "@/src/theme";
+import { lightColors as colors, fonts, fontSize } from "@/src/theme";
+import { ThemeProvider } from "@/src/theme-context";
 import { getAppSurface } from "@/src/navigation/host-routing";
 
 /**
@@ -43,8 +44,18 @@ export default function ClientLayout() {
     </Head>
   );
 
-  if (isDesktop) return <DesktopShell role="client">{noindex}{stack}</DesktopShell>;
-  return <MobileShell role="client">{noindex}{stack}</MobileShell>;
+  if (isDesktop) {
+    return (
+      <ThemeProvider scheme="light">
+        <DesktopShell role="client">{noindex}{stack}</DesktopShell>
+      </ThemeProvider>
+    );
+  }
+  return (
+    <ThemeProvider scheme="light">
+      <MobileShell role="client">{noindex}{stack}</MobileShell>
+    </ThemeProvider>
+  );
 }
 
 const styles = StyleSheet.create({

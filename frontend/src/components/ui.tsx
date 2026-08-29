@@ -14,7 +14,8 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { BlurView } from "expo-blur";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { Palette, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { usePalette, useThemedStyles } from "@/src/theme-context";
 import { useResponsive } from "@/src/hooks/use-responsive";
 
 // ---------------- Button ----------------
@@ -37,6 +38,8 @@ export function Button({
   testID?: string;
   style?: ViewStyle;
 }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const isPrimary = variant === "primary";
   const isDanger = variant === "danger";
   const bg =
@@ -85,6 +88,8 @@ export function LuxeLoader({
   subtitle?: string;
   progress?: number;
 }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const spin = useRef(new Animated.Value(0)).current;
   const pulse = useRef(new Animated.Value(0.85)).current;
 
@@ -138,6 +143,8 @@ export function TextField({
   testID,
   ...props
 }: TextInputProps & { label?: string; error?: string; testID?: string }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const [focused, setFocused] = useState(false);
   return (
     <View style={{ marginBottom: spacing.lg }}>
@@ -174,6 +181,8 @@ export function Pill({
   tone?: "neutral" | "gold" | "success" | "warning";
   icon?: keyof typeof Ionicons.glyphMap;
 }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const map = {
     neutral: { bg: colors.surfaceTertiary, fg: colors.onSurfaceTertiary },
     gold: { bg: colors.brandTertiary, fg: colors.onBrandTertiary },
@@ -202,6 +211,8 @@ export function EmptyState({
   action?: React.ReactNode;
   style?: any;
 }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   return (
     <View style={[styles.empty, style]}>
       <View style={styles.emptyIcon}>
@@ -220,6 +231,8 @@ const ToastCtx = createContext<{ show: (m: string, t?: ToastType) => void }>({ s
 export const useToast = () => useContext(ToastCtx);
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const [msg, setMsg] = useState<string | null>(null);
   const [type, setType] = useState<ToastType>("info");
   const anim = useRef(new Animated.Value(0)).current;
@@ -288,6 +301,8 @@ export function GlassHeader({
   subtitle?: string;
   topInset?: number;
 }) {
+  const { colors, scheme } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const { isDesktop } = useResponsive();
 
   // Desktop: slim, left-aligned title bar (no blur / no full-bleed). The
@@ -318,7 +333,7 @@ export function GlassHeader({
   }
 
   return (
-    <BlurView intensity={40} tint="dark" style={[styles.header, { paddingTop: topInset + spacing.sm }]}>
+    <BlurView intensity={40} tint={scheme === "light" ? "light" : "dark"} style={[styles.header, { paddingTop: topInset + spacing.sm }]}>
       <View style={styles.headerRow}>
         {onBack ? (
           <Pressable testID="header-back" onPress={onBack} style={styles.iconBtn} hitSlop={10}>
@@ -345,7 +360,7 @@ export function GlassHeader({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   loaderScreen: { flex: 1, alignItems: "center", justifyContent: "center", padding: spacing.xl, backgroundColor: colors.surface },
   loaderVisual: { width: 138, height: 138, alignItems: "center", justifyContent: "center", marginBottom: spacing.xl },
   loaderRingOuter: { position: "absolute", width: 132, height: 132, borderRadius: 66, borderWidth: 4, borderColor: colors.brand, borderLeftColor: "transparent", borderBottomColor: "transparent" },

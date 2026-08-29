@@ -25,7 +25,8 @@ import {
   TabItem,
   DrawerItem,
 } from "@/src/navigation/nav-config";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { Palette, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { usePalette, useThemedStyles } from "@/src/theme-context";
 
 const USE_NATIVE = Platform.OS !== "web";
 
@@ -36,6 +37,8 @@ export const useNav = () => useContext(NavContext);
 /** Hamburger button for screen headers. Safe no-op outside a MobileShell. */
 export function HeaderMenuButton() {
   const { openDrawer } = useNav();
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   return (
     <Pressable testID="header-menu-btn" onPress={openDrawer} hitSlop={10} style={styles.menuBtn}>
       <Ionicons name="menu" size={24} color={colors.onSurface} />
@@ -51,6 +54,7 @@ export function MobileShell({
   role: "admin" | "client";
   children: React.ReactNode;
 }) {
+  const styles = useThemedStyles(makeStyles);
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -71,6 +75,8 @@ export function MobileShell({
 
 // ---------------- Bottom tab bar ----------------
 function TabBar({ tabs, pathname }: { tabs: TabItem[]; pathname: string }) {
+  const { colors, scheme } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const insets = useSafeAreaInsets();
 
@@ -82,7 +88,7 @@ function TabBar({ tabs, pathname }: { tabs: TabItem[]; pathname: string }) {
   };
 
   return (
-    <BlurView intensity={40} tint="dark" style={[styles.tabBar, { paddingBottom: insets.bottom || spacing.sm }]}>
+    <BlurView intensity={40} tint={scheme === "light" ? "light" : "dark"} style={[styles.tabBar, { paddingBottom: insets.bottom || spacing.sm }]}>
       {tabs.map((t) => {
         const active = t.isActive(pathname);
         return (
@@ -114,6 +120,8 @@ function Drawer({
   open: boolean;
   onClose: () => void;
 }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -235,7 +243,7 @@ function Drawer({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.surface },
   menuBtn: { width: 40, height: 40, alignItems: "center", justifyContent: "center" },
 
@@ -246,7 +254,7 @@ const styles = StyleSheet.create({
     paddingTop: spacing.sm,
     borderTopWidth: StyleSheet.hairlineWidth,
     borderTopColor: colors.borderStrong,
-    backgroundColor: "rgba(14,13,12,0.82)",
+    backgroundColor: colors.shellBlur,
     overflow: "hidden",
   },
   tabItem: { flex: 1, alignItems: "center", justifyContent: "center", gap: 3, minHeight: 48, paddingVertical: 4 },

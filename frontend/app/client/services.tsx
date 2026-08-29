@@ -6,7 +6,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Button, GlassHeader } from "@/src/components/ui";
 import { HeaderMenuButton } from "@/src/components/MobileShell";
 import { goBackOr } from "@/src/navigation/back";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { lightColors as colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
 type Service = {
   title: string;

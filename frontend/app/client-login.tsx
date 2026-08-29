@@ -12,7 +12,8 @@ import { PhoneField } from "@/src/components/PhoneField";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { goBackOr } from "@/src/navigation/back";
 
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { lightColors as colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { ThemeProvider } from "@/src/theme-context";
 import { APP_DOMAIN, getAppSurface } from "@/src/navigation/host-routing";
 
 export default function ClientLogin() {
@@ -81,15 +82,18 @@ export default function ClientLogin() {
 
   if (surface === "studio" || surface === "superadmin") {
     return (
-      <View style={styles.restrictedContainer} testID="client-login-restricted">
-        <Text style={styles.restrictedTitle}>Client sign-in is on its own website</Text>
-        <Text style={styles.restrictedText}>Use the client domain to access your galleries and bookings.</Text>
-        <Button title="Open client website" onPress={() => Linking.openURL(`${APP_DOMAIN.client}/client-login`)} icon="sparkles-outline" />
-      </View>
+      <ThemeProvider scheme="light">
+        <View style={styles.restrictedContainer} testID="client-login-restricted">
+          <Text style={styles.restrictedTitle}>Client sign-in is on its own website</Text>
+          <Text style={styles.restrictedText}>Use the client domain to access your galleries and bookings.</Text>
+          <Button title="Open client website" onPress={() => Linking.openURL(`${APP_DOMAIN.client}/client-login`)} icon="sparkles-outline" />
+        </View>
+      </ThemeProvider>
     );
   }
 
   return (
+    <ThemeProvider scheme="light">
     <View style={styles.container} testID="client-login-screen">
       <GlassHeader
         title={step === "identify" ? "Sign in" : "Verify"}
@@ -185,6 +189,7 @@ export default function ClientLogin() {
         )}
       </KeyboardAwareScrollView>
     </View>
+    </ThemeProvider>
   );
 }
 

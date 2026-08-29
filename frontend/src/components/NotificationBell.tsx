@@ -2,9 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api/client";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { Palette, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { usePalette, useThemedStyles } from "@/src/theme-context";
 
 export function NotificationBell({ audience, testID, onNotificationPress }: { audience: "admin" | "client"; testID?: string; onNotificationPress?: (item: any) => void }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const [items, setItems] = useState<any[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
@@ -79,7 +82,7 @@ export function NotificationBell({ audience, testID, onNotificationPress }: { au
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   bell: { width: 44, height: 44, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceSecondary },
   badge: { position: "absolute", top: -2, right: -2, minWidth: 18, height: 18, borderRadius: radius.pill, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center", paddingHorizontal: 4 },
   badgeText: { color: colors.onBrand, fontFamily: fonts.text, fontSize: 10, fontWeight: "800" },

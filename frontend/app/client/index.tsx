@@ -20,7 +20,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { EmptyState, Pill, GlassHeader, useToast } from "@/src/components/ui";
 import { NotificationBell } from "@/src/components/NotificationBell";
 import { HeaderMenuButton } from "@/src/components/MobileShell";
-import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
+import { lightColors as colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
 const dialDigits = (num?: string) => {
   const digits = (num || "").replace(/\D/g, "");

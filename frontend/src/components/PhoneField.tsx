@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { Palette, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { usePalette, useThemedStyles } from "@/src/theme-context";
 
 export type PhoneCountry = { name: string; code: string; lengths: number[] };
 
@@ -72,6 +73,8 @@ export function PhoneField({
   required?: boolean;
   editable?: boolean;
 }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const parsed = useMemo(() => parseValue(value), [value]);
   const [country, setCountry] = useState<PhoneCountry>(parsed.country);
   const [countryOpen, setCountryOpen] = useState(false);
@@ -145,7 +148,7 @@ export function PhoneField({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   wrap: { marginBottom: spacing.lg },
   label: { color: colors.onSurfaceSecondary, fontSize: fontSize.sm, marginBottom: spacing.sm, fontFamily: fonts.text, letterSpacing: 0.5, textTransform: "uppercase" },
   inputRow: { flexDirection: "row", alignItems: "center", backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, minHeight: 52 },

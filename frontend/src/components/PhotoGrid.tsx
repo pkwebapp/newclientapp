@@ -15,7 +15,8 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { Palette, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { usePalette, useThemedStyles } from "@/src/theme-context";
 import { imgUrl } from "@/src/api/client";
 import { Pill } from "@/src/components/ui";
 
@@ -49,6 +50,8 @@ function BrandedImage({
   cachePolicy?: "memory" | "disk" | "memory-disk" | "none";
   transition?: number;
 }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const [status, setStatus] = useState<"loading" | "ready" | "error">(uri ? "loading" : "error");
   const [retryKey, setRetryKey] = useState(0);
   const [lastUri, setLastUri] = useState(uri);
@@ -136,6 +139,8 @@ export function PhotoGrid({
   onEndReached?: () => void;
   loadingMore?: boolean;
 }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const [viewerPhotoId, setViewerPhotoId] = useState<string | null>(null);
   const [containerW, setContainerW] = useState(Dimensions.get("window").width);
   const [captionsOn, setCaptionsOn] = useState(showCaption);
@@ -274,6 +279,7 @@ function ZoomablePhoto({
   screenH: number;
   onTap: () => void;
 }) {
+  const styles = useThemedStyles(makeStyles);
   const scale = useSharedValue(1);
   const savedScale = useSharedValue(1);
 
@@ -348,6 +354,8 @@ function FullscreenViewer({
   onDownload?: (photo: Photo) => void;
   onShare?: (photo: Photo) => void;
 }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const [current, setCurrent] = useState(0);
   const listRef = useRef<FlatList<Photo>>(null);
   const screenW = Dimensions.get("window").width;
@@ -448,7 +456,7 @@ function FullscreenViewer({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   masonry: { flexDirection: "row", paddingTop: spacing.md, paddingBottom: spacing["3xl"] },
   footer: { paddingVertical: spacing.xl, alignItems: "center" },
   card: {

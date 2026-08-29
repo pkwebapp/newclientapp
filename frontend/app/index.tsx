@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import Head from "expo-router/head";
-import { Platform, Pressable, ScrollView, StyleSheet, Text, View, useWindowDimensions } from "react-native";
+import { Platform, Pressable, StyleSheet, Text, View, useWindowDimensions } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { H1, H2, H3, P, A, Section, Footer } from "@expo/html-elements";
 
 import { Button } from "@/src/components/ui";
 import HeroShowcase from "@/src/components/HeroShowcase";
+import { Reveal, RevealScroll } from "@/src/components/Reveal";
 import { HERO_PALETTE as PAL } from "@/src/config/hero";
 import { useAuth } from "@/src/context/AuthContext";
 import { fonts, fontSize, radius, spacing } from "@/src/theme";
@@ -127,7 +128,7 @@ export default function Home() {
         <meta name="twitter:image" content={OG_IMAGE} />
       </Head>
 
-      <ScrollView style={styles.page} showsVerticalScrollIndicator={false}>
+      <RevealScroll style={styles.page} showsVerticalScrollIndicator={false}>
         {/* ---------------- HERO ---------------- */}
         <View style={[styles.hero, isWebWide && { minHeight: height }]}>
           <View pointerEvents="none" style={styles.heroGlow} />
@@ -166,39 +167,46 @@ export default function Home() {
 
         <View style={styles.container}>
           {/* ---------------- TRUST BADGES ---------------- */}
-          <Section style={styles.badgeSection}>
-            <View style={[styles.badgeStrip, isWide && styles.badgeStripWide]}>
-              {BADGES.map((b, i) => <BadgeCard key={b.title} {...b} style={isWide ? [styles.badgeWide, i > 0 && styles.badgeDivider] : styles.badgeMobile} />)}
-            </View>
-          </Section>
+          <Reveal>
+            <Section style={styles.badgeSection}>
+              <View style={[styles.badgeStrip, isWide && styles.badgeStripWide]}>
+                {BADGES.map((b, i) => <BadgeCard key={b.title} {...b} style={isWide ? [styles.badgeWide, i > 0 && styles.badgeDivider] : styles.badgeMobile} />)}
+              </View>
+            </Section>
+          </Reveal>
 
           {/* ---------------- HOW IT WORKS ---------------- */}
-          <Section style={styles.block}>
-            <H2 style={styles.h2}>Hundreds of photos. One selfie.</H2>
-            <View style={[styles.steps, isWide && styles.stepsWide]}>
-              {STEPS.map((s, i) => (
-                <View key={i} style={[styles.stepCard, isWide && styles.stepCardWide]}>
-                  <View style={styles.stepIcon}>
-                    <Ionicons name={s.icon as any} size={20} color={PAL.accent} />
+          <Reveal delay={60}>
+            <Section style={styles.block}>
+              <H2 style={styles.h2}>Hundreds of photos. One selfie.</H2>
+              <View style={[styles.steps, isWide && styles.stepsWide]}>
+                {STEPS.map((s, i) => (
+                  <View key={i} style={[styles.stepCard, isWide && styles.stepCardWide]}>
+                    <View style={styles.stepIcon}>
+                      <Ionicons name={s.icon as any} size={20} color={PAL.accent} />
+                    </View>
+                    <H3 style={styles.stepTitle}>{s.title}</H3>
+                    <P style={styles.stepText}>{s.text}</P>
                   </View>
-                  <H3 style={styles.stepTitle}>{s.title}</H3>
-                  <P style={styles.stepText}>{s.text}</P>
-                </View>
-              ))}
-            </View>
-          </Section>
+                ))}
+              </View>
+            </Section>
+          </Reveal>
 
           {/* ---------------- FAQ ---------------- */}
-          <Section style={styles.block}>
-            <H2 style={styles.h2}>Questions, answered</H2>
-            <View style={styles.faqWrap}>
-              {FAQS.map((f) => (
-                <FaqRow key={f.q} q={f.q} a={f.a} />
-              ))}
-            </View>
-          </Section>
+          <Reveal>
+            <Section style={styles.block}>
+              <H2 style={styles.h2}>Questions, answered</H2>
+              <View style={styles.faqWrap}>
+                {FAQS.map((f) => (
+                  <FaqRow key={f.q} q={f.q} a={f.a} />
+                ))}
+              </View>
+            </Section>
+          </Reveal>
 
           {/* ---------------- FOOTER / NAP ---------------- */}
+          <Reveal>
           <Footer style={styles.footer}>
             <P style={styles.addr}>Mumbai · C1302, Evershine Cosmic, Andheri West 400053 · +91 88887 66739</P>
             <P style={styles.addr}>Goa · House No. 1053 A, Morjim 403512 · +91 81888 81165</P>
@@ -227,8 +235,9 @@ export default function Home() {
             </View>
             <Text style={styles.copy}>© 2026 PK Photography · PIK Connect</Text>
           </Footer>
+          </Reveal>
         </View>
-      </ScrollView>
+      </RevealScroll>
     </>
   );
 }

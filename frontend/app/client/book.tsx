@@ -8,7 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import DatePickerField, { todayIso } from "@/src/components/DatePickerField";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { lightColors as colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { goBackOr } from "@/src/navigation/back";
 
 

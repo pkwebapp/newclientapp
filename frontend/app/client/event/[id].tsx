@@ -29,7 +29,7 @@ import { sharePhotoFile } from "@/src/utils/share-photo";
 
 import { goBackOr } from "@/src/navigation/back";
 
-import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
+import { lightColors as colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
 export default function ClientEventDetail() {
   const { id } = useLocalSearchParams<{ id: string }>();

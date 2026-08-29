@@ -5,7 +5,8 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { useAuth } from "@/src/context/AuthContext";
 import { SIDEBAR_WIDTH, CONTENT_MAX_WIDTH } from "@/src/hooks/use-responsive";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { Palette, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { usePalette, useThemedStyles } from "@/src/theme-context";
 
 type NavItem = { label: string; icon: keyof typeof Ionicons.glyphMap; href: string };
 
@@ -35,6 +36,8 @@ export function DesktopShell({
   role: "admin" | "client";
   children: React.ReactNode;
 }) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const router = useRouter();
   const pathname = usePathname();
   const { user, signOut } = useAuth();
@@ -117,7 +120,7 @@ export function DesktopShell({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   root: { flex: 1, flexDirection: "row", backgroundColor: colors.surface },
   sidebar: {
     width: SIDEBAR_WIDTH,

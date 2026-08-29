@@ -1,11 +1,12 @@
 import { useRouter } from "expo-router";
 import Head from "expo-router/head";
 import { Ionicons } from "@expo/vector-icons";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Button } from "@/src/components/ui";
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { Reveal, RevealScroll } from "@/src/components/Reveal";
+import { lightColors as colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
 type PageKind = "how-it-works" | "features" | "for-photographers" | "pricing";
 
@@ -40,23 +41,29 @@ export default function MarketingPage({ kind }: { kind: PageKind }) {
         <title>{`${copy.title} | PIK Connect`}</title>
         <meta name="description" content={copy.intro} />
       </Head>
-      <ScrollView contentContainerStyle={[styles.page, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing["3xl"] }]} showsVerticalScrollIndicator={false}>
+      <RevealScroll contentContainerStyle={[styles.page, { paddingTop: insets.top + spacing.lg, paddingBottom: insets.bottom + spacing["3xl"] }]} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
           <Pressable testID="marketing-back" onPress={() => router.back()} style={styles.backButton} accessibilityLabel="Go back"><Ionicons name="arrow-back" size={20} color={colors.onSurface} /></Pressable>
           <View style={styles.brand}><Ionicons name="aperture-outline" size={20} color={colors.brand} /><Text style={styles.brandText}>PIK CONNECT</Text></View>
           <Button title="Find my photos" onPress={() => router.push("/client-login")} style={styles.headerCta} />
         </View>
-        <View style={styles.hero}>
-          <Text style={styles.eyebrow}>{copy.eyebrow}</Text>
-          <Text style={styles.title}>{copy.title}</Text>
-          <Text style={styles.intro}>{copy.intro}</Text>
-        </View>
-        {kind === "how-it-works" ? <HowItWorks /> : null}
-        {kind === "features" ? <FeatureGrid /> : null}
-        {kind === "for-photographers" ? <PhotographerWorkflow /> : null}
-        {kind === "pricing" ? <Pricing /> : null}
-        <View style={styles.bottomCta}><Text style={styles.bottomTitle}>Ready when your next gallery is?</Text><Button title="Find my photos" icon="sparkles" onPress={() => router.push("/client-login")} /></View>
-      </ScrollView>
+        <Reveal>
+          <View style={styles.hero}>
+            <Text style={styles.eyebrow}>{copy.eyebrow}</Text>
+            <Text style={styles.title}>{copy.title}</Text>
+            <Text style={styles.intro}>{copy.intro}</Text>
+          </View>
+        </Reveal>
+        <Reveal delay={90}>
+          {kind === "how-it-works" ? <HowItWorks /> : null}
+          {kind === "features" ? <FeatureGrid /> : null}
+          {kind === "for-photographers" ? <PhotographerWorkflow /> : null}
+          {kind === "pricing" ? <Pricing /> : null}
+        </Reveal>
+        <Reveal>
+          <View style={styles.bottomCta}><Text style={styles.bottomTitle}>Ready when your next gallery is?</Text><Button title="Find my photos" icon="sparkles" onPress={() => router.push("/client-login")} /></View>
+        </Reveal>
+      </RevealScroll>
     </View>
   );
 }

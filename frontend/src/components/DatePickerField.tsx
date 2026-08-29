@@ -2,7 +2,8 @@ import { useMemo, useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { Palette, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { usePalette, useThemedStyles } from "@/src/theme-context";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -65,6 +66,8 @@ export default function DatePickerField({
   emptyLabel = "Choose a date",
   testID = "date-picker",
 }: Props) {
+  const { colors } = usePalette();
+  const styles = useThemedStyles(makeStyles);
   const [open, setOpen] = useState(false);
   const initialMonth = useMemo(() => {
     if (isValidIsoDate(value)) {
@@ -203,7 +206,7 @@ export default function DatePickerField({
   );
 }
 
-const styles = StyleSheet.create({
+const makeStyles = (colors: Palette) => StyleSheet.create({
   wrap: { marginBottom: spacing.lg },
   label: {
     color: colors.onSurfaceSecondary,
