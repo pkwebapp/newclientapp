@@ -108,7 +108,6 @@ export default function AdminLogin() {
               label="Studio name"
               value={name}
               onChangeText={setName}
-              placeholder="PK Photography"
             />
           )}
           <TextField
@@ -116,7 +115,6 @@ export default function AdminLogin() {
             label="Email"
             value={email}
             onChangeText={setEmail}
-            placeholder="admin@lumiere.studio"
             autoCapitalize="none"
             keyboardType="email-address"
           />
@@ -125,7 +123,6 @@ export default function AdminLogin() {
             label="Password"
             value={password}
             onChangeText={setPassword}
-            placeholder="••••••••"
             secureTextEntry
           />
           <Button
