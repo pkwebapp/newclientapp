@@ -125,7 +125,7 @@ export default function HeroShowcase({ width, interactive = false, compact = fal
       style={[styles.phone, { width: w, height: h }]}
     >
       <View style={styles.phoneScreen}>
-        <Image source={{ uri: HERO_IMAGES.selfie }} style={StyleSheet.absoluteFill} contentFit="cover" transition={300} />
+        <Image source={{ uri: HERO_IMAGES.selfie }} accessibilityLabel="Selfie used for AI face search in the PIK Connect event photo gallery" style={StyleSheet.absoluteFill} contentFit="cover" transition={300} />
         {/* face reticle */}
         <View style={[styles.reticle, { width: w * 0.44, height: w * 0.44, top: h * 0.23, left: w * 0.3 }]} pointerEvents="none">
           <View style={[styles.corner, styles.cornerTL]} />
@@ -153,10 +153,10 @@ export default function HeroShowcase({ width, interactive = false, compact = fal
     return (
       <View style={[styles.compactWrap, { width, height: phoneH + 36 }]}>
         <Animated.View style={[styles.compactTile, { width: tileS, height: tileS, left: 0, top: 18, transform: [{ rotate: "-5deg" }] }]}>
-          <Image source={{ uri: HERO_IMAGES.event1 }} style={StyleSheet.absoluteFill} contentFit="cover" transition={300} />
+          <Image source={{ uri: HERO_IMAGES.event1 }} accessibilityLabel="Event photo matched to a guest by PIK Connect AI face search" style={StyleSheet.absoluteFill} contentFit="cover" transition={300} />
         </Animated.View>
         <Animated.View style={[styles.compactTile, { width: tileS, height: tileS, right: 0, bottom: 46, transform: [{ rotate: "5deg" }] }]}>
-          <Image source={{ uri: HERO_IMAGES.event3 }} style={StyleSheet.absoluteFill} contentFit="cover" transition={300} />
+          <Image source={{ uri: HERO_IMAGES.event3 }} accessibilityLabel="Wedding event photo found in a private PIK Connect gallery" style={StyleSheet.absoluteFill} contentFit="cover" transition={300} />
         </Animated.View>
         {phoneBody(phoneW, phoneH, false)}
         {matchBadge({ bottom: -6, alignSelf: "center" })}
@@ -187,7 +187,7 @@ export default function HeroShowcase({ width, interactive = false, compact = fal
 
         {TILES.map((t) => (
           <Animated.View key={t.key} pointerEvents="none" style={[styles.tile, { left: t.x, top: t.y, width: t.s, height: t.s, transform: parallax(t.depth) }]}>
-            <Image source={{ uri: t.src }} style={StyleSheet.absoluteFill} contentFit="cover" transition={300} />
+            <Image source={{ uri: t.src }} accessibilityLabel="Event photo discovered with PIK Connect AI face search" style={StyleSheet.absoluteFill} contentFit="cover" transition={300} />
           </Animated.View>
         ))}
 

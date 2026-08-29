@@ -49,7 +49,51 @@ const schema = {
       operatingSystem: "Web, iOS, Android",
       url: SITE,
       description: "Photo gallery, AI face search, digital albums and client management for photographers.",
+      datePublished: "2026-01-15",
+      dateModified: "2026-06-01",
+      offers: { "@type": "Offer", price: "499", priceCurrency: "INR" },
       publisher: { "@id": `${STUDIO_SITE}/#org` },
+    },
+    {
+      "@type": "Service",
+      "@id": `${SITE}/#service`,
+      name: "Event Photo Gallery & AI Face Search",
+      serviceType: "Photo gallery, AI face search and digital album delivery",
+      url: SITE,
+      description:
+        "Take one selfie and PIK Connect's AI face search finds every photo of you across a private event photo gallery, with instant digital albums and photo sharing.",
+      provider: { "@id": `${STUDIO_SITE}/#org` },
+      areaServed: ["Mumbai", "Goa", "India"],
+    },
+    {
+      "@type": "FAQPage",
+      "@id": `${SITE}/#faq`,
+      mainEntity: [
+        {
+          "@type": "Question",
+          name: "How do I find my photos?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Open the gallery link from PK Photography, take a selfie, and PIK Connect surfaces every photo of you instantly with AI face search.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "Is my gallery private?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Yes — every gallery is a private, secure link, and your selfie is used only to match your photos.",
+          },
+        },
+        {
+          "@type": "Question",
+          name: "Which cities do you cover?",
+          acceptedAnswer: {
+            "@type": "Answer",
+            text: "Studios in Andheri West, Mumbai and Morjim, Goa — plus destination and pan-India shoots.",
+          },
+        },
+      ],
     },
     {
       "@type": ["LocalBusiness", "ProfessionalService"],
@@ -123,20 +167,20 @@ export default function Root({ children }: PropsWithChildren) {
         <meta name="geo.placename" content="Mumbai, Goa" />
         <meta property="og:site_name" content="PIK Connect" />
         <meta property="og:locale" content="en_IN" />
-        <title>PIK Connect | Photo Gallery, AI Face Search & CRM for Photographers</title>
+        <title>AI Face Search Photo Gallery for Events | PIK Connect</title>
         <meta
           name="description"
-          content="PIK Connect gives photographers a private photo gallery, AI face search, digital albums, effortless photo sharing and client management in one lightweight workspace."
+          content="Find your event photos in seconds with one selfie. PIK Connect is a private photo gallery with AI face search and digital albums for photographers."
         />
         <meta
           name="keywords"
-          content="PIK Connect, PK Photography, wedding photographer Mumbai, event photographer Goa, pre-wedding photography Goa, corporate photography Mumbai, event photo gallery, find my photos selfie, destination wedding photographer Goa"
+          content="PIK Connect, event photo gallery, AI face search, find my photos selfie, digital album, private photo gallery, photo sharing, wedding photographer Mumbai, event photographer Goa, destination wedding photographer Goa"
         />
         <meta property="og:type" content="website" />
-        <meta property="og:title" content="PIK Connect | Photo Gallery, AI Face Search & CRM for Photographers" />
+        <meta property="og:title" content="AI Face Search Photo Gallery for Events | PIK Connect" />
         <meta
           property="og:description"
-          content="Private digital albums, AI face search, photo sharing and client management for modern photographers."
+          content="Take one selfie and find every event photo of you. Private photo gallery, AI face search and digital albums."
         />
         <meta property="og:url" content={SITE + "/"} />
         <meta property="og:image" content={OG_IMAGE} />
@@ -144,10 +188,10 @@ export default function Root({ children }: PropsWithChildren) {
         <meta property="og:image:width" content="1200" />
         <meta property="og:image:height" content="630" />
         <meta name="twitter:card" content="summary_large_image" />
-        <meta name="twitter:title" content="PIK Connect | Photo Gallery, AI Face Search & CRM for Photographers" />
+        <meta name="twitter:title" content="AI Face Search Photo Gallery for Events | PIK Connect" />
         <meta
           name="twitter:description"
-          content="Private digital albums, AI face search, photo sharing and client management for modern photographers."
+          content="Take one selfie and find every event photo of you. Private photo gallery, AI face search and digital albums."
         />
         <meta name="twitter:image" content={OG_IMAGE} />
         <link rel="canonical" href={SITE + "/"} />

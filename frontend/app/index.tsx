@@ -16,9 +16,9 @@ import { getAppSurface } from "@/src/navigation/host-routing";
 
 const SITE = "https://www.pikconnect.com";
 const OG_IMAGE = `${SITE}/pik-connect-share-card.png`;
-const TITLE = "PIK Connect | Photo Gallery, AI Face Search & CRM for Photographers";
+const TITLE = "AI Face Search Photo Gallery for Events | PIK Connect";
 const DESC =
-  "PIK Connect gives photographers a private photo gallery, AI face search, digital albums, effortless photo sharing and client management in one lightweight workspace.";
+  "Find your event photos in seconds with one selfie. PIK Connect is a private photo gallery with AI face search and digital albums for photographers.";
 const KEYWORDS =
   "photo gallery for photographers, AI face search, photo sharing, digital albums, photography CRM, client management, PIK Connect";
 
