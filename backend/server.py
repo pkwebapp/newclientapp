@@ -1355,6 +1355,40 @@ async def upload_photos_bulk(event_id: str, files: list[UploadFile] = File(...),
             results.append({"filename": getattr(f, "filename", None), "ok": False, "error": "unsupported"})
     if uploaded:
         await plans.increment_usage(admin["user_id"], "images_uploaded", uploaded)
+
+        # Notify studio admin that the batch is ready.
+        try:
+            gallery_title = event.get("title") or event.get("event_name") or "your gallery"
+            await notify(
+                user_id=admin["user_id"],
+                type_key="upload_indexed",
+                title=f"{uploaded} photo{'s' if uploaded != 1 else ''} added",
+                body=f'"{gallery_title}" now has {uploaded} more photo{"s" if uploaded != 1 else ""} indexing in the background.',
+                action_url=f"/admin/event/{event_id}",
+                meta={"event_id": event_id, "count": uploaded},
+                push=False,  # avoid double-buzzing the admin who initiated the upload
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"upload_indexed notify failed: {e}")
+
+        # Fan-out: notify every client with an active grant that new photos landed.
+        try:
+            recipients = await resolve_gallery_users(event_id, admin["user_id"])
+            gallery_title = event.get("title") or event.get("event_name") or "your gallery"
+            for uid in recipients:
+                await notify(
+                    user_id=uid,
+                    type_key="new_photos",
+                    title="New photos in your gallery",
+                    body=f'{uploaded} more photo{"s" if uploaded != 1 else ""} were added to "{gallery_title}". Refresh to find yourself again.',
+                    action_url=f"/client/event/{event_id}",
+                    meta={"event_id": event_id, "count": uploaded},
+                    # dedupe within 24h so a photographer trickling uploads doesn't spam.
+                    dedupe_key=f"new_photos:{event_id}:{uid}",
+                )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"new_photos fan-out failed: {e}")
+
     return {"uploaded": uploaded, "received": len(files), "results": results, "quota_hit": quota_hit}
 
 
@@ -1483,6 +1517,31 @@ async def grant_access(event_id: str, body: AccessGrantCreate, admin: dict = Dep
         key, {"$set": doc, "$setOnInsert": {}}, upsert=True
     )
     saved = await db.access_grants.find_one(key, {"_id": 0})
+
+    # Notify the matching client that a new gallery is available for them.
+    try:
+        event = await db.events.find_one({"event_id": event_id}, {"_id": 0, "title": 1, "event_name": 1})
+        title_of_event = (event or {}).get("title") or (event or {}).get("event_name") or "Your event gallery"
+        query = None
+        if body.channel == "email" and body.email:
+            query = {"email": body.email.lower(), "role": "client"}
+        elif body.channel == "phone" and body.phone:
+            phone_val = _phone_or_400(body.phone)
+            query = {"phone": phone_val, "role": "client"}
+        if query is not None:
+            client_user = await db.users.find_one(query, {"_id": 0, "user_id": 1})
+            if client_user:
+                await notify(
+                    user_id=client_user["user_id"],
+                    type_key="gallery_assigned",
+                    title="New gallery is ready for you",
+                    body=f'"{title_of_event}" has been shared with you. Take one selfie to find every photo of you.',
+                    action_url=f"/client/event/{event_id}",
+                    meta={"event_id": event_id, "grant_id": grant_id},
+                )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"gallery_assigned notify failed: {e}")
+
     return saved
 
 
@@ -2231,6 +2290,24 @@ async def selfie_search(event_id: str, file: UploadFile = File(...), user: dict 
 
     photos = await _photos_with_scores(matched_photo_ids, best)
     await _annotate_liked(event_id, user["user_id"], photos)
+
+    # Notify studio admin (deduped per guest per day) that a guest ran face search.
+    try:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        guest_name = user.get("name") or "A guest"
+        gallery_title = event.get("title") or event.get("event_name") or "your gallery"
+        await notify(
+            user_id=event.get("created_by"),
+            type_key="guest_face_search",
+            title=f"{guest_name} found their photos",
+            body=f'{len(matched_photo_ids)} photo{"s" if len(matched_photo_ids) != 1 else ""} matched in "{gallery_title}".',
+            action_url=f"/admin/event/{event_id}",
+            meta={"event_id": event_id, "client_user_id": user["user_id"], "matched": len(matched_photo_ids)},
+            dedupe_key=f"face_search:{event_id}:{user['user_id']}:{today}",
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"guest_face_search notify failed: {e}")
+
     return {
         "status": "matched",
         "threshold": threshold,
@@ -2709,6 +2786,109 @@ app.include_router(superadmin_router)
 
 from push_service import push_router  # noqa: E402
 app.include_router(push_router)
+
+
+# ---------------------------------------------------------------------------
+# Notification preferences + broadcast
+# ---------------------------------------------------------------------------
+from notifications_service import (  # noqa: E402
+    NOTIFICATION_TYPES, notify, get_disabled_types, set_disabled_types,
+    types_for, resolve_gallery_users, resolve_all_clients_for_studio,
+)
+
+
+class NotificationPrefsBody(BaseModel):
+    disabled: list[str]
+
+
+@api_router.get("/notifications/prefs")
+async def notifications_prefs(user: dict = Depends(get_current_user)):
+    audience = "admin" if user.get("role") == "admin" else "client"
+    disabled = await get_disabled_types(user["user_id"])
+    return {"audience": audience, "types": types_for(audience), "disabled": disabled}
+
+
+@api_router.patch("/notifications/prefs")
+async def update_notifications_prefs(
+    body: NotificationPrefsBody,
+    user: dict = Depends(get_current_user),
+):
+    saved = await set_disabled_types(user["user_id"], body.disabled)
+    return {"status": "saved", "disabled": saved}
+
+
+class BroadcastBody(BaseModel):
+    audience: str  # "gallery" | "all_clients" | "specific"
+    event_id: Optional[str] = None
+    client_user_ids: Optional[list[str]] = None
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(min_length=1, max_length=500)
+    action_url: Optional[str] = None
+
+
+MAX_BROADCAST_RECIPIENTS = 2000
+
+
+@api_router.get("/notifications/audiences/summary")
+async def broadcast_audience_summary(
+    event_id: Optional[str] = None,
+    admin: dict = Depends(require_admin),
+):
+    resp = {"all_clients": len(await resolve_all_clients_for_studio(admin["user_id"]))}
+    if event_id:
+        # Confirm the event belongs to this admin before revealing counts.
+        await admin_event_or_404(event_id, admin)
+        resp["gallery"] = len(await resolve_gallery_users(event_id, admin["user_id"]))
+    return resp
+
+
+@api_router.post("/notifications/broadcast")
+async def broadcast_notification(
+    body: BroadcastBody,
+    admin: dict = Depends(require_admin),
+):
+    audience = body.audience
+    if audience == "gallery":
+        if not body.event_id:
+            raise HTTPException(status_code=400, detail="event_id required for gallery broadcast")
+        await admin_event_or_404(body.event_id, admin)
+        recipients = await resolve_gallery_users(body.event_id, admin["user_id"])
+    elif audience == "all_clients":
+        recipients = await resolve_all_clients_for_studio(admin["user_id"])
+    elif audience == "specific":
+        recipients = list({rid for rid in (body.client_user_ids or []) if rid})
+        if not recipients:
+            raise HTTPException(status_code=400, detail="client_user_ids required for specific broadcast")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid audience")
+
+    if not recipients:
+        return {"status": "no_recipients", "sent": 0, "skipped_prefs": 0}
+    if len(recipients) > MAX_BROADCAST_RECIPIENTS:
+        raise HTTPException(status_code=400, detail=f"Broadcast exceeds {MAX_BROADCAST_RECIPIENTS} recipients")
+
+    sent = 0
+    skipped = 0
+    for uid in recipients:
+        nid = await notify(
+            user_id=uid,
+            type_key="custom_message",
+            title=body.title.strip(),
+            body=body.body.strip(),
+            action_url=body.action_url,
+            meta={"broadcast_by": admin["user_id"], "audience": audience},
+        )
+        if nid:
+            sent += 1
+        else:
+            skipped += 1
+    return {"status": "sent", "sent": sent, "skipped_prefs": skipped, "recipients": len(recipients)}
+
+
+from push_service import push_router as _pr  # noqa: E402,F401 (re-import guard)
+
+# Re-mount api_router now that the notification routes are attached to it.
+app.include_router(api_router)
 
 
 app.add_middleware(

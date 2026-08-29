@@ -1,6 +1,6 @@
 import { useCallback, useState } from "react";
 import { useFocusEffect, useRouter } from "expo-router";
-import { ActivityIndicator, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -8,6 +8,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { PhoneField } from "@/src/components/PhoneField";
+import { NotificationPrefs } from "@/src/components/NotificationPrefs";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { goBackOr } from "@/src/navigation/back";
 
@@ -77,6 +78,27 @@ export default function StudioSettings() {
           <TextField testID="studio-review-url" label="Google review link" value={reviewUrl} onChangeText={setReviewUrl} placeholder="https://g.page/r/…" autoCapitalize="none" />
           <TextField testID="studio-booking-email" label="Booking email" value={bookingEmail} onChangeText={setBookingEmail} placeholder="studio@email.com" autoCapitalize="none" keyboardType="email-address" />
           <Button testID="save-settings-btn" title="Save settings" loading={saving} onPress={save} icon="checkmark" />
+
+          {/* ---- Broadcast tile ---- */}
+          <Text style={styles.sectionTitle}>Announcements</Text>
+          <Pressable
+            testID="open-notify-page"
+            onPress={() => router.push("/admin/notify")}
+            style={styles.tile}
+          >
+            <View style={styles.tileIcon}>
+              <Ionicons name="megaphone-outline" size={20} color={colors.brand} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.tileTitle}>Send an announcement</Text>
+              <Text style={styles.tileSub}>Notify a single gallery, all your clients, or specific people.</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+          </Pressable>
+
+          {/* ---- Notification preferences ---- */}
+          <Text style={styles.sectionTitle}>Notification preferences</Text>
+          <NotificationPrefs testID="admin-notification-prefs" />
         </KeyboardAwareScrollView>
       )}
     </View>
@@ -89,4 +111,26 @@ const styles = StyleSheet.create({
   body: { padding: spacing.xl },
   info: { flexDirection: "row", gap: spacing.sm, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, marginBottom: spacing.xl, borderWidth: 1, borderColor: colors.brandTertiary },
   infoText: { flex: 1, color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 18 },
+  sectionTitle: {
+    color: colors.onSurface,
+    fontFamily: fonts.display,
+    fontSize: fontSize.xl,
+    marginTop: spacing["2xl"],
+    marginBottom: spacing.md,
+  },
+  tile: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.lg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    minHeight: 68,
+    marginBottom: spacing.xl,
+  },
+  tileIcon: { width: 40, height: 40, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandTertiary },
+  tileTitle: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
+  tileSub: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 18, marginTop: 3 },
 });

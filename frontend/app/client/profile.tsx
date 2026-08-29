@@ -208,6 +208,21 @@ export default function ClientProfileScreen() {
         <Text style={styles.sectionLabel}>Required details</Text>
         <TextField testID="profile-full-name" label="Full name" value={fullName} onChangeText={setFullName} placeholder="Your full name" autoCapitalize="words" />
 
+        <Pressable
+          testID="client-open-notifications"
+          onPress={() => router.push("/client/notifications")}
+          style={styles.notifTile}
+        >
+          <View style={styles.notifTileIcon}>
+            <Ionicons name="notifications-outline" size={18} color={colors.brand} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.notifTileTitle}>Notification preferences</Text>
+            <Text style={styles.notifTileSub}>Choose what you want to hear about.</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+        </Pressable>
+
         <Text style={styles.fieldLabel}>Gender</Text>
         <View style={styles.chipRow}>
           {GENDERS.map((item) => (
@@ -339,4 +354,19 @@ const styles = StyleSheet.create({
   aboutInput: { minHeight: 112, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, padding: spacing.lg, textAlignVertical: "top", marginBottom: spacing.lg },
   saveButton: { marginTop: spacing.lg },
   saveHint: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 18, textAlign: "center", marginTop: spacing.md },
+  notifTile: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.md,
+    marginBottom: spacing.lg,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceSecondary,
+    minHeight: 60,
+  },
+  notifTileIcon: { width: 36, height: 36, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandTertiary },
+  notifTileTitle: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
+  notifTileSub: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
 });
