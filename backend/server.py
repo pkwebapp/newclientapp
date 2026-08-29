@@ -2601,6 +2601,9 @@ app.include_router(crm_router)
 from superadmin_routes import superadmin_router  # noqa: E402
 app.include_router(superadmin_router)
 
+from push_service import push_router  # noqa: E402
+app.include_router(push_router)
+
 
 app.add_middleware(
     CORSMiddleware,

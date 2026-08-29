@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from config import db, PUBLIC_BASE_URL, ADMIN_SEED_EMAIL
 from auth_utils import require_admin, require_client
 from phone_utils import validate_phone, PhoneValidationError, phone_variants
+from push_service import push_user
 import plans
 
 crm_router = APIRouter(prefix="/api")
@@ -991,6 +992,7 @@ async def create_booking_request(body: BookingRequestBody, user: dict = Depends(
             "read": False,
             "created_at": doc["created_at"],
         })
+        await push_user(studio_id, "New booking request", f"{doc['contact_name'] or 'A client'} requested {doc['service_type']}.", action_url=f"/admin/booking/{doc['request_id']}")
     return {"status": "ok", "request_id": doc["request_id"]}
 
 
@@ -1008,6 +1010,7 @@ async def _notify_client(user_id: Optional[str], title: str, body: str, kind: st
             "type": kind, "title": title, "body": body,
             "booking_request_id": booking_id, "read": False, "created_at": now_iso(),
         })
+        await push_user(user_id, title, body, action_url=f"/client/booking/{booking_id}")
 
 
 @crm_router.get("/me/bookings")
@@ -1090,6 +1093,7 @@ async def edit_client_booking(booking_id: str, body: ClientBookingEditBody, user
     await db.booking_requests.update_one({"request_id": booking_id}, {"$set": updates})
     if doc.get("studio_id"):
         await db.notifications.insert_one({"notification_id": _new_id("ntf"), "studio_id": doc["studio_id"], "type": "booking_update", "title": "Booking enquiry updated", "body": f"{doc.get('contact_name') or 'A client'} updated their enquiry.", "booking_request_id": booking_id, "read": False, "created_at": now_iso()})
+        await push_user(doc["studio_id"], "Booking enquiry updated", f"{doc.get('contact_name') or 'A client'} updated their enquiry.", action_url=f"/admin/booking/{booking_id}")
     return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
 
 
@@ -1100,7 +1104,9 @@ async def accept_booking_quote(booking_id: str, user: dict = Depends(require_cli
     if doc.get("status") != "quotation" or not doc.get("quote_revision"):
         raise HTTPException(status_code=400, detail="There is no quotation ready to accept")
     await db.booking_requests.update_one({"request_id": booking_id}, {"$set": {"status": "payment_pending", "client_decision": "accepted", "client_decided_at": now_iso()}})
-    if doc.get("studio_id"): await db.notifications.insert_one({"notification_id": _new_id("ntf"), "studio_id": doc["studio_id"], "type": "booking_update", "title": "Quotation accepted", "body": f"{doc.get('contact_name') or 'A client'} accepted the quotation.", "booking_request_id": booking_id, "read": False, "created_at": now_iso()})
+    if doc.get("studio_id"): 
+        await db.notifications.insert_one({"notification_id": _new_id("ntf"), "studio_id": doc["studio_id"], "type": "booking_update", "title": "Quotation accepted", "body": f"{doc.get('contact_name') or 'A client'} accepted the quotation.", "booking_request_id": booking_id, "read": False, "created_at": now_iso()})
+        await push_user(doc["studio_id"], "Quotation accepted", f"{doc.get('contact_name') or 'A client'} accepted the quotation.", action_url=f"/admin/booking/{booking_id}")
     return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
 
 
@@ -1110,7 +1116,9 @@ async def request_booking_changes(booking_id: str, body: dict, user: dict = Depe
     if not doc: raise HTTPException(status_code=404, detail="Booking not found")
     message = str(body.get("message") or "Client requested quotation changes")
     await db.booking_requests.update_one({"request_id": booking_id}, {"$set": {"status": "quotation", "client_change_request": message}})
-    if doc.get("studio_id"): await db.notifications.insert_one({"notification_id": _new_id("ntf"), "studio_id": doc["studio_id"], "type": "booking_update", "title": "Quotation changes requested", "body": message, "booking_request_id": booking_id, "read": False, "created_at": now_iso()})
+    if doc.get("studio_id"): 
+        await db.notifications.insert_one({"notification_id": _new_id("ntf"), "studio_id": doc["studio_id"], "type": "booking_update", "title": "Quotation changes requested", "body": message, "booking_request_id": booking_id, "read": False, "created_at": now_iso()})
+        await push_user(doc["studio_id"], "Quotation changes requested", message, action_url=f"/admin/booking/{booking_id}")
     return _booking_view(await db.booking_requests.find_one({"request_id": booking_id}, {"_id": 0}))
 
 
