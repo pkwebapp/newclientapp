@@ -1,9 +1,8 @@
 import React, { createContext, useContext, useEffect, useRef } from "react";
-import { Animated, Easing, Platform, ScrollView, ScrollViewProps, useWindowDimensions, View } from "react-native";
+import { Animated, Easing, Platform, ScrollView, ScrollViewProps, StyleSheet, useWindowDimensions, View } from "react-native";
 
 type Listener = () => void;
 const RevealCtx = createContext<{ subscribe: (fn: Listener) => () => void } | null>(null);
-const WebScrollView = View as any;
 
 /** Scroll container that notifies child <Reveal> blocks on scroll. */
 export function RevealScroll({ children, onScroll, contentContainerStyle, style, ...props }: ScrollViewProps) {
@@ -20,22 +19,30 @@ export function RevealScroll({ children, onScroll, contentContainerStyle, style,
   };
 
   if (Platform.OS === "web") {
+    // Real DOM scroller, FIXED to the visual viewport. This deliberately
+    // escapes the expo-router ancestor chain (nested absolute/flex divs whose
+    // height is computed once at first load): iOS Safari sizes and repaints
+    // position:fixed scrollers directly against the viewport, which fixes the
+    // "content clipped/blank strip until refresh" bug on mobile first load.
+    const flat = StyleSheet.flatten(style) as any;
     return (
       <RevealCtx.Provider value={ctx}>
-        <WebScrollView
-          style={[
-            {
-              flex: 1,
-              overflow: "auto",
-              touchAction: "pan-y",
-              WebkitOverflowScrolling: "touch",
-            } as any,
-            style,
-          ]}
+        <div
           onScroll={emitScroll}
+          style={{
+            position: "fixed",
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            overflowY: "auto",
+            overflowX: "hidden",
+            touchAction: "pan-y",
+            backgroundColor: flat?.backgroundColor,
+          }}
         >
           <View style={contentContainerStyle}>{children}</View>
-        </WebScrollView>
+        </div>
       </RevealCtx.Provider>
     );
   }

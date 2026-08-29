@@ -318,3 +318,8 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - Root cause: html/body/#root had NO background color (transparent) — browser's default white canvas showed through the viewport-height gap while the mobile address bar settled on first load.
 - Fix: `app/+html.tsx` now injects CSS painting html/body/#root in app beige (#D8D0C4), `overscroll-behavior-y: none`, and `height: 100dvh` (dynamic viewport) so root tracks the real visible area.
 - Zero UI/layout change; scrolling verified working after fix.
+
+## June 2026 — White/beige strip recurrence: REAL root cause found
+- Previous attempts (touch-action, canvas bg color) only masked it. DOM inspection showed the web scroller was an overflow:auto div nested 9 levels deep inside position:absolute/flex ancestors all pinned to the height computed at FIRST load. On iOS Safari the layer stayed rasterized at that stale height → content beyond it clipped at a hard line until refresh.
+- Fix: `src/components/Reveal.tsx` web branch now renders a real DOM div with `position: fixed; inset 0; overflow-y: auto`, escaping the ancestor chain entirely. iOS sizes/repaints fixed-position scrollers directly against the viewport. Applies to landing page + all marketing pages (MarketingPage.tsx uses RevealScroll).
+- Removed deprecated `-webkit-overflow-scrolling: touch`.
