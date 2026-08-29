@@ -1,11 +1,12 @@
 import React, { createContext, useContext, useEffect, useRef } from "react";
-import { Animated, Easing, ScrollView, ScrollViewProps, useWindowDimensions } from "react-native";
+import { Animated, Easing, Platform, ScrollView, ScrollViewProps, useWindowDimensions, View } from "react-native";
 
 type Listener = () => void;
 const RevealCtx = createContext<{ subscribe: (fn: Listener) => () => void } | null>(null);
+const WebScrollView = View as any;
 
-/** ScrollView that notifies child <Reveal> blocks on scroll. */
-export function RevealScroll({ children, onScroll, ...props }: ScrollViewProps) {
+/** Scroll container that notifies child <Reveal> blocks on scroll. */
+export function RevealScroll({ children, onScroll, contentContainerStyle, style, ...props }: ScrollViewProps) {
   const listeners = useRef(new Set<Listener>()).current;
   const ctx = useRef({
     subscribe: (fn: Listener) => {
@@ -13,15 +14,40 @@ export function RevealScroll({ children, onScroll, ...props }: ScrollViewProps) 
       return () => listeners.delete(fn);
     },
   }).current;
+  const emitScroll = (e: any) => {
+    onScroll?.(e);
+    listeners.forEach((fn) => fn());
+  };
+
+  if (Platform.OS === "web") {
+    return (
+      <RevealCtx.Provider value={ctx}>
+        <WebScrollView
+          style={[
+            {
+              flex: 1,
+              overflow: "auto",
+              touchAction: "pan-y",
+              WebkitOverflowScrolling: "touch",
+            } as any,
+            style,
+          ]}
+          onScroll={emitScroll}
+        >
+          <View style={contentContainerStyle}>{children}</View>
+        </WebScrollView>
+      </RevealCtx.Provider>
+    );
+  }
+
   return (
     <RevealCtx.Provider value={ctx}>
       <ScrollView
         {...props}
+        style={style}
+        contentContainerStyle={contentContainerStyle}
         scrollEventThrottle={32}
-        onScroll={(e) => {
-          onScroll?.(e);
-          listeners.forEach((fn) => fn());
-        }}
+        onScroll={emitScroll}
       >
         {children}
       </ScrollView>

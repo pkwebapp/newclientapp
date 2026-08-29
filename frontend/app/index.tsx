@@ -128,7 +128,7 @@ export default function Home() {
         <meta name="twitter:image" content={OG_IMAGE} />
       </Head>
 
-      <RevealScroll style={styles.page} showsVerticalScrollIndicator={false}>
+      <RevealScroll style={styles.page} contentContainerStyle={styles.pageContent} showsVerticalScrollIndicator={false}>
         {/* ---------------- HERO ---------------- */}
         <View style={[styles.hero, isWebWide && { minHeight: height }]}>
           <View pointerEvents="none" style={styles.heroGlow} />
@@ -244,6 +244,7 @@ export default function Home() {
 
 const styles = StyleSheet.create({
   page: { flex: 1, backgroundColor: PAL.bg },
+  pageContent: { backgroundColor: PAL.bg },
 
   // ---- Mid-tone minimal hero ----
   hero: { overflow: "hidden", backgroundColor: PAL.bg },
