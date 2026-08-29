@@ -10,7 +10,7 @@ import httpx
 import os
 
 # Backend URL from environment
-BACKEND_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://newclient-app-3.preview.emergentagent.com")
+BACKEND_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://pkweb-client-1.preview.emergentagent.com")
 API_BASE = f"{BACKEND_URL}/api"
 
 # Admin credentials

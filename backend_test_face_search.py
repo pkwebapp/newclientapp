@@ -7,7 +7,7 @@ import requests
 from PIL import Image
 
 # Backend URL from frontend/.env
-BASE_URL = "https://newclient-app-3.preview.emergentagent.com/api"
+BASE_URL = "https://pkweb-client-1.preview.emergentagent.com/api"
 
 # Test credentials from /app/memory/test_credentials.md
 ADMIN_EMAIL = "admin@lumiere.studio"

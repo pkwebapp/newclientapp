@@ -10,7 +10,7 @@ import sys
 import json
 
 # Backend URL from frontend/.env
-BACKEND_URL = "https://da5fd25d-c0c1-451c-8dbc-2f4a3c4ddbaf.preview.emergentagent.com/api"
+BACKEND_URL = "https://pkweb-client-1.preview.emergentagent.com/api"
 
 # Test credentials from /app/memory/test_credentials.md
 ADMIN_EMAIL = "admin@lumiere.studio"
