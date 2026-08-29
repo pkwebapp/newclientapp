@@ -125,6 +125,16 @@ export default function AdminLogin() {
             onChangeText={setPassword}
             secureTextEntry
           />
+          {mode === "login" ? (
+            <Pressable
+              testID="forgot-password-link"
+              onPress={() => router.push({ pathname: "/forgot-password", params: { email } })}
+              style={styles.forgotRow}
+              accessibilityRole="link"
+            >
+              <Text style={styles.forgotText}>Forgot password?</Text>
+            </Pressable>
+          ) : null}
           <Button
             testID="admin-submit-btn"
             title={mode === "login" ? "Sign in" : "Create account"}
@@ -190,4 +200,6 @@ const styles = StyleSheet.create({
   or: { color: colors.muted, marginHorizontal: spacing.md, fontFamily: fonts.text, fontSize: fontSize.sm },
   toggle: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base },
   superadminLink: { color: "#98A2B3", fontFamily: fonts.text, fontSize: fontSize.sm },
+  forgotRow: { alignSelf: "flex-end", minHeight: 44, justifyContent: "center", marginTop: -spacing.sm, marginBottom: spacing.md, paddingHorizontal: spacing.xs },
+  forgotText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
 });

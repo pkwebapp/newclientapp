@@ -251,6 +251,97 @@ async def admin_login(body: AdminLogin):
     return {"session_token": token, "user": _public_user(user)}
 
 
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ResetPasswordRequest(BaseModel):
+    email: EmailStr
+    code: str
+    new_password: str
+
+
+@api_router.post("/auth/admin/forgot-password")
+async def admin_forgot_password(body: ForgotPasswordRequest):
+    """Send a 6-digit reset code to the studio-admin email.
+
+    Behaviour is intentionally identical for known/unknown emails so we never
+    leak account existence. The code is stored in `otp_codes` (identifier
+    prefixed with `pwreset:` to keep it separate from client OTPs) and expires
+    in 15 minutes.
+    """
+    email = body.email.lower().strip()
+    identifier = f"pwreset:{email}"
+    code = gen_otp()
+
+    user = await db.users.find_one({"email": email, "role": "admin"})
+    delivered = False
+    if user:
+        await db.otp_codes.update_one(
+            {"identifier": identifier},
+            {"$set": {
+                "identifier": identifier,
+                "channel": "email",
+                "code": code,
+                "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
+                "attempts": 0,
+                "created_at": now_iso(),
+            }},
+            upsert=True,
+        )
+        try:
+            await send_otp_email(email, code)
+            delivered = True
+        except Exception as e:
+            logger.error(f"Password-reset email send failed: {e}")
+
+    resp = {"status": "sent", "delivered": delivered}
+    # In dev/preview mode we surface the code so it can be tested without inbox
+    # access. Never enable OTP_DEV_MODE in production.
+    if OTP_DEV_MODE and user:
+        resp["dev_code"] = code
+    return resp
+
+
+@api_router.post("/auth/admin/reset-password")
+async def admin_reset_password(body: ResetPasswordRequest):
+    email = body.email.lower().strip()
+    identifier = f"pwreset:{email}"
+
+    if len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+
+    record = await db.otp_codes.find_one({"identifier": identifier})
+    if not record:
+        raise HTTPException(status_code=400, detail="Request a reset code first")
+    expires_at = record["expires_at"]
+    if isinstance(expires_at, str):
+        expires_at = datetime.fromisoformat(expires_at)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="Code expired. Request a new one.")
+    if record.get("attempts", 0) >= 5:
+        raise HTTPException(status_code=429, detail="Too many attempts. Request a new code.")
+    if body.code.strip() != record["code"]:
+        await db.otp_codes.update_one({"identifier": identifier}, {"$inc": {"attempts": 1}})
+        raise HTTPException(status_code=401, detail="Incorrect code")
+
+    user = await db.users.find_one({"email": email, "role": "admin"})
+    if not user:
+        # code matched but user is gone — clean up
+        await db.otp_codes.delete_one({"identifier": identifier})
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"password_hash": hash_password(body.new_password), "auth_provider": "password"}},
+    )
+    await db.otp_codes.delete_one({"identifier": identifier})
+
+    # Auto sign-in on successful reset
+    token = await create_session(user["user_id"])
+    return {"status": "reset", "session_token": token, "user": _public_user(user)}
+
+
 @api_router.post("/auth/session")
 async def google_session(body: SessionExchange):
     """Exchange an Emergent Google OAuth session_id for a session token.
