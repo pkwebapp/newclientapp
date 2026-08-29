@@ -297,3 +297,10 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - Desktop web: mouse parallax (onMouseMove, depth-based translate) — verified via playwright before/after screenshots.
 - Mobile: stacked simple layout (copy → CTAs → constellation → 2x2 badges), ambient float only.
 - SEO untouched (H1/meta/marketing nav intact). index.tsx hero logic simplified (removed old orbit art/scroll parallax).
+
+## Landing Hero Redesign (June 2026)
+- Redesigned public landing page (`/app/frontend/app/index.tsx`) to a warm mid-tone minimalist palette (greige #D8D0C4, ink #241D16, brand orange accent) — scoped via `/app/frontend/src/config/hero.ts` (does not touch global dark theme).
+- New `HeroShowcase` component (`/app/frontend/src/components/HeroShowcase.tsx`): phone mockup with AI-generated selfie, face-scan reticle + scan animation, "MATCHED! 24 photos of you found" badge, 3 connected event photo tiles. Mouse parallax + hover re-scan on desktop web; simple compact static composition on mobile.
+- Face photos generated with Gemini Nano Banana (same woman across selfie + 3 event candids), uploaded to Cloudinary under `pikconnect/hero/*` (script: `/app/backend/scripts/gen_hero_assets.py`).
+- Feature badge "High Resolution / Full-quality photos" replaced with "Digital Album / Your private album".
+- Desktop hero fills first viewport up to CTA; badge strip, How-it-works, FAQ, footer scroll below (all restyled to match mid-tone palette).
