@@ -10,7 +10,7 @@ import io
 from PIL import Image
 
 # Configuration
-BASE_URL = "https://client-dashboard-207.preview.emergentagent.com/api"
+BASE_URL = "https://newclient-app-3.preview.emergentagent.com/api"
 ADMIN_EMAIL = "admin@lumiere.studio"
 ADMIN_PASSWORD = "Admin@12345"
 

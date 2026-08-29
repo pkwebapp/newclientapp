@@ -211,6 +211,59 @@ backend:
             NO 4xx/5xx ERRORS DETECTED. All endpoints return correct status codes and proper response structures.
             
             Backend recovery is complete and production-ready on the emergent+mock path. 0 failures.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ SMOKE VERIFICATION AFTER GITHUB SYNC - ALL 3 TESTS PASSED
+            
+            Initialization/smoke verification after syncing GitHub checkout and restoring local env files.
+            Verified backend stability with STORAGE_BACKEND=emergent, FACE_ENGINE=mock, OTP_DEV_MODE=true.
+            
+            SUPERVISOR STATUS:
+            ✅ Backend service: RUNNING (pid 2018, uptime 0:00:57)
+            ✅ MongoDB service: RUNNING (pid 103, uptime 0:22:08)
+            ✅ Backend stable throughout testing
+            
+            SMOKE TEST RESULTS:
+            1. ✅ GET /api/ (health check) → 200 OK
+               • Response: {"service": "Lumiere Gallery API", "status": "ok"}
+            
+            2. ✅ POST /api/auth/admin/login → 200 OK
+               • Credentials: admin@lumiere.studio / Admin@12345
+               • Session token received (67 characters)
+               • User role: admin
+               • User ID: user_97ac66155a4c
+            
+            3. ✅ GET /api/events (with admin token) → 200 OK
+               • Response: Empty list (no events yet, expected)
+               • MongoDB/session wiring confirmed working
+            
+            BACKEND LOGS VERIFICATION:
+            ✅ Clean startup logs (2026-08-29 08:31:45):
+               • "Object storage initialized"
+               • "Seeded admin admin@lumiere.studio"
+               • "Face-indexing worker started"
+               • "Application startup complete"
+            ✅ All API requests returned 200 OK:
+               • GET /api/ → 200 OK
+               • POST /api/auth/admin/login → 200 OK
+               • GET /api/events → 200 OK
+            ✅ No errors or tracebacks in current session
+            ✅ Only historical errors from previous failed starts (before env restoration)
+            
+            CONFIGURATION VERIFIED:
+            ✅ backend/.env present with correct values:
+               • MONGO_URL=mongodb://localhost:27017
+               • DB_NAME=lumiere_gallery
+               • STORAGE_BACKEND=emergent
+               • FACE_ENGINE=mock
+               • OTP_DEV_MODE=true
+               • EMERGENT_LLM_KEY configured
+               • Admin seed credentials configured
+            ✅ frontend/.env present with EXPO_PUBLIC_BACKEND_URL
+            
+            NO 4XX/5XX ERRORS DETECTED. Backend is stable and ready for use.
+            All core authentication and session management working correctly. 0 failures.
 
 
   - task: "Switch to Cloudinary storage + AWS Rekognition face engine + S3 import (faceser)"
@@ -1380,7 +1433,7 @@ backend:
 metadata:
   created_by: "main_agent"
   version: "1.0"
-  test_sequence: 6
+  test_sequence: 7
   run_ui: true
 
 test_plan:
@@ -5004,7 +5057,7 @@ frontend:
           
           SUPER ADMIN LOGIN VERIFICATION (Tests 1-5):
           1. ✅ Direct /superadmin-login route accessible on desktop (1440x900)
-             • URL: https://client-dashboard-207.preview.emergentagent.com/superadmin-login
+             • URL: https://newclient-app-3.preview.emergentagent.com/superadmin-login
              • Page renders correctly with PIK CONNECT branding
              • "Platform control" heading visible
              • "Sign in to manage photographers, galleries and platform usage" subtitle
@@ -5019,7 +5072,7 @@ frontend:
              • Filled password (credentials from /app/memory/test_credentials.md)
              • Clicked "Sign in as Super Admin" button
              • Successfully navigated to /superadmin dashboard
-             • URL after login: https://client-dashboard-207.preview.emergentagent.com/superadmin ✓
+             • URL after login: https://newclient-app-3.preview.emergentagent.com/superadmin ✓
           
           4. ✅ Super Admin Dashboard visible:
              • "Dashboard" heading: "A quick view of platform health"
@@ -5086,14 +5139,14 @@ frontend:
           ✅ No navigation errors
           
           EXACT URLs VERIFIED:
-          • Login page: https://client-dashboard-207.preview.emergentagent.com/superadmin-login
-          • Dashboard: https://client-dashboard-207.preview.emergentagent.com/superadmin
-          • Photographers: https://client-dashboard-207.preview.emergentagent.com/superadmin/photographers
-          • Memberships: https://client-dashboard-207.preview.emergentagent.com/superadmin/memberships
-          • Galleries: https://client-dashboard-207.preview.emergentagent.com/superadmin/galleries
-          • Storage: https://client-dashboard-207.preview.emergentagent.com/superadmin/storage
-          • Activity: https://client-dashboard-207.preview.emergentagent.com/superadmin/activity
-          • Settings: https://client-dashboard-207.preview.emergentagent.com/superadmin/settings
+          • Login page: https://newclient-app-3.preview.emergentagent.com/superadmin-login
+          • Dashboard: https://newclient-app-3.preview.emergentagent.com/superadmin
+          • Photographers: https://newclient-app-3.preview.emergentagent.com/superadmin/photographers
+          • Memberships: https://newclient-app-3.preview.emergentagent.com/superadmin/memberships
+          • Galleries: https://newclient-app-3.preview.emergentagent.com/superadmin/galleries
+          • Storage: https://newclient-app-3.preview.emergentagent.com/superadmin/storage
+          • Activity: https://newclient-app-3.preview.emergentagent.com/superadmin/activity
+          • Settings: https://newclient-app-3.preview.emergentagent.com/superadmin/settings
           
           RESPONSIVE BEHAVIOR:
           ✅ Desktop (1440x900): Light SaaS shell with left sidebar, centered content, all nav links visible
@@ -5364,7 +5417,7 @@ frontend:
           ⚠️ TESTING INCOMPLETE - SYSTEM LIMITATIONS ENCOUNTERED
           
           Attempted comprehensive verification of gallery identity bug fix on:
-          • URL: https://client-dashboard-207.preview.emergentagent.com/g/evt_a5ee4937b376
+          • URL: https://newclient-app-3.preview.emergentagent.com/g/evt_a5ee4937b376
           • Event: Test Naman 2 (evt_a5ee4937b376) with 9 photos
           • Viewport: 1440x1080 (desktop)
           
@@ -5419,7 +5472,7 @@ frontend:
           STATUS: Cannot confirm if bug is fixed or still exists due to testing limitations.
           Marking as needs_retesting=true for manual verification.
           
-          Tested on https://client-dashboard-207.preview.emergentagent.com/g/evt_a5ee4937b376
+          Tested on https://newclient-app-3.preview.emergentagent.com/g/evt_a5ee4937b376
           Event: "Test Naman 2" (evt_a5ee4937b376) with 9 photos
           
           TEST RESULTS (3 photos tested):
@@ -5481,7 +5534,7 @@ agent_communication:
       ⚠️ TESTING INCOMPLETE - REACT NATIVE WEB + PLAYWRIGHT INCOMPATIBILITY
       
       Attempted comprehensive verification of the gallery identity bug fix on the specified URL
-      (https://client-dashboard-207.preview.emergentagent.com/g/evt_a5ee4937b376)
+      (https://newclient-app-3.preview.emergentagent.com/g/evt_a5ee4937b376)
       but encountered system limitations that prevent completing the test.
       
       ISSUE:
@@ -5518,7 +5571,7 @@ agent_communication:
       STATUS: Marking as needs_retesting=true for manual verification. Cannot claim bug is fixed
       or still exists without completing the identity verification tests.
       
-      Tested on Expo web preview (https://client-dashboard-207.preview.emergentagent.com)
+      Tested on Expo web preview (https://newclient-app-3.preview.emergentagent.com)
       using public gallery access for event "Test Naman 2" (evt_a5ee4937b376, 9 photos).
       
       REPRODUCTION RESULTS:
@@ -6160,8 +6213,8 @@ frontend:
           Attempted to test gallery identity mismatch fix on public Expo preview but encountered critical blocker:
           
           ISSUE: Frontend .env has wrong backend URL
-          • Configured: EXPO_PUBLIC_BACKEND_URL=https://client-dashboard-207.preview.emergentagent.com
-          • Should be: https://client-dashboard-207.preview.emergentagent.com
+          • Configured: EXPO_PUBLIC_BACKEND_URL=https://newclient-app-3.preview.emergentagent.com
+          • Should be: https://newclient-app-3.preview.emergentagent.com
           
           IMPACT: All API calls fail (net::ERR_ABORTED), visitor gate form does not work, gallery never loads.
           
@@ -6251,13 +6304,13 @@ agent_communication:
       ❌ CRITICAL BLOCKER - CANNOT TEST DUE TO BACKEND CONFIGURATION ISSUE
       
       Attempted comprehensive re-test of gallery identity mismatch bug on public Expo preview
-      (https://client-dashboard-207.preview.emergentagent.com/g/evt_a5ee4937b376)
+      (https://newclient-app-3.preview.emergentagent.com/g/evt_a5ee4937b376)
       but encountered a critical blocker that prevents ANY gallery testing.
       
       ROOT CAUSE:
       The frontend/.env file has EXPO_PUBLIC_BACKEND_URL pointing to the WRONG backend:
-      • Configured: https://client-dashboard-207.preview.emergentagent.com
-      • Correct URL: https://client-dashboard-207.preview.emergentagent.com
+      • Configured: https://newclient-app-3.preview.emergentagent.com
+      • Correct URL: https://newclient-app-3.preview.emergentagent.com
       
       IMPACT:
       • All API calls fail with net::ERR_ABORTED
@@ -6266,7 +6319,7 @@ agent_communication:
       • Cannot test photo grid, fullscreen viewer, or any gallery functionality
       
       EVIDENCE:
-      Console logs show: "REQUEST FAILED: https://client-dashboard-207.preview.emergentagent.com/api/public/events/evt_a5ee4937b376 - net::ERR_ABORTED"
+      Console logs show: "REQUEST FAILED: https://newclient-app-3.preview.emergentagent.com/api/public/events/evt_a5ee4937b376 - net::ERR_ABORTED"
       
       REQUIRED FIX:
       Main agent must update /app/frontend/.env:
@@ -6453,7 +6506,7 @@ agent_communication:
         NETWORK MONITORING:
         • All successful login requests return 200 OK
         • Failed login correctly returns 401 Unauthorized
-        • Backend API URL correctly resolved: https://client-dashboard-207.preview.emergentagent.com/api
+        • Backend API URL correctly resolved: https://newclient-app-3.preview.emergentagent.com/api
         • No undefined/api/* requests detected
         
         ORIGINAL ISSUE STATUS: ✅ RESOLVED
@@ -8749,7 +8802,7 @@ agent_communication:
            • Superadmin credentials: prabhakar@pkphotography.in / SuperAdmin@3214
         
         ✅ Frontend .env present:
-           • EXPO_PUBLIC_BACKEND_URL=https://client-dashboard-207.preview.emergentagent.com
+           • EXPO_PUBLIC_BACKEND_URL=https://newclient-app-3.preview.emergentagent.com
         
         MONGODB STATUS:
         ✅ MongoDB accessible at mongodb://localhost:27017
@@ -8819,7 +8872,7 @@ agent_communication:
            • No critical console errors detected ✓
            • Only minor warnings: shadow* style props deprecation, useNativeDriver fallback ✓
            • Non-critical failures: cdn-cgi/rum (Cloudflare beacon), Ionicons.ttf font loading ✓
-           • Backend URL correctly configured: https://client-dashboard-207.preview.emergentagent.com ✓
+           • Backend URL correctly configured: https://newclient-app-3.preview.emergentagent.com ✓
            • No 401 auth failures on /api/ endpoints ✓
            • Admin login API calls returning 200 OK ✓
         
@@ -10104,4 +10157,143 @@ agent_communication:
     - agent: "main"
       message: |
         Refined the public homepage to a face-free abstract cinematic hero: editorial left-copy/right-visual balance on desktop, centered mobile visual, animated orbit/lens geometry, hover-or-tap scan preview, orange recognition pulse, concise SEO-aware headline/support, and dedicated menu routes. Added dedicated native pages for How it works, Features, For Photographers, and Pricing using existing subscription feature data. Updated sitemap. Frontend lint, TypeScript, and web export checks pass; focused visual frontend testing is required.
+
+
+
+current_setup:
+  task: "Pull and initialize GitHub repository for next refinements"
+  implemented: true
+  working: true
+  files: "repository checkout, backend/.env, frontend/.env"
+  status_history:
+    - working: true
+      agent: "main"
+      comment: |
+        Confirmed /app is already the checkout for https://github.com/pkwebapp/newclientapp at the same
+        commit as origin/main (578423c). Fetched origin without overwriting existing local changes.
+        Installed frontend and backend dependencies, recreated gitignored local environment files required
+        for startup, and restarted Expo/backend services. Backend GET /api/ and frontend GET / both return 200.
+        Local backend uses EMERGENT object storage and MOCK face indexing because cloud credentials are not
+        present in the repository.
+        Backend smoke verification is requested next; frontend visual testing should wait for explicit user permission.
+
+agent_communication:
+  - agent: "main"
+    message: "Repository checkout is synced and services are running; backend smoke test is next."
+  - agent: "testing"
+    message: |
+      ✅ BACKEND SMOKE VERIFICATION COMPLETE - ALL 3 TESTS PASSED
+      
+      Performed initialization/smoke verification after GitHub sync and env file restoration.
+      Backend is stable and ready for use with STORAGE_BACKEND=emergent, FACE_ENGINE=mock, OTP_DEV_MODE=true.
+      
+      VERIFIED:
+      • Supervisor backend service: RUNNING (stable)
+      • GET /api/ → 200 OK (health check passed)
+      • POST /api/auth/admin/login (admin@lumiere.studio / Admin@12345) → 200 OK with session_token
+      • GET /api/events (with admin token) → 200 OK (MongoDB/session wiring confirmed)
+      • Backend logs show clean startup with no errors
+      • Configuration files (backend/.env, frontend/.env) present and correct
+      
+      NO 4XX/5XX ERRORS. Backend is production-ready. Main agent can proceed with next tasks.
+
+frontend:
+  - task: "Replace social-share preview image with branded PIK Connect card"
+    implemented: true
+    working: true
+    file: "frontend/public/pik-connect-share-card.png, frontend/app/+html.tsx, frontend/app/index.tsx"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+      - working: true
+        agent: "main"
+        comment: |
+          Replaced the previous external portrait OG image with a new locally generated 1200x630 PNG
+          designed for WhatsApp/social link previews. The card is face-free and matches PIK Connect's
+          warm ivory, charcoal, and orange visual system, with an abstract AI lens, private gallery,
+          QR sharing, digital albums, and branded copy. Updated both the root HTML metadata and homepage
+          Head metadata to use https://www.pikconnect.com/pik-connect-share-card.png. Verified Expo serves
+          the homepage (200) and the new PNG (200 image/png); TypeScript passes. Frontend visual testing requested.
+      - working: true
+        agent: "testing"
+        comment: |
+          ✅ ALL TESTS PASSED - Social share preview image implementation fully verified.
+          
+          Tested comprehensive frontend verification at http://127.0.0.1:3000 on desktop (1920x1080) 
+          and mobile (390x844) viewports.
+          
+          METADATA VERIFICATION (✅ PASS):
+          ✓ og:image correctly references: https://www.pikconnect.com/pik-connect-share-card.png
+          ✓ twitter:image correctly references: https://www.pikconnect.com/pik-connect-share-card.png
+          ✓ og:image:width: 1200
+          ✓ og:image:height: 630
+          ✓ NO old portrait URL found in metadata (correctly replaced)
+          
+          IMAGE FILE VERIFICATION (✅ PASS):
+          ✓ GET /pik-connect-share-card.png → 200 OK
+          ✓ Content-Type: image/png (correct)
+          ✓ Image natural dimensions: 1200x630 (exactly correct social share dimensions)
+          ✓ Visual verification: Branded PIK Connect card with:
+            • "YOUR MOMENTS, FOUND IN AN INSTANT" headline
+            • Abstract AI lens/orbit design (face-free)
+            • Feature badges: AI FACE SEARCH, QR GALLERY SHARING, DIGITAL ALBUMS
+            • PIKCONNECT.COM branding
+            • Warm ivory, charcoal, and orange color palette
+          
+          HOMEPAGE RENDERING (✅ PASS):
+          ✓ Homepage loads without critical console errors (0 critical errors)
+          ✓ PIK CONNECT branding visible on both desktop and mobile
+          ✓ Hero headline "Your event photos, found in an instant." renders correctly
+          ✓ Primary CTA "Find my photos" button visible and functional
+          ✓ Desktop layout: Proper two-column hero with left copy and right interactive showcase
+          ✓ Mobile layout: Stacked responsive layout with all elements visible
+          
+          RESPONSIVE DESIGN (✅ PASS):
+          ✓ Desktop (1920x1080): Full hero with navigation links, proper spacing, centered content
+          ✓ Mobile (390x844): Hamburger menu, stacked layout, all CTAs accessible
+          ✓ No layout regressions detected
+          ✓ No overlapping elements or broken layouts
+          ✓ Page scrolling and interactivity working correctly
+          
+          ALL REVIEW REQUIREMENTS MET:
+          1. ✓ Homepage returns/rendering without critical console errors
+          2. ✓ Exactly the new pik-connect-share-card.png is referenced by og:image and twitter:image 
+             (not the old portrait URL)
+          3. ✓ Image responds 200 with image/png and is visually a 1200x630 branded PIK Connect card
+          4. ✓ Homepage renders PIK CONNECT brand, hero headline, and primary CTA on desktop and 
+             mobile viewports with no layout regressions
+          
+          The social share preview image implementation is production-ready. 0 failures.
+
+test_plan:
+  current_focus: []
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+  - agent: "main"
+    message: "Created and wired the new branded social-share image; frontend visual verification is requested."
+  - agent: "testing"
+    message: |
+      ✅ SOCIAL SHARE PREVIEW IMAGE VERIFICATION COMPLETE - ALL TESTS PASSED
+      
+      Comprehensive frontend verification completed successfully. The new branded PIK Connect 
+      share card (1200x630 PNG) is correctly referenced in both og:image and twitter:image 
+      metadata, serves with 200 OK and image/png content-type, and displays the correct 
+      branded design with abstract AI lens, feature badges, and PIK Connect branding.
+      
+      Homepage renders correctly on both desktop (1920x1080) and mobile (390x844) viewports 
+      with PIK CONNECT brand, hero headline "Your event photos, found in an instant.", and 
+      primary CTA "Find my photos" button all visible and functional. No layout regressions 
+      detected. No critical console errors.
+      
+      All 4 review requirements met:
+      1. ✓ Homepage loads without critical errors
+      2. ✓ New pik-connect-share-card.png referenced in metadata (old portrait URL replaced)
+      3. ✓ Image responds 200 with image/png, visually correct 1200x630 branded card
+      4. ✓ Homepage renders correctly on desktop and mobile with no regressions
+      
+      The social share preview image implementation is production-ready. 0 failures.
 

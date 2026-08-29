@@ -9,7 +9,7 @@ import { type PropsWithChildren } from "react";
 
 const SITE = "https://www.pikconnect.com";
 const STUDIO_SITE = "https://www.pkphotography.in";
-const OG_IMAGE = "https://pkphotography.in/pricing/PKP_0763%20cover.jpg";
+const OG_IMAGE = `${SITE}/pik-connect-share-card.png`;
 const REVIEW_URL = "https://g.page/r/CVhvUcwRhP2GEAE/review";
 
 const FAVICON = "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA2NCA2NCI+PHJlY3Qgd2lkdGg9IjY0IiBoZWlnaHQ9IjY0IiByeD0iMTYiIGZpbGw9IiMwRTBEMEMiLz48Y2lyY2xlIGN4PSIzMiIgY3k9IjMyIiByPSIyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjRjQ3QjRBIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1kYXNoYXJyYXk9IjIyIDciLz48cGF0aCBkPSJNMzIgMTZsMTEgNnYxM0wzMiA0MiAyMSAzNVYyMnpNMzIgMjRsNiAzdjdsLTYgMy02LTN2LTd6IiBmaWxsPSIjRjQ3QjRBIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiLz48Y2lyY2xlIGN4PSIzMiIgY3k9IjMyIiByPSIzIiBmaWxsPSIjMEUwRDBDIi8+PC9zdmc+";

@@ -15,7 +15,7 @@ import { fonts, fontSize, radius, spacing } from "@/src/theme";
 import { getAppSurface } from "@/src/navigation/host-routing";
 
 const SITE = "https://www.pikconnect.com";
-const OG_IMAGE = "https://pkphotography.in/pricing/PKP_0763%20cover.jpg";
+const OG_IMAGE = `${SITE}/pik-connect-share-card.png`;
 const TITLE = "PIK Connect | Photo Gallery, AI Face Search & CRM for Photographers";
 const DESC =
   "PIK Connect gives photographers a private photo gallery, AI face search, digital albums, effortless photo sharing and client management in one lightweight workspace.";
