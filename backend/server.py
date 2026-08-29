@@ -193,7 +193,7 @@ def _phone_or_400(value: str) -> str:
 class AdminRegister(BaseModel):
     name: str
     email: EmailStr
-    password: str = Field(min_length=8)
+    password: str
 
 
 class AdminLogin(BaseModel):
@@ -223,6 +223,7 @@ class OtpVerify(BaseModel):
 @api_router.post("/auth/admin/register")
 async def admin_register(body: AdminRegister):
     email = body.email.lower()
+    _validate_password_or_400(body.password)
     if await db.users.find_one({"email": email}):
         raise HTTPException(status_code=409, detail="An account with this email already exists")
     user = {
@@ -259,6 +260,21 @@ class ResetPasswordRequest(BaseModel):
     email: EmailStr
     code: str
     new_password: str
+
+
+PASSWORD_MIN_LENGTH = 8
+PASSWORD_RULES_MESSAGE = (
+    "Password must be at least 8 characters and include a letter and a number."
+)
+
+
+def _validate_password_or_400(password: str) -> None:
+    """Raise a friendly 400 if the password fails our minimum rules."""
+    pw = password or ""
+    if len(pw) < PASSWORD_MIN_LENGTH:
+        raise HTTPException(status_code=400, detail=PASSWORD_RULES_MESSAGE)
+    if not any(c.isalpha() for c in pw) or not any(c.isdigit() for c in pw):
+        raise HTTPException(status_code=400, detail=PASSWORD_RULES_MESSAGE)
 
 
 @api_router.post("/auth/admin/forgot-password")
@@ -308,8 +324,7 @@ async def admin_reset_password(body: ResetPasswordRequest):
     email = body.email.lower().strip()
     identifier = f"pwreset:{email}"
 
-    if len(body.new_password) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    _validate_password_or_400(body.new_password)
 
     record = await db.otp_codes.find_one({"identifier": identifier})
     if not record:

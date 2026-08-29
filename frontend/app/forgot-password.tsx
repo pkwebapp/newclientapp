@@ -13,6 +13,22 @@ import { goBackOr } from "@/src/navigation/back";
 
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
+const PASSWORD_MIN = 8;
+const PASSWORD_HINT = "At least 8 characters, with a letter and a number.";
+
+function scorePassword(pw: string): { ok: boolean; msg: string | null } {
+  if (!pw) return { ok: false, msg: null };
+  if (pw.length < PASSWORD_MIN) {
+    return { ok: false, msg: `Too short — needs ${PASSWORD_MIN - pw.length} more character${pw.length === PASSWORD_MIN - 1 ? "" : "s"}.` };
+  }
+  const hasLetter = /[A-Za-z]/.test(pw);
+  const hasDigit = /[0-9]/.test(pw);
+  if (!hasLetter || !hasDigit) {
+    return { ok: false, msg: "Add at least one letter and one number." };
+  }
+  return { ok: true, msg: "Looks good." };
+}
+
 type Step = "email" | "reset";
 
 export default function ForgotPassword() {
@@ -68,8 +84,9 @@ export default function ForgotPassword() {
       toast.show("Enter the 6-digit code", "error");
       return;
     }
-    if (newPassword.length < 6) {
-      toast.show("Password must be at least 6 characters", "error");
+    const strength = scorePassword(newPassword);
+    if (!strength.ok) {
+      toast.show(strength.msg || PASSWORD_HINT, "error");
       return;
     }
     if (newPassword !== confirmPassword) {
@@ -188,6 +205,27 @@ export default function ForgotPassword() {
               onChangeText={setNewPassword}
               secureTextEntry
             />
+            {(() => {
+              const s = scorePassword(newPassword);
+              const color = !newPassword
+                ? colors.muted
+                : s.ok
+                ? "#2E7D32"
+                : "#C0392B";
+              const icon = !newPassword
+                ? "information-circle-outline"
+                : s.ok
+                ? "checkmark-circle"
+                : "alert-circle";
+              return (
+                <View style={styles.pwHintRow}>
+                  <Ionicons name={icon as any} size={14} color={color} />
+                  <Text style={[styles.pwHintText, { color }]}>
+                    {newPassword ? s.msg : PASSWORD_HINT}
+                  </Text>
+                </View>
+              );
+            })()}
             <TextField
               testID="reset-confirm-password"
               label="Confirm password"
@@ -195,6 +233,14 @@ export default function ForgotPassword() {
               onChangeText={setConfirmPassword}
               secureTextEntry
             />
+            {confirmPassword && confirmPassword !== newPassword ? (
+              <View style={styles.pwHintRow}>
+                <Ionicons name="alert-circle" size={14} color="#C0392B" />
+                <Text style={[styles.pwHintText, { color: "#C0392B" }]}>
+                  Passwords do not match.
+                </Text>
+              </View>
+            ) : null}
             <Button
               testID="reset-submit-btn"
               title="Reset password"
@@ -305,4 +351,18 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   devCodeStrong: { fontWeight: "800", letterSpacing: 2, color: colors.brand },
+  pwHintRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: -spacing.sm,
+    marginBottom: spacing.md,
+    paddingHorizontal: spacing.xs,
+  },
+  pwHintText: {
+    flex: 1,
+    fontFamily: fonts.text,
+    fontSize: fontSize.sm,
+    lineHeight: 18,
+  },
 });
