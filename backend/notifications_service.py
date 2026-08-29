@@ -39,6 +39,13 @@ NOTIFICATION_TYPES: list[dict] = [
     {"key": "booking_confirmed", "audience": "client", "group": "Bookings",  "label": "Booking confirmations",        "desc": "When your studio confirms or updates a booking."},
     # ---- Broadcast from studio to clients (always allow opt-out) ----
     {"key": "custom_message",    "audience": "client", "group": "Studio",    "label": "Messages from your studio",    "desc": "Announcements, offers and personal notes from your photographer."},
+    # ---- Superadmin (platform operator) ----
+    {"key": "sa_new_studio",     "audience": "superadmin", "group": "Studios",  "label": "New photographer joined",     "desc": "When a new studio signs up on the platform."},
+    {"key": "sa_studio_onboarded","audience": "superadmin","group": "Studios",  "label": "Studio completed onboarding", "desc": "When a studio finishes their profile after signup."},
+    {"key": "sa_subscription",   "audience": "superadmin", "group": "Revenue",  "label": "New / upgraded subscription", "desc": "When a studio subscribes or upgrades to a paid plan."},
+    {"key": "sa_payment_failed", "audience": "superadmin", "group": "Revenue",  "label": "Payment failures",            "desc": "When a studio's payment fails or a refund is triggered."},
+    {"key": "sa_storage_alert",  "audience": "superadmin", "group": "Health",   "label": "Storage / plan alerts",       "desc": "When a studio is near or over their plan limits."},
+    {"key": "sa_review_flag",    "audience": "superadmin", "group": "Health",   "label": "Low ratings on the platform", "desc": "When a client leaves a low rating (≤ 2 stars)."},
 ]
 
 _TYPE_KEYS = {t["key"] for t in NOTIFICATION_TYPES}
@@ -133,6 +140,8 @@ async def notify(
         # so no route changes are needed.
         if audience == "admin":
             doc["studio_id"] = user_id
+        elif audience == "superadmin":
+            doc["superadmin_id"] = user_id
         else:
             doc["client_user_id"] = user_id
         if dedupe_key:
@@ -225,3 +234,43 @@ async def resolve_all_clients_for_studio(studio_id: str) -> list[str]:
             users_ids.add(a["client_user_id"])
 
     return sorted(users_ids)
+
+
+# ---------------------------------------------------------------------------
+# Superadmin fan-out — notify every platform superadmin
+# ---------------------------------------------------------------------------
+async def notify_superadmins(
+    *,
+    type_key: str,
+    title: str,
+    body: str,
+    action_url: Optional[str] = None,
+    meta: Optional[dict] = None,
+    dedupe_key: Optional[str] = None,
+) -> int:
+    """Fan-out a superadmin notification to every superadmin user.
+
+    Returns the count of notifications actually created (after preference
+    filtering + dedupe). Never raises.
+    """
+    try:
+        cursor = db.users.find({"role": "superadmin"}, {"_id": 0, "user_id": 1})
+        superadmins = [d["user_id"] async for d in cursor]
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"notify_superadmins: could not list superadmins: {e}")
+        return 0
+    sent = 0
+    for uid in superadmins:
+        nid = await notify(
+            user_id=uid,
+            type_key=type_key,
+            title=title,
+            body=body,
+            action_url=action_url,
+            meta=meta,
+            # Per-superadmin dedupe so a shared event only creates one row each.
+            dedupe_key=f"{dedupe_key}:{uid}" if dedupe_key else None,
+        )
+        if nid:
+            sent += 1
+    return sent

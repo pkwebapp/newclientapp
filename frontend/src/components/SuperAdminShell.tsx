@@ -4,6 +4,7 @@ import { usePathname, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
 import { useAuth } from "@/src/context/AuthContext";
+import { NotificationBell } from "@/src/components/NotificationBell";
 import { colors, fonts, radius, spacing } from "@/src/theme";
 
 export const SUPERADMIN_NAV = [
@@ -99,7 +100,15 @@ export function SuperAdminShell({ children }: { children: React.ReactNode }) {
 }
 
 export function SuperAdminHeader({ title, subtitle }: { title: string; subtitle?: string }) {
-  return <View style={styles.pageHeader}><Text style={styles.pageTitle}>{title}</Text>{subtitle ? <Text style={styles.pageSubtitle}>{subtitle}</Text> : null}</View>;
+  return (
+    <View style={styles.pageHeader}>
+      <View style={{ flex: 1 }}>
+        <Text style={styles.pageTitle}>{title}</Text>
+        {subtitle ? <Text style={styles.pageSubtitle}>{subtitle}</Text> : null}
+      </View>
+      <NotificationBell audience="superadmin" testID="superadmin-notification-bell" />
+    </View>
+  );
 }
 
 export function StatCard({ label, value, icon, accent = false }: { label: string; value: string; icon: keyof typeof Ionicons.glyphMap; accent?: boolean }) {
@@ -153,7 +162,7 @@ const styles = StyleSheet.create({
   modalLayer: { flex: 1, flexDirection: "row" },
   modalBackdrop: { flex: 1, backgroundColor: "rgba(16,24,40,0.36)" },
   mobileDrawer: { width: 300, backgroundColor: "#FFFFFF", padding: spacing.lg },
-  pageHeader: { paddingHorizontal: spacing["2xl"], paddingTop: spacing["2xl"], paddingBottom: spacing.lg },
+  pageHeader: { flexDirection: "row", alignItems: "flex-start", gap: spacing.md, paddingHorizontal: spacing["2xl"], paddingTop: spacing["2xl"], paddingBottom: spacing.lg },
   pageTitle: { color: "#101828", fontFamily: fonts.display, fontSize: 30, fontWeight: "700" },
   pageSubtitle: { color: "#667085", fontFamily: fonts.text, fontSize: 14, marginTop: spacing.xs },
   statCard: { flex: 1, minWidth: 150, backgroundColor: "#FFFFFF", borderWidth: 1, borderColor: "#EAECF0", borderRadius: radius.lg, padding: spacing.lg, minHeight: 132 },

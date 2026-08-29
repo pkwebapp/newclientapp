@@ -5,14 +5,15 @@ import { api } from "@/src/api/client";
 import { Palette, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { usePalette, useThemedStyles } from "@/src/theme-context";
 
-export function NotificationBell({ audience, testID, onNotificationPress }: { audience: "admin" | "client"; testID?: string; onNotificationPress?: (item: any) => void }) {
+export function NotificationBell({ audience, testID, onNotificationPress }: { audience: "admin" | "client" | "superadmin"; testID?: string; onNotificationPress?: (item: any) => void }) {
   const { colors } = usePalette();
   const styles = useThemedStyles(makeStyles);
   const [items, setItems] = useState<any[]>([]);
   const [unread, setUnread] = useState(0);
   const [open, setOpen] = useState(false);
   const isAdmin = audience === "admin";
-  const listPath = isAdmin ? "/notifications" : "/me/notifications";
+  const isSuperadmin = audience === "superadmin";
+  const listPath = isSuperadmin ? "/superadmin/notifications" : isAdmin ? "/notifications" : "/me/notifications";
 
   const load = useCallback(async () => {
     try {
@@ -32,7 +33,11 @@ export function NotificationBell({ audience, testID, onNotificationPress }: { au
 
   const markRead = async (item: any) => {
     if (item.read) return;
-    const path = isAdmin ? `/notifications/${item.notification_id}/read` : `/me/notifications/${item.notification_id}/read`;
+    const path = isSuperadmin
+      ? `/superadmin/notifications/${item.notification_id}/read`
+      : isAdmin
+      ? `/notifications/${item.notification_id}/read`
+      : `/me/notifications/${item.notification_id}/read`;
     try {
       await api.patch(path, {});
       setItems((current) => current.map((entry) => entry.notification_id === item.notification_id ? { ...entry, read: true } : entry));
@@ -46,7 +51,7 @@ export function NotificationBell({ audience, testID, onNotificationPress }: { au
     onNotificationPress?.({ ...item, read: true });
   };
 
-  const icon = useMemo(() => (audience === "admin" ? "calendar-outline" : "megaphone-outline"), [audience]);
+  const icon = useMemo(() => (isSuperadmin ? "shield-outline" : audience === "admin" ? "calendar-outline" : "megaphone-outline"), [audience, isSuperadmin]);
 
   return (
     <>

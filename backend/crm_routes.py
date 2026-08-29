@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from config import db, PUBLIC_BASE_URL, ADMIN_SEED_EMAIL
 from auth_utils import require_admin, require_client
 from phone_utils import validate_phone, PhoneValidationError, phone_variants
+from notifications_service import notify, notify_superadmins
 from push_service import push_user
 import plans
 
@@ -1252,4 +1253,32 @@ async def create_review(body: ReviewBody, user: dict = Depends(require_client)):
         "created_at": now_iso(),
     }
     await db.reviews.insert_one(doc)
+
+    # Notify the studio and (for low ratings only) flag the platform team.
+    try:
+        client_name = user.get("name") or "A client"
+        stars = "★" * body.rating + "☆" * (5 - body.rating)
+        if studio_id:
+            await notify(
+                user_id=studio_id,
+                type_key="review_received",
+                title=f"New review · {stars}",
+                body=f'{client_name} rated you {body.rating}/5' + (f': "{doc["text"][:120]}"' if doc.get("text") else "."),
+                action_url="/admin/reviews",
+                meta={"review_id": doc["review_id"], "rating": body.rating, "client_user_id": user["user_id"]},
+            )
+        if body.rating <= 2:
+            await notify_superadmins(
+                type_key="sa_review_flag",
+                title=f"Low rating: {stars}",
+                body=f'{client_name} rated their studio {body.rating}/5' + (f': "{doc["text"][:120]}"' if doc.get("text") else "."),
+                action_url=f"/superadmin/studio/{studio_id}" if studio_id else None,
+                meta={"review_id": doc["review_id"], "rating": body.rating, "studio_id": studio_id},
+                dedupe_key=f"sa_review_flag:{doc['review_id']}",
+            )
+    except Exception as e:  # noqa: BLE001
+        # Never fail review creation because of a notification hiccup.
+        import logging  # local import — cheap and keeps top of file lean
+        logging.getLogger(__name__).warning(f"review notify failed: {e}")
+
     return {"status": "ok", "review_id": doc["review_id"]}

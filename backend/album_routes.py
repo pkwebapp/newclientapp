@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from config import db, APP_NAME, PUBLIC_BASE_URL
 from storage_service import get_storage
 from auth_utils import require_admin, require_admin_uploads, require_client
+from notifications_service import notify
 from phone_utils import validate_phone, PhoneValidationError
 import album_service
 import plans
@@ -312,6 +313,49 @@ async def publish_album(album_id: str, admin: dict = Depends(require_admin)):
     await db.albums.update_one({"album_id": album_id},
                                {"$set": {"status": "published", "updated_at": now_iso()}})
     a = await db.albums.find_one({"album_id": album_id}, {"_id": 0})
+
+    # Notify every client assigned to this album that their flipbook is ready.
+    try:
+        client_ids = [ca.get("client_id") for ca in (a.get("client_assignments") or []) if ca.get("client_id")]
+        if client_ids:
+            title_of_album = a.get("title") or "Your digital album"
+            # Resolve CRM clients → their user_ids (via email/phone match).
+            crm_clients = await db.clients.find(
+                {"client_id": {"$in": client_ids}, "studio_id": admin["user_id"]},
+                {"_id": 0, "email": 1, "phone": 1, "family_members": 1},
+            ).to_list(2000)
+            emails: set[str] = set()
+            phones: set[str] = set()
+            for c in crm_clients:
+                if c.get("email"):
+                    emails.add(c["email"].lower())
+                if c.get("phone"):
+                    phones.add(c["phone"])
+                for fm in c.get("family_members") or []:
+                    if fm.get("email"):
+                        emails.add(fm["email"].lower())
+                    if fm.get("phone"):
+                        phones.add(fm["phone"])
+            recipient_ids: set[str] = set()
+            if emails or phones:
+                async for u in db.users.find(
+                    {"$or": [{"email": {"$in": list(emails)}}, {"phone": {"$in": list(phones)}}], "role": "client"},
+                    {"_id": 0, "user_id": 1},
+                ):
+                    recipient_ids.add(u["user_id"])
+            for uid in recipient_ids:
+                await notify(
+                    user_id=uid,
+                    type_key="album_ready",
+                    title="Your album is ready to view",
+                    body=f'Your digital album "{title_of_album}" has been published by your studio. Tap to flip through it.',
+                    action_url=f"/client/album/{album_id}",
+                    meta={"album_id": album_id},
+                    dedupe_key=f"album_ready:{album_id}:{uid}",
+                )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"album_ready fan-out failed: {e}")
+
     return _admin_album_public(a)
 
 

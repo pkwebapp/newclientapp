@@ -287,3 +287,31 @@ async def update_settings(body: SuperadminSettingsUpdate, admin: dict = Depends(
     if updates:
         await db.platform_settings.update_one({"key": "main"}, {"$set": {**updates, "key": "main", "updated_at": now_iso()}}, upsert=True)
     return await settings(admin=admin)
+
+
+
+# ---------------------------------------------------------------------------
+# Notifications for the superadmin (platform-operator inbox)
+# ---------------------------------------------------------------------------
+@superadmin_router.get("/notifications")
+async def list_superadmin_notifications(admin: dict = Depends(require_superadmin)):
+    items = await db.notifications.find(
+        {"superadmin_id": admin["user_id"]}, {"_id": 0}
+    ).sort("created_at", -1).to_list(100)
+    return {
+        "items": items,
+        "unread_count": sum(1 for item in items if not item.get("read")),
+    }
+
+
+@superadmin_router.patch("/notifications/{notification_id}/read")
+async def mark_superadmin_notification_read(
+    notification_id: str, admin: dict = Depends(require_superadmin)
+):
+    result = await db.notifications.update_one(
+        {"notification_id": notification_id, "superadmin_id": admin["user_id"]},
+        {"$set": {"read": True, "read_at": now_iso()}},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Notification not found")
+    return {"status": "read", "notification_id": notification_id}

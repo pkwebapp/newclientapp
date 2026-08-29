@@ -35,6 +35,11 @@ from auth_utils import (
     get_current_user, require_admin, require_admin_uploads, require_client, user_from_token_or_header,
 )
 import plans
+from notifications_service import (
+    notify, notify_superadmins, get_disabled_types, set_disabled_types,
+    types_for, resolve_gallery_users, resolve_all_clients_for_studio,
+    NOTIFICATION_TYPES,
+)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -239,6 +244,20 @@ async def admin_register(body: AdminRegister):
     }
     await db.users.insert_one(user)
     token = await create_session(user["user_id"])
+
+    # Notify superadmins that a new photographer joined the platform.
+    try:
+        await notify_superadmins(
+            type_key="sa_new_studio",
+            title="New photographer joined",
+            body=f'{body.name} ({email}) just created a studio account.',
+            action_url=f"/superadmin/studio/{user['user_id']}",
+            meta={"studio_id": user["user_id"], "name": body.name, "email": email},
+            dedupe_key=f"sa_new_studio:{user['user_id']}",
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"sa_new_studio notify failed: {e}")
+
     return {"session_token": token, "user": _public_user(user)}
 
 
@@ -584,6 +603,27 @@ async def save_studio_profile(body: StudioProfile, user: dict = Depends(get_curr
         }},
     )
     updated = await db.users.find_one({"user_id": user["user_id"]})
+
+    # Fire once per studio when they first complete onboarding.
+    if not user.get("profile_complete"):
+        try:
+            await notify_superadmins(
+                type_key="sa_studio_onboarded",
+                title="Studio completed onboarding",
+                body=f'{profile["studio_name"]} ({profile["city"]}, {profile["country"]}) finished their profile.',
+                action_url=f"/superadmin/studio/{user['user_id']}",
+                meta={
+                    "studio_id": user["user_id"],
+                    "studio_name": profile["studio_name"],
+                    "city": profile["city"],
+                    "country": profile["country"],
+                    "purposes": selected_purposes,
+                },
+                dedupe_key=f"sa_studio_onboarded:{user['user_id']}",
+            )
+        except Exception as e:  # noqa: BLE001
+            logger.warning(f"sa_studio_onboarded notify failed: {e}")
+
     return {"user": _public_user(updated)}
 
 
@@ -645,6 +685,26 @@ async def _activate_plan(studio_id: str, plan_key: str, order_id: str, payment_i
         {"order_id": order_id},
         {"$set": {"status": "paid", "payment_id": payment_id, "verified_at": now_iso()}},
     )
+
+    # Notify superadmins about the subscription / upgrade.
+    try:
+        studio = await db.users.find_one({"user_id": studio_id}, {"_id": 0, "name": 1, "email": 1, "studio_profile": 1})
+        payment = await db.payments.find_one({"order_id": order_id}, {"_id": 0, "amount": 1, "currency": 1})
+        amount_str = ""
+        if payment and payment.get("amount"):
+            amount_paise = payment["amount"]
+            amount_str = f' · ₹{amount_paise / 100:,.0f}'
+        studio_name = (studio or {}).get("studio_profile", {}).get("studio_name") or (studio or {}).get("name") or "A studio"
+        await notify_superadmins(
+            type_key="sa_subscription",
+            title=f"New subscription: {plan_key}",
+            body=f'{studio_name} subscribed to the {plan_key} plan{amount_str}.',
+            action_url=f"/superadmin/studio/{studio_id}",
+            meta={"studio_id": studio_id, "plan": plan_key, "order_id": order_id, "payment_id": payment_id},
+            dedupe_key=f"sa_subscription:{order_id}",
+        )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(f"sa_subscription notify failed: {e}")
 
 
 @api_router.post("/payments/create-order")
@@ -2791,10 +2851,6 @@ app.include_router(push_router)
 # ---------------------------------------------------------------------------
 # Notification preferences + broadcast
 # ---------------------------------------------------------------------------
-from notifications_service import (  # noqa: E402
-    NOTIFICATION_TYPES, notify, get_disabled_types, set_disabled_types,
-    types_for, resolve_gallery_users, resolve_all_clients_for_studio,
-)
 
 
 class NotificationPrefsBody(BaseModel):
