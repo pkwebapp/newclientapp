@@ -8,7 +8,7 @@ import sys
 import time
 
 # Configuration
-BASE_URL = "https://pkweb-client-1.preview.emergentagent.com/api"
+BASE_URL = "https://qa-testing-hub-13.preview.emergentagent.com/api"
 ADMIN_EMAIL = "admin@lumiere.studio"
 ADMIN_PASSWORD = "Admin@12345"
 
