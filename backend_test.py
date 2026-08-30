@@ -1,534 +1,743 @@
 #!/usr/bin/env python3
 """
-Backend test for the new notification system.
-Tests notification preferences, audience summary, broadcast, triggers, and dedupe.
+Comprehensive Supabase Auth Integration Test Suite
+Tests the newly wired Supabase Auth on PIK Connect backend.
 """
-import requests
-import json
+import os
+import sys
 import time
-from io import BytesIO
-from PIL import Image
+import json
+import requests
+from datetime import datetime
 
-# Base URL from frontend/.env
-BASE_URL = "https://qa-testing-hub-13.preview.emergentagent.com/api"
+# Configuration
+BACKEND_URL = "https://44463a86-6b40-4901-9582-b0d2a229f044.preview.emergentagent.com/api"
+SUPABASE_URL = "https://idnrpxtapkkryhlordlt.supabase.co"
+SUPABASE_PUBLISHABLE_KEY = "sb_publishable_K2VFAYgV_LsrT74yAm-LBw_4dZdljnP"
+SUPABASE_SECRET_KEY = os.environ["SUPABASE_KEY"]
 
-# Test credentials from /app/memory/test_credentials.md
-ADMIN_EMAIL = "admin@lumiere.studio"
-ADMIN_PASSWORD = "Admin@12345"
+# Super Admin credentials (legacy)
+SUPER_ADMIN_EMAIL = "prabhakar@pkphotography.in"
+SUPER_ADMIN_PASSWORD = "Super@12345"
 
-def log(msg):
-    print(f"[TEST] {msg}")
+# Test results tracking
+test_results = []
+suite_results = {}
 
-def create_test_image(width=400, height=400):
-    """Create a small test JPEG image."""
-    img = Image.new('RGB', (width, height), color='red')
-    buf = BytesIO()
-    img.save(buf, format='JPEG')
-    buf.seek(0)
-    return buf
 
-def admin_login():
-    """Login as admin and return session token."""
-    log("Admin login...")
-    resp = requests.post(f"{BASE_URL}/auth/admin/login", json={
-        "email": ADMIN_EMAIL,
-        "password": ADMIN_PASSWORD
-    })
-    assert resp.status_code == 200, f"Admin login failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert "session_token" in data, "No session_token in admin login response"
-    log(f"✅ Admin login successful, token: {data['session_token'][:20]}...")
-    return data["session_token"]
+def log_test(suite, test_name, method, url, status, expected_status, passed, response_snippet="", notes=""):
+    """Log a test result."""
+    result = {
+        "suite": suite,
+        "test": test_name,
+        "method": method,
+        "url": url,
+        "status": status,
+        "expected": expected_status,
+        "passed": passed,
+        "response": response_snippet,
+        "notes": notes
+    }
+    test_results.append(result)
+    
+    if suite not in suite_results:
+        suite_results[suite] = {"passed": 0, "failed": 0, "tests": []}
+    
+    if passed:
+        suite_results[suite]["passed"] += 1
+    else:
+        suite_results[suite]["failed"] += 1
+    
+    suite_results[suite]["tests"].append(result)
+    
+    status_icon = "✅ PASS" if passed else "❌ FAIL"
+    print(f"{status_icon} | {suite} | {test_name}")
+    print(f"   {method} {url}")
+    print(f"   Status: {status} (expected {expected_status})")
+    if response_snippet:
+        print(f"   Response: {response_snippet[:200]}")
+    if notes:
+        print(f"   Notes: {notes}")
+    print()
 
-def client_request_otp(email):
-    """Request OTP for client email."""
-    log(f"Client request OTP for {email}...")
-    resp = requests.post(f"{BASE_URL}/auth/client/request-otp", json={
-        "channel": "email",
-        "email": email
-    })
-    assert resp.status_code == 200, f"Client request OTP failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    log(f"✅ OTP requested, dev_code: {data.get('dev_code', 'N/A')}")
-    return data.get("dev_code")
 
-def client_verify_otp(email, code):
-    """Verify OTP and return client session token."""
-    log(f"Client verify OTP for {email}...")
-    resp = requests.post(f"{BASE_URL}/auth/client/verify-otp", json={
-        "channel": "email",
+def create_supabase_user(email, password, role, name):
+    """Create a Supabase user via Admin API with email confirmation."""
+    url = f"{SUPABASE_URL}/auth/v1/admin/users"
+    headers = {
+        "apikey": SUPABASE_SECRET_KEY,
+        "Authorization": f"Bearer {SUPABASE_SECRET_KEY}",
+        "Content-Type": "application/json"
+    }
+    body = {
         "email": email,
-        "code": code
-    })
-    assert resp.status_code == 200, f"Client verify OTP failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert "session_token" in data, "No session_token in client verify response"
-    log(f"✅ Client login successful, token: {data['session_token'][:20]}...")
-    return data["session_token"]
-
-def test_notification_preferences(admin_token):
-    """Test 1: Notification preferences GET/PATCH."""
-    log("\n=== TEST 1: Notification Preferences ===")
-    
-    # GET preferences (admin)
-    log("GET /api/notifications/prefs (as admin)...")
-    resp = requests.get(f"{BASE_URL}/notifications/prefs", headers={
-        "Authorization": f"Bearer {admin_token}"
-    })
-    assert resp.status_code == 200, f"GET prefs failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert data["audience"] == "admin", f"Expected audience=admin, got {data['audience']}"
-    assert isinstance(data["types"], list), "types should be a list"
-    assert isinstance(data["disabled"], list), "disabled should be a list"
-    log(f"✅ GET prefs returned: audience={data['audience']}, types count={len(data['types'])}, disabled={data['disabled']}")
-    
-    # PATCH preferences - disable guest_face_search
-    log("PATCH /api/notifications/prefs (disable guest_face_search)...")
-    resp = requests.patch(f"{BASE_URL}/notifications/prefs", 
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={"disabled": ["guest_face_search"]}
-    )
-    assert resp.status_code == 200, f"PATCH prefs failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert data["status"] == "saved", f"Expected status=saved, got {data['status']}"
-    assert "guest_face_search" in data["disabled"], "guest_face_search should be in disabled list"
-    log(f"✅ PATCH prefs saved: disabled={data['disabled']}")
-    
-    # GET again to verify
-    log("GET /api/notifications/prefs again to verify...")
-    resp = requests.get(f"{BASE_URL}/notifications/prefs", headers={
-        "Authorization": f"Bearer {admin_token}"
-    })
-    assert resp.status_code == 200, f"GET prefs failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert "guest_face_search" in data["disabled"], "guest_face_search should still be disabled"
-    log(f"✅ Verified disabled list: {data['disabled']}")
-    
-    # Test invalid type keys are silently dropped
-    log("PATCH /api/notifications/prefs with invalid type...")
-    resp = requests.patch(f"{BASE_URL}/notifications/prefs",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={"disabled": ["not_a_real_type", "booking_enquiry"]}
-    )
-    assert resp.status_code == 200, f"PATCH prefs failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert "not_a_real_type" not in data["disabled"], "Invalid type should be dropped"
-    assert "booking_enquiry" in data["disabled"], "Valid type should be kept"
-    log(f"✅ Invalid types silently dropped: disabled={data['disabled']}")
-    
-    # Reset preferences for later tests
-    log("Resetting preferences...")
-    resp = requests.patch(f"{BASE_URL}/notifications/prefs",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={"disabled": []}
-    )
-    assert resp.status_code == 200, f"Reset prefs failed: {resp.status_code} {resp.text}"
-    log("✅ Preferences reset")
-
-def test_audience_summary(admin_token):
-    """Test 2: Audience summary."""
-    log("\n=== TEST 2: Audience Summary ===")
-    
-    # GET summary without event_id
-    log("GET /api/notifications/audiences/summary (no event_id)...")
-    resp = requests.get(f"{BASE_URL}/notifications/audiences/summary", headers={
-        "Authorization": f"Bearer {admin_token}"
-    })
-    assert resp.status_code == 200, f"GET summary failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert "all_clients" in data, "all_clients should be in response"
-    assert isinstance(data["all_clients"], int), "all_clients should be a number"
-    log(f"✅ Summary returned: all_clients={data['all_clients']}")
-    
-    # Create an event for testing with event_id
-    log("Creating test event...")
-    resp = requests.post(f"{BASE_URL}/events", 
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={
-            "name": "Notification Test Event",
-            "date": "2026-09-14",
-            "face_search_enabled": False
+        "password": password,
+        "email_confirm": True,
+        "user_metadata": {
+            "role": role,
+            "name": name
         }
-    )
-    assert resp.status_code == 200, f"Create event failed: {resp.status_code} {resp.text}"
-    event_id = resp.json()["event_id"]
-    log(f"✅ Event created: {event_id}")
-    
-    # GET summary with event_id
-    log(f"GET /api/notifications/audiences/summary (with event_id={event_id})...")
-    resp = requests.get(f"{BASE_URL}/notifications/audiences/summary?event_id={event_id}", headers={
-        "Authorization": f"Bearer {admin_token}"
-    })
-    assert resp.status_code == 200, f"GET summary failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert "all_clients" in data, "all_clients should be in response"
-    assert "gallery" in data, "gallery should be in response when event_id provided"
-    assert isinstance(data["gallery"], int), "gallery should be a number"
-    log(f"✅ Summary with event_id returned: all_clients={data['all_clients']}, gallery={data['gallery']}")
-    
-    return event_id
-
-def test_broadcast(admin_token, event_id):
-    """Test 3: Broadcast notifications."""
-    log("\n=== TEST 3: Broadcast Notifications ===")
-    
-    # Test broadcast to all_clients
-    log("POST /api/notifications/broadcast (audience=all_clients)...")
-    resp = requests.post(f"{BASE_URL}/notifications/broadcast",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={
-            "audience": "all_clients",
-            "title": "Hello",
-            "body": "World"
-        }
-    )
-    assert resp.status_code == 200, f"Broadcast failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert data["status"] in ["sent", "no_recipients"], f"Unexpected status: {data['status']}"
-    log(f"✅ Broadcast to all_clients: status={data['status']}, sent={data.get('sent', 0)}")
-    
-    # Test bad audience
-    log("POST /api/notifications/broadcast (bad audience)...")
-    resp = requests.post(f"{BASE_URL}/notifications/broadcast",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={
-            "audience": "invalid_audience",
-            "title": "Test",
-            "body": "Test"
-        }
-    )
-    assert resp.status_code == 400, f"Expected 400 for bad audience, got {resp.status_code}"
-    log("✅ Bad audience returns 400")
-    
-    # Test gallery broadcast without event_id
-    log("POST /api/notifications/broadcast (audience=gallery, no event_id)...")
-    resp = requests.post(f"{BASE_URL}/notifications/broadcast",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={
-            "audience": "gallery",
-            "title": "Test",
-            "body": "Test"
-        }
-    )
-    assert resp.status_code == 400, f"Expected 400 for gallery without event_id, got {resp.status_code}"
-    log("✅ Gallery broadcast without event_id returns 400")
-    
-    # Test specific broadcast without client_user_ids
-    log("POST /api/notifications/broadcast (audience=specific, no client_user_ids)...")
-    resp = requests.post(f"{BASE_URL}/notifications/broadcast",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={
-            "audience": "specific",
-            "title": "Test",
-            "body": "Test"
-        }
-    )
-    assert resp.status_code == 400, f"Expected 400 for specific without client_user_ids, got {resp.status_code}"
-    log("✅ Specific broadcast without client_user_ids returns 400")
-    
-    # Test gallery broadcast with valid event_id
-    log(f"POST /api/notifications/broadcast (audience=gallery, event_id={event_id})...")
-    resp = requests.post(f"{BASE_URL}/notifications/broadcast",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={
-            "audience": "gallery",
-            "event_id": event_id,
-            "title": "Gallery Update",
-            "body": "New photos added"
-        }
-    )
-    assert resp.status_code == 200, f"Broadcast failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    assert data["status"] in ["sent", "no_recipients"], f"Unexpected status: {data['status']}"
-    log(f"✅ Broadcast to gallery: status={data['status']}, sent={data.get('sent', 0)}")
-
-def test_end_to_end_triggers(admin_token, event_id):
-    """Test 4: End-to-end trigger tests."""
-    log("\n=== TEST 4: End-to-End Trigger Tests ===")
-    
-    # Create a client user
-    client_email = f"notif.test.{int(time.time())}@example.com"
-    log(f"Creating client user: {client_email}...")
-    dev_code = client_request_otp(client_email)
-    assert dev_code, "No dev_code returned"
-    client_token = client_verify_otp(client_email, dev_code)
-    
-    # Grant access to the client
-    log(f"Granting access to client for event {event_id}...")
-    resp = requests.post(f"{BASE_URL}/events/{event_id}/access",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={
-            "channel": "email",
-            "email": client_email,
-            "full_gallery_access": True
-        }
-    )
-    assert resp.status_code == 200, f"Grant access failed: {resp.status_code} {resp.text}"
-    log("✅ Access granted")
-    
-    # Check client notifications for gallery_assigned
-    log("Checking client notifications for gallery_assigned...")
-    time.sleep(1)  # Give notification time to be created
-    resp = requests.get(f"{BASE_URL}/me/notifications", headers={
-        "Authorization": f"Bearer {client_token}"
-    })
-    assert resp.status_code == 200, f"GET client notifications failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    notifications = data.get("items", [])
-    gallery_assigned = [n for n in notifications if n.get("type") == "gallery_assigned"]
-    assert len(gallery_assigned) > 0, "No gallery_assigned notification found"
-    log(f"✅ Client received gallery_assigned notification: {gallery_assigned[0]['title']}")
-    
-    # Upload a photo to trigger new_photos and upload_indexed
-    log("Uploading photo to trigger notifications...")
-    img_buf = create_test_image()
-    resp = requests.post(f"{BASE_URL}/events/{event_id}/photos",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        files={"file": ("test.jpg", img_buf, "image/jpeg")}
-    )
-    assert resp.status_code == 200, f"Photo upload failed: {resp.status_code} {resp.text}"
-    photo_id = resp.json()["photo_id"]
-    log(f"✅ Photo uploaded: {photo_id}")
-    
-    # Wait for indexing to complete
-    log("Waiting for indexing to complete...")
-    for i in range(10):
-        time.sleep(2)
-        resp = requests.get(f"{BASE_URL}/events/{event_id}/indexing-status", headers={
-            "Authorization": f"Bearer {admin_token}"
-        })
-        if resp.status_code == 200:
-            status = resp.json().get("status")
-            if status == "ready":
-                log("✅ Indexing complete")
-                break
-    
-    # Check client notifications for new_photos
-    log("Checking client notifications for new_photos...")
-    time.sleep(2)  # Give notification time to be created
-    resp = requests.get(f"{BASE_URL}/me/notifications", headers={
-        "Authorization": f"Bearer {client_token}"
-    })
-    assert resp.status_code == 200, f"GET client notifications failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    notifications = data.get("items", [])
-    new_photos = [n for n in notifications if n.get("type") == "new_photos"]
-    if len(new_photos) > 0:
-        log(f"✅ Client received new_photos notification: {new_photos[0]['title']}")
-    else:
-        log("⚠️  No new_photos notification found (may not be triggered for single photo)")
-    
-    # Check admin notifications for upload_indexed
-    log("Checking admin notifications for upload_indexed...")
-    resp = requests.get(f"{BASE_URL}/notifications", headers={
-        "Authorization": f"Bearer {admin_token}"
-    })
-    assert resp.status_code == 200, f"GET admin notifications failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    notifications = data.get("items", [])
-    upload_indexed = [n for n in notifications if n.get("type") == "upload_indexed"]
-    if len(upload_indexed) > 0:
-        log(f"✅ Admin received upload_indexed notification: {upload_indexed[0]['title']}")
-    else:
-        log("⚠️  No upload_indexed notification found (may not be triggered for single photo)")
-    
-    return client_email, client_token
-
-def test_preference_enforcement(admin_token, client_email, client_token, event_id):
-    """Test 5: Preference enforcement."""
-    log("\n=== TEST 5: Preference Enforcement ===")
-    
-    # Get initial notification count
-    resp = requests.get(f"{BASE_URL}/me/notifications", headers={
-        "Authorization": f"Bearer {client_token}"
-    })
-    assert resp.status_code == 200, f"GET notifications failed: {resp.status_code} {resp.text}"
-    initial_count = len(resp.json().get("items", []))
-    log(f"Initial notification count: {initial_count}")
-    
-    # Disable gallery_assigned as client
-    log("Disabling gallery_assigned for client...")
-    resp = requests.patch(f"{BASE_URL}/notifications/prefs",
-        headers={"Authorization": f"Bearer {client_token}"},
-        json={"disabled": ["gallery_assigned"]}
-    )
-    assert resp.status_code == 200, f"PATCH prefs failed: {resp.status_code} {resp.text}"
-    log("✅ gallery_assigned disabled")
-    
-    # Create a new event and grant access
-    log("Creating new event...")
-    resp = requests.post(f"{BASE_URL}/events",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={
-            "name": "Notification Test Event 2",
-            "date": "2026-09-15",
-            "face_search_enabled": False
-        }
-    )
-    assert resp.status_code == 200, f"Create event failed: {resp.status_code} {resp.text}"
-    new_event_id = resp.json()["event_id"]
-    log(f"✅ New event created: {new_event_id}")
-    
-    log("Granting access to client for new event...")
-    resp = requests.post(f"{BASE_URL}/events/{new_event_id}/access",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        json={
-            "channel": "email",
-            "email": client_email,
-            "full_gallery_access": True
-        }
-    )
-    assert resp.status_code == 200, f"Grant access failed: {resp.status_code} {resp.text}"
-    log("✅ Access granted")
-    
-    # Check that NO new gallery_assigned notification was created
-    log("Checking that no new gallery_assigned notification was created...")
-    time.sleep(2)
-    resp = requests.get(f"{BASE_URL}/me/notifications", headers={
-        "Authorization": f"Bearer {client_token}"
-    })
-    assert resp.status_code == 200, f"GET notifications failed: {resp.status_code} {resp.text}"
-    data = resp.json()
-    notifications = data.get("items", [])
-    new_gallery_assigned = [n for n in notifications if n.get("type") == "gallery_assigned" and n.get("meta", {}).get("event_id") == new_event_id]
-    assert len(new_gallery_assigned) == 0, "gallery_assigned notification should not be created when disabled"
-    log("✅ No new gallery_assigned notification created (preference enforced)")
-    
-    # Cleanup: delete new event
-    log(f"Cleaning up new event {new_event_id}...")
-    resp = requests.delete(f"{BASE_URL}/events/{new_event_id}", headers={
-        "Authorization": f"Bearer {admin_token}"
-    })
-    assert resp.status_code == 200, f"Delete event failed: {resp.status_code} {resp.text}"
-    log("✅ New event deleted")
-
-def test_dedupe(admin_token, event_id):
-    """Test 6: Dedupe."""
-    log("\n=== TEST 6: Dedupe ===")
-    
-    # Upload first photo
-    log("Uploading first photo...")
-    img_buf = create_test_image()
-    resp = requests.post(f"{BASE_URL}/events/{event_id}/photos",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        files={"file": ("test1.jpg", img_buf, "image/jpeg")}
-    )
-    assert resp.status_code == 200, f"Photo upload failed: {resp.status_code} {resp.text}"
-    log("✅ First photo uploaded")
-    
-    # Wait for indexing
-    time.sleep(3)
-    
-    # Get admin notification count
-    resp = requests.get(f"{BASE_URL}/notifications", headers={
-        "Authorization": f"Bearer {admin_token}"
-    })
-    assert resp.status_code == 200, f"GET notifications failed: {resp.status_code} {resp.text}"
-    notifications_before = resp.json().get("items", [])
-    upload_notifications_before = [n for n in notifications_before if n.get("type") == "upload_indexed" and n.get("meta", {}).get("event_id") == event_id]
-    count_before = len(upload_notifications_before)
-    log(f"Upload notifications before second upload: {count_before}")
-    
-    # Upload second photo (should trigger dedupe if within 24h)
-    log("Uploading second photo (should trigger dedupe)...")
-    img_buf = create_test_image()
-    resp = requests.post(f"{BASE_URL}/events/{event_id}/photos",
-        headers={"Authorization": f"Bearer {admin_token}"},
-        files={"file": ("test2.jpg", img_buf, "image/jpeg")}
-    )
-    assert resp.status_code == 200, f"Photo upload failed: {resp.status_code} {resp.text}"
-    log("✅ Second photo uploaded")
-    
-    # Wait for indexing
-    time.sleep(3)
-    
-    # Get admin notification count again
-    resp = requests.get(f"{BASE_URL}/notifications", headers={
-        "Authorization": f"Bearer {admin_token}"
-    })
-    assert resp.status_code == 200, f"GET notifications failed: {resp.status_code} {resp.text}"
-    notifications_after = resp.json().get("items", [])
-    upload_notifications_after = [n for n in notifications_after if n.get("type") == "upload_indexed" and n.get("meta", {}).get("event_id") == event_id]
-    count_after = len(upload_notifications_after)
-    log(f"Upload notifications after second upload: {count_after}")
-    
-    # Dedupe should prevent duplicate notification within 24h
-    if count_after == count_before:
-        log("✅ Dedupe working: No duplicate notification created")
-    else:
-        log(f"⚠️  Dedupe may not be working: count increased from {count_before} to {count_after}")
-
-def test_regression_auth_flows(admin_token):
-    """Test regression: existing sign-in flows still work."""
-    log("\n=== TEST 7: Regression - Auth Flows ===")
-    
-    # Admin login already tested in admin_login()
-    log("✅ Admin login working (tested earlier)")
-    
-    # Test forgot-password endpoint exists
-    log("Testing forgot-password endpoint...")
-    resp = requests.post(f"{BASE_URL}/auth/forgot-password", json={
-        "email": "test@example.com"
-    })
-    # Should return 200 or 404 depending on whether email exists
-    assert resp.status_code in [200, 404], f"Forgot password endpoint failed: {resp.status_code}"
-    log("✅ Forgot-password endpoint exists")
-
-def cleanup(admin_token, event_id):
-    """Cleanup test data."""
-    log("\n=== Cleanup ===")
-    log(f"Deleting test event {event_id}...")
-    resp = requests.delete(f"{BASE_URL}/events/{event_id}", headers={
-        "Authorization": f"Bearer {admin_token}"
-    })
-    if resp.status_code == 200:
-        log("✅ Test event deleted")
-    else:
-        log(f"⚠️  Failed to delete event: {resp.status_code} {resp.text}")
-
-def main():
-    """Run all tests."""
-    log("Starting notification system backend tests...")
-    log(f"Base URL: {BASE_URL}")
+    }
     
     try:
-        # Login as admin
-        admin_token = admin_login()
-        
-        # Test 1: Notification preferences
-        test_notification_preferences(admin_token)
-        
-        # Test 2: Audience summary
-        event_id = test_audience_summary(admin_token)
-        
-        # Test 3: Broadcast
-        test_broadcast(admin_token, event_id)
-        
-        # Test 4: End-to-end triggers
-        client_email, client_token = test_end_to_end_triggers(admin_token, event_id)
-        
-        # Test 5: Preference enforcement
-        test_preference_enforcement(admin_token, client_email, client_token, event_id)
-        
-        # Test 6: Dedupe
-        test_dedupe(admin_token, event_id)
-        
-        # Test 7: Regression - auth flows
-        test_regression_auth_flows(admin_token)
-        
-        # Cleanup
-        cleanup(admin_token, event_id)
-        
-        log("\n" + "="*60)
-        log("✅ ALL TESTS COMPLETED SUCCESSFULLY")
-        log("="*60)
-        
-    except AssertionError as e:
-        log(f"\n❌ TEST FAILED: {e}")
-        raise
+        resp = requests.post(url, headers=headers, json=body, timeout=15)
+        if resp.status_code in [200, 201]:
+            print(f"✅ Created Supabase user: {email} (role={role})")
+            return True
+        elif resp.status_code == 422 and "already been registered" in resp.text:
+            print(f"ℹ️  Supabase user already exists: {email}")
+            return True
+        else:
+            print(f"⚠️  Failed to create Supabase user {email}: {resp.status_code} {resp.text[:200]}")
+            return False
     except Exception as e:
-        log(f"\n❌ UNEXPECTED ERROR: {e}")
-        raise
+        print(f"⚠️  Exception creating Supabase user {email}: {e}")
+        return False
+
+
+def sign_in_supabase(email, password):
+    """Sign in to Supabase and get JWT access token."""
+    url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
+    headers = {
+        "apikey": SUPABASE_PUBLISHABLE_KEY,
+        "Content-Type": "application/json"
+    }
+    body = {
+        "email": email,
+        "password": password
+    }
+    
+    try:
+        resp = requests.post(url, headers=headers, json=body, timeout=15)
+        if resp.status_code == 200:
+            data = resp.json()
+            access_token = data.get("access_token")
+            print(f"✅ Signed in to Supabase: {email}")
+            return access_token
+        else:
+            print(f"❌ Failed to sign in {email}: {resp.status_code} {resp.text[:200]}")
+            return None
+    except Exception as e:
+        print(f"❌ Exception signing in {email}: {e}")
+        return None
+
+
+def test_suite_1_jwt_verification():
+    """Suite 1 — Supabase JWT verification (HAPPY PATH)"""
+    print("\n" + "="*80)
+    print("SUITE 1 — Supabase JWT verification (HAPPY PATH)")
+    print("="*80 + "\n")
+    
+    ts = int(time.time())
+    admin_email = f"pikconnect.qa+admin_{ts}@gmail.com"
+    client_email = f"pikconnect.qa+client_{ts}@gmail.com"
+    password = "Test@1234pass"
+    
+    # Create admin user
+    if not create_supabase_user(admin_email, password, "admin", "QA Admin"):
+        print("❌ Failed to create admin user, skipping suite 1")
+        return
+    
+    # Create client user
+    if not create_supabase_user(client_email, password, "client", "QA Client"):
+        print("❌ Failed to create client user, skipping suite 1")
+        return
+    
+    time.sleep(2)  # Give Supabase a moment
+    
+    # Sign in admin
+    admin_jwt = sign_in_supabase(admin_email, password)
+    if not admin_jwt:
+        print("❌ Failed to get admin JWT, skipping suite 1")
+        return
+    
+    # Sign in client
+    client_jwt = sign_in_supabase(client_email, password)
+    if not client_jwt:
+        print("❌ Failed to get client JWT, skipping suite 1")
+        return
+    
+    # Test 1.1: Admin JWT → /auth/me (first time, auto-provision)
+    url = f"{BACKEND_URL}/auth/me"
+    headers = {"Authorization": f"Bearer {admin_jwt}"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        passed = resp.status_code == 200
+        data = resp.json() if passed else {}
+        user = data.get("user", {})
+        
+        notes = ""
+        if passed:
+            if user.get("role") != "admin":
+                passed = False
+                notes = f"Expected role=admin, got {user.get('role')}"
+            elif not user.get("user_id"):
+                passed = False
+                notes = "Missing auto-provisioned user_id"
+            elif user.get("plan") != "trial":
+                passed = False
+                notes = f"Expected plan=trial, got {user.get('plan')}"
+            elif not user.get("plan_expires_at"):
+                passed = False
+                notes = "Missing plan_expires_at"
+            elif user.get("profile_complete") != False:
+                passed = False
+                notes = f"Expected profile_complete=false, got {user.get('profile_complete')}"
+            else:
+                notes = f"Admin auto-provisioned: user_id={user.get('user_id')}, role=admin, plan=trial"
+        
+        log_test("Suite 1", "1.1 Admin JWT → /auth/me (first time)", "GET", url, 
+                resp.status_code, 200, passed, json.dumps(user)[:200], notes)
+        
+        admin_user_id = user.get("user_id")
+    except Exception as e:
+        log_test("Suite 1", "1.1 Admin JWT → /auth/me (first time)", "GET", url, 
+                "ERROR", 200, False, str(e))
+        return
+    
+    # Test 1.2: Same admin JWT → /auth/me (second time, no duplicate)
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        passed = resp.status_code == 200
+        data = resp.json() if passed else {}
+        user = data.get("user", {})
+        
+        notes = ""
+        if passed:
+            if user.get("user_id") != admin_user_id:
+                passed = False
+                notes = f"User ID changed! First: {admin_user_id}, Second: {user.get('user_id')}"
+            else:
+                notes = f"Same user_id returned: {admin_user_id} (no duplicate insert)"
+        
+        log_test("Suite 1", "1.2 Same admin JWT → /auth/me (second time)", "GET", url,
+                resp.status_code, 200, passed, json.dumps(user)[:200], notes)
+    except Exception as e:
+        log_test("Suite 1", "1.2 Same admin JWT → /auth/me (second time)", "GET", url,
+                "ERROR", 200, False, str(e))
+    
+    # Test 1.3: Client JWT → /auth/me (first time)
+    headers = {"Authorization": f"Bearer {client_jwt}"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        passed = resp.status_code == 200
+        data = resp.json() if passed else {}
+        user = data.get("user", {})
+        
+        notes = ""
+        if passed:
+            if user.get("role") != "client":
+                passed = False
+                notes = f"Expected role=client, got {user.get('role')}"
+            elif not user.get("user_id"):
+                passed = False
+                notes = "Missing auto-provisioned user_id"
+            elif user.get("plan") is not None:
+                passed = False
+                notes = f"Client should have plan=None, got {user.get('plan')}"
+            else:
+                notes = f"Client auto-provisioned: user_id={user.get('user_id')}, role=client, plan=None (no plan)"
+        
+        log_test("Suite 1", "1.3 Client JWT → /auth/me (first time)", "GET", url,
+                resp.status_code, 200, passed, json.dumps(user)[:200], notes)
+    except Exception as e:
+        log_test("Suite 1", "1.3 Client JWT → /auth/me (first time)", "GET", url,
+                "ERROR", 200, False, str(e))
+    
+    # Test 1.4: Admin JWT → /events (should work)
+    url = f"{BACKEND_URL}/events"
+    headers = {"Authorization": f"Bearer {admin_jwt}"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        passed = resp.status_code == 200
+        data = resp.json() if passed else []
+        
+        notes = f"Returned {len(data)} events (empty array expected for new admin)"
+        
+        log_test("Suite 1", "1.4 Admin JWT → /events", "GET", url,
+                resp.status_code, 200, passed, json.dumps(data)[:200], notes)
+    except Exception as e:
+        log_test("Suite 1", "1.4 Admin JWT → /events", "GET", url,
+                "ERROR", 200, False, str(e))
+
+
+def test_suite_2_deprecated_routes():
+    """Suite 2 — Deprecated routes return 410 Gone"""
+    print("\n" + "="*80)
+    print("SUITE 2 — Deprecated routes return 410 Gone")
+    print("="*80 + "\n")
+    
+    deprecated_routes = [
+        ("POST", "/auth/admin/register", {"name": "Test", "email": "test@test.com", "password": "Test@1234"}),
+        ("POST", "/auth/admin/login", {"email": "test@test.com", "password": "Test@1234"}),
+        ("POST", "/auth/admin/forgot-password", {"email": "test@test.com"}),
+        ("POST", "/auth/admin/reset-password", {"email": "test@test.com", "code": "123456", "new_password": "New@1234"}),
+        ("POST", "/auth/session", {"session_id": "test_session"}),
+        ("POST", "/auth/client/request-otp", {"channel": "email", "email": "test@test.com"}),
+        ("POST", "/auth/client/verify-otp", {"channel": "email", "email": "test@test.com", "code": "123456"}),
+    ]
+    
+    for i, (method, path, body) in enumerate(deprecated_routes, 1):
+        url = f"{BACKEND_URL}{path}"
+        try:
+            resp = requests.post(url, json=body, timeout=15)
+            passed = resp.status_code == 410
+            data = resp.json() if resp.status_code in [410, 400, 422] else {}
+            detail = data.get("detail", "")
+            
+            notes = ""
+            if passed:
+                if "Deprecated" not in detail:
+                    notes = f"Missing 'Deprecated' in detail message: {detail}"
+                else:
+                    notes = f"Correct 410 with detail: {detail}"
+            else:
+                notes = f"Expected 410, got {resp.status_code}"
+            
+            log_test("Suite 2", f"2.{i} {method} {path}", method, url,
+                    resp.status_code, 410, passed, json.dumps(data)[:200], notes)
+        except Exception as e:
+            log_test("Suite 2", f"2.{i} {method} {path}", method, url,
+                    "ERROR", 410, False, str(e))
+
+
+def test_suite_3_super_admin_legacy():
+    """Suite 3 — Super Admin legacy flow (unchanged)"""
+    print("\n" + "="*80)
+    print("SUITE 3 — Super Admin legacy flow (unchanged)")
+    print("="*80 + "\n")
+    
+    # Test 3.1: Super Admin login
+    url = f"{BACKEND_URL}/superadmin/login"
+    body = {"email": SUPER_ADMIN_EMAIL, "password": SUPER_ADMIN_PASSWORD}
+    try:
+        resp = requests.post(url, json=body, timeout=15)
+        passed = resp.status_code == 200
+        data = resp.json() if passed else {}
+        session_token = data.get("session_token")
+        
+        notes = ""
+        if passed:
+            if not session_token:
+                passed = False
+                notes = "Missing session_token in response"
+            elif not session_token.startswith("st_"):
+                passed = False
+                notes = f"Invalid session_token format: {session_token[:20]}"
+            else:
+                notes = f"Legacy session token received: {session_token[:20]}..."
+        
+        log_test("Suite 3", "3.1 Super Admin login", "POST", url,
+                resp.status_code, 200, passed, json.dumps(data)[:200], notes)
+        
+        if not passed or not session_token:
+            print("❌ Super Admin login failed, skipping rest of suite 3")
+            return
+    except Exception as e:
+        log_test("Suite 3", "3.1 Super Admin login", "POST", url,
+                "ERROR", 200, False, str(e))
+        return
+    
+    # Test 3.2: /auth/me with legacy token
+    url = f"{BACKEND_URL}/auth/me"
+    headers = {"Authorization": f"Bearer {session_token}"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        passed = resp.status_code == 200
+        data = resp.json() if passed else {}
+        user = data.get("user", {})
+        
+        notes = ""
+        if passed:
+            if user.get("role") != "superadmin":
+                passed = False
+                notes = f"Expected role=superadmin, got {user.get('role')}"
+            else:
+                notes = f"Super admin authenticated: role=superadmin"
+        
+        log_test("Suite 3", "3.2 /auth/me with legacy token", "GET", url,
+                resp.status_code, 200, passed, json.dumps(user)[:200], notes)
+    except Exception as e:
+        log_test("Suite 3", "3.2 /auth/me with legacy token", "GET", url,
+                "ERROR", 200, False, str(e))
+    
+    # Test 3.3: /superadmin/overview with legacy token
+    url = f"{BACKEND_URL}/superadmin/overview"
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        passed = resp.status_code == 200
+        data = resp.json() if passed else {}
+        stats = data.get("stats", {})
+        
+        notes = f"Stats returned: {list(stats.keys())[:5]}"
+        
+        log_test("Suite 3", "3.3 /superadmin/overview with legacy token", "GET", url,
+                resp.status_code, 200, passed, json.dumps(stats)[:200], notes)
+    except Exception as e:
+        log_test("Suite 3", "3.3 /superadmin/overview with legacy token", "GET", url,
+                "ERROR", 200, False, str(e))
+
+
+def test_suite_4_rbac_enforcement():
+    """Suite 4 — RBAC enforcement"""
+    print("\n" + "="*80)
+    print("SUITE 4 — RBAC enforcement")
+    print("="*80 + "\n")
+    
+    # Create test users
+    ts = int(time.time())
+    admin_email = f"pikconnect.qa+rbac_admin_{ts}@gmail.com"
+    client_email = f"pikconnect.qa+rbac_client_{ts}@gmail.com"
+    password = "Test@1234pass"
+    
+    create_supabase_user(admin_email, password, "admin", "RBAC Admin")
+    create_supabase_user(client_email, password, "client", "RBAC Client")
+    time.sleep(2)
+    
+    admin_jwt = sign_in_supabase(admin_email, password)
+    client_jwt = sign_in_supabase(client_email, password)
+    
+    if not admin_jwt or not client_jwt:
+        print("❌ Failed to get JWTs for RBAC tests, skipping suite 4")
+        return
+    
+    # Get super admin token
+    url = f"{BACKEND_URL}/superadmin/login"
+    body = {"email": SUPER_ADMIN_EMAIL, "password": SUPER_ADMIN_PASSWORD}
+    try:
+        resp = requests.post(url, json=body, timeout=15)
+        super_token = resp.json().get("session_token") if resp.status_code == 200 else None
+    except:
+        super_token = None
+    
+    # Test 4.1: Client JWT → /events (should be 403)
+    url = f"{BACKEND_URL}/events"
+    headers = {"Authorization": f"Bearer {client_jwt}"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        passed = resp.status_code == 403
+        data = resp.json() if resp.status_code in [403, 401] else {}
+        detail = data.get("detail", "")
+        
+        notes = ""
+        if passed:
+            if "Admin access required" not in detail:
+                notes = f"Expected 'Admin access required', got: {detail}"
+            else:
+                notes = f"Correct 403: {detail}"
+        else:
+            notes = f"Expected 403, got {resp.status_code}"
+        
+        log_test("Suite 4", "4.1 Client JWT → /events (expect 403)", "GET", url,
+                resp.status_code, 403, passed, json.dumps(data)[:200], notes)
+    except Exception as e:
+        log_test("Suite 4", "4.1 Client JWT → /events (expect 403)", "GET", url,
+                "ERROR", 403, False, str(e))
+    
+    # Test 4.2: Admin JWT → /superadmin/overview (should be 403)
+    url = f"{BACKEND_URL}/superadmin/overview"
+    headers = {"Authorization": f"Bearer {admin_jwt}"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        passed = resp.status_code == 403
+        data = resp.json() if resp.status_code in [403, 401] else {}
+        detail = data.get("detail", "")
+        
+        notes = ""
+        if passed:
+            if "Super admin access required" not in detail:
+                notes = f"Expected 'Super admin access required', got: {detail}"
+            else:
+                notes = f"Correct 403: {detail}"
+        else:
+            notes = f"Expected 403, got {resp.status_code}"
+        
+        log_test("Suite 4", "4.2 Admin JWT → /superadmin/overview (expect 403)", "GET", url,
+                resp.status_code, 403, passed, json.dumps(data)[:200], notes)
+    except Exception as e:
+        log_test("Suite 4", "4.2 Admin JWT → /superadmin/overview (expect 403)", "GET", url,
+                "ERROR", 403, False, str(e))
+    
+    # Test 4.3: Super admin legacy token → /events (should be 403)
+    if super_token:
+        url = f"{BACKEND_URL}/events"
+        headers = {"Authorization": f"Bearer {super_token}"}
+        try:
+            resp = requests.get(url, headers=headers, timeout=15)
+            passed = resp.status_code == 403
+            data = resp.json() if resp.status_code in [403, 401] else {}
+            detail = data.get("detail", "")
+            
+            notes = ""
+            if passed:
+                notes = f"Correct 403: super admin is not admin - {detail}"
+            else:
+                notes = f"Expected 403, got {resp.status_code}"
+            
+            log_test("Suite 4", "4.3 Super admin token → /events (expect 403)", "GET", url,
+                    resp.status_code, 403, passed, json.dumps(data)[:200], notes)
+        except Exception as e:
+            log_test("Suite 4", "4.3 Super admin token → /events (expect 403)", "GET", url,
+                    "ERROR", 403, False, str(e))
+
+
+def test_suite_5_studio_onboarding():
+    """Suite 5 — Studio onboarding after Supabase login"""
+    print("\n" + "="*80)
+    print("SUITE 5 — Studio onboarding after Supabase login")
+    print("="*80 + "\n")
+    
+    # Create admin user
+    ts = int(time.time())
+    admin_email = f"pikconnect.qa+onboard_{ts}@gmail.com"
+    password = "Test@1234pass"
+    
+    if not create_supabase_user(admin_email, password, "admin", "Onboarding Admin"):
+        print("❌ Failed to create admin user, skipping suite 5")
+        return
+    
+    time.sleep(2)
+    admin_jwt = sign_in_supabase(admin_email, password)
+    
+    if not admin_jwt:
+        print("❌ Failed to get admin JWT, skipping suite 5")
+        return
+    
+    # Test 5.1: POST /auth/admin/profile
+    url = f"{BACKEND_URL}/auth/admin/profile"
+    headers = {"Authorization": f"Bearer {admin_jwt}"}
+    body = {
+        "contact_name": "QA Owner",
+        "studio_name": "QA Studio Bengaluru",
+        "phone": "+919845012345",
+        "purposes": ["wedding"],
+        "city": "Bengaluru",
+        "country": "India"
+    }
+    try:
+        resp = requests.post(url, headers=headers, json=body, timeout=15)
+        passed = resp.status_code == 200
+        data = resp.json() if passed else {}
+        user = data.get("user", {})
+        studio_profile = user.get("studio_profile", {})
+        
+        notes = ""
+        if passed:
+            if user.get("profile_complete") != True:
+                passed = False
+                notes = f"Expected profile_complete=true, got {user.get('profile_complete')}"
+            elif studio_profile.get("studio_name") != "QA Studio Bengaluru":
+                passed = False
+                notes = f"Studio name mismatch: {studio_profile.get('studio_name')}"
+            elif studio_profile.get("phone") != "+919845012345":
+                passed = False
+                notes = f"Phone mismatch: {studio_profile.get('phone')}"
+            else:
+                notes = f"Profile completed: studio_name={studio_profile.get('studio_name')}, profile_complete=true"
+        
+        log_test("Suite 5", "5.1 POST /auth/admin/profile", "POST", url,
+                resp.status_code, 200, passed, json.dumps(user)[:200], notes)
+    except Exception as e:
+        log_test("Suite 5", "5.1 POST /auth/admin/profile", "POST", url,
+                "ERROR", 200, False, str(e))
+        return
+    
+    # Test 5.2: GET /auth/me again (verify profile_complete=true)
+    url = f"{BACKEND_URL}/auth/me"
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        passed = resp.status_code == 200
+        data = resp.json() if passed else {}
+        user = data.get("user", {})
+        
+        notes = ""
+        if passed:
+            if user.get("profile_complete") != True:
+                passed = False
+                notes = f"Expected profile_complete=true, got {user.get('profile_complete')}"
+            else:
+                notes = f"Profile complete confirmed: profile_complete=true"
+        
+        log_test("Suite 5", "5.2 GET /auth/me (verify profile_complete)", "GET", url,
+                resp.status_code, 200, passed, json.dumps(user)[:200], notes)
+    except Exception as e:
+        log_test("Suite 5", "5.2 GET /auth/me (verify profile_complete)", "GET", url,
+                "ERROR", 200, False, str(e))
+
+
+def test_suite_6_negative_cases():
+    """Suite 6 — Negative / auth failure cases (must return 401, NEVER 500)"""
+    print("\n" + "="*80)
+    print("SUITE 6 — Negative / auth failure cases (must return 401, NEVER 500)")
+    print("="*80 + "\n")
+    
+    url = f"{BACKEND_URL}/auth/me"
+    
+    # Test 6.1: No Authorization header
+    try:
+        resp = requests.get(url, timeout=15)
+        passed = resp.status_code == 401
+        data = resp.json() if resp.status_code in [401, 403] else {}
+        
+        notes = f"No auth header → {resp.status_code}"
+        
+        log_test("Suite 6", "6.1 No Authorization header", "GET", url,
+                resp.status_code, 401, passed, json.dumps(data)[:200], notes)
+    except Exception as e:
+        log_test("Suite 6", "6.1 No Authorization header", "GET", url,
+                "ERROR", 401, False, str(e))
+    
+    # Test 6.2: Malformed bearer token
+    headers = {"Authorization": "Bearer garbage_not_jwt"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        passed = resp.status_code == 401
+        data = resp.json() if resp.status_code in [401, 403] else {}
+        
+        notes = f"Malformed token → {resp.status_code}"
+        
+        log_test("Suite 6", "6.2 Malformed bearer token", "GET", url,
+                resp.status_code, 401, passed, json.dumps(data)[:200], notes)
+    except Exception as e:
+        log_test("Suite 6", "6.2 Malformed bearer token", "GET", url,
+                "ERROR", 401, False, str(e))
+    
+    # Test 6.3: JWT-shaped but invalid signature
+    # Create a fake JWT by taking a real one and flipping a byte in the signature
+    ts = int(time.time())
+    temp_email = f"pikconnect.qa+temp_{ts}@gmail.com"
+    create_supabase_user(temp_email, "Test@1234pass", "client", "Temp")
+    time.sleep(2)
+    valid_jwt = sign_in_supabase(temp_email, "Test@1234pass")
+    
+    if valid_jwt:
+        parts = valid_jwt.split(".")
+        if len(parts) == 3:
+            # Flip last character of signature
+            sig = parts[2]
+            if sig:
+                flipped_sig = sig[:-1] + ("A" if sig[-1] != "A" else "B")
+                invalid_jwt = f"{parts[0]}.{parts[1]}.{flipped_sig}"
+                
+                headers = {"Authorization": f"Bearer {invalid_jwt}"}
+                try:
+                    resp = requests.get(url, headers=headers, timeout=15)
+                    passed = resp.status_code == 401
+                    data = resp.json() if resp.status_code in [401, 403] else {}
+                    
+                    notes = f"Invalid signature → {resp.status_code}"
+                    
+                    log_test("Suite 6", "6.3 JWT with invalid signature", "GET", url,
+                            resp.status_code, 401, passed, json.dumps(data)[:200], notes)
+                except Exception as e:
+                    log_test("Suite 6", "6.3 JWT with invalid signature", "GET", url,
+                            "ERROR", 401, False, str(e))
+    
+    # Test 6.4: Empty bearer
+    headers = {"Authorization": "Bearer "}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        passed = resp.status_code == 401
+        data = resp.json() if resp.status_code in [401, 403] else {}
+        
+        notes = f"Empty bearer → {resp.status_code}"
+        
+        log_test("Suite 6", "6.4 Empty bearer", "GET", url,
+                resp.status_code, 401, passed, json.dumps(data)[:200], notes)
+    except Exception as e:
+        log_test("Suite 6", "6.4 Empty bearer", "GET", url,
+                "ERROR", 401, False, str(e))
+    
+    # Test 6.5: Random opaque token (not in DB)
+    headers = {"Authorization": "Bearer st_deadbeef12345678"}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        passed = resp.status_code == 401
+        data = resp.json() if resp.status_code in [401, 403] else {}
+        
+        notes = f"Random opaque token → {resp.status_code}"
+        
+        log_test("Suite 6", "6.5 Random opaque token", "GET", url,
+                resp.status_code, 401, passed, json.dumps(data)[:200], notes)
+    except Exception as e:
+        log_test("Suite 6", "6.5 Random opaque token", "GET", url,
+                "ERROR", 401, False, str(e))
+
+
+def print_summary():
+    """Print final summary report."""
+    print("\n" + "="*80)
+    print("FINAL SUMMARY")
+    print("="*80 + "\n")
+    
+    total_passed = 0
+    total_failed = 0
+    
+    for suite_name in sorted(suite_results.keys()):
+        suite = suite_results[suite_name]
+        total_passed += suite["passed"]
+        total_failed += suite["failed"]
+        
+        status = "✅ ALL PASSED" if suite["failed"] == 0 else f"❌ {suite['failed']} FAILED"
+        print(f"{suite_name}: {suite['passed']}/{suite['passed'] + suite['failed']} tests passed {status}")
+    
+    print(f"\nOVERALL: {total_passed}/{total_passed + total_failed} tests passed")
+    
+    if total_failed > 0:
+        print("\n" + "="*80)
+        print("FAILED TESTS DETAIL")
+        print("="*80 + "\n")
+        
+        for suite_name in sorted(suite_results.keys()):
+            suite = suite_results[suite_name]
+            failed_tests = [t for t in suite["tests"] if not t["passed"]]
+            
+            if failed_tests:
+                print(f"\n{suite_name}:")
+                for test in failed_tests:
+                    print(f"  ❌ {test['test']}")
+                    print(f"     {test['method']} {test['url']}")
+                    print(f"     Status: {test['status']} (expected {test['expected']})")
+                    if test['response']:
+                        print(f"     Response: {test['response'][:200]}")
+                    if test['notes']:
+                        print(f"     Notes: {test['notes']}")
+    
+    return total_failed == 0
+
+
+def main():
+    """Run all test suites."""
+    print("\n" + "="*80)
+    print("PIK CONNECT - SUPABASE AUTH INTEGRATION TEST SUITE")
+    print("="*80)
+    print(f"Backend URL: {BACKEND_URL}")
+    print(f"Supabase URL: {SUPABASE_URL}")
+    print(f"Started: {datetime.now().isoformat()}")
+    print("="*80 + "\n")
+    
+    try:
+        test_suite_1_jwt_verification()
+        test_suite_2_deprecated_routes()
+        test_suite_3_super_admin_legacy()
+        test_suite_4_rbac_enforcement()
+        test_suite_5_studio_onboarding()
+        test_suite_6_negative_cases()
+        
+        success = print_summary()
+        
+        print(f"\nCompleted: {datetime.now().isoformat()}")
+        
+        return 0 if success else 1
+    except KeyboardInterrupt:
+        print("\n\n⚠️  Test suite interrupted by user")
+        return 1
+    except Exception as e:
+        print(f"\n\n❌ Test suite failed with exception: {e}")
+        import traceback
+        traceback.print_exc()
+        return 1
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

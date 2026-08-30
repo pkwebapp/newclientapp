@@ -11210,3 +11210,277 @@ agent_communication:
         
         Backend notification system is production-ready. 0 failures.
 
+
+# =====================================================================
+# Supabase Auth migration — test run
+# =====================================================================
+backend:
+  - task: "Supabase Auth: JWT verification + local user upsert (admin & client)"
+    implemented: true
+    working: "NA"
+    file: "backend/supabase_auth.py, backend/auth_utils.py, backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Full auth stack migration. Studio Admin + Client now authenticate via Supabase
+            (project https://idnrpxtapkkryhlordlt.supabase.co). Backend verifies Supabase
+            JWT via JWKS (ES256) on every protected route through a dual-path resolver in
+            auth_utils.py -> _user_from_token(): JWT-shaped tokens => Supabase; opaque
+            tokens => legacy user_sessions (for super admin only). On first successful
+            verify, supabase_auth.upsert_user_from_claims creates a local users row keyed
+            by supabase_id with role = user_metadata.role ('admin' | 'client'). Admin
+            users additionally get plans.new_studio_plan_fields() and profile_complete=false.
+            Deprecated routes return 410 Gone.
+
+  - task: "Deprecated legacy auth routes return 410"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            The following endpoints must all return 410 Gone:
+              POST /api/auth/admin/register
+              POST /api/auth/admin/login
+              POST /api/auth/admin/forgot-password
+              POST /api/auth/admin/reset-password
+              POST /api/auth/session
+              POST /api/auth/client/request-otp
+              POST /api/auth/client/verify-otp
+
+  - task: "Super Admin legacy session still works"
+    implemented: true
+    working: "NA"
+    file: "backend/superadmin_routes.py, backend/auth_utils.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Super admin (prabhakar@pkphotography.in / Super@12345) still uses legacy
+            opaque bearer via /api/auth/superadmin/login -> session_token. Same token
+            resolves via _user_from_legacy_token in auth_utils.py. Must be able to hit
+            /api/superadmin/overview successfully.
+
+  - task: "RBAC enforced across roles"
+    implemented: true
+    working: "NA"
+    file: "backend/auth_utils.py, backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Client Supabase JWT MUST get 403 on admin-only routes (e.g. GET /api/events).
+            Admin Supabase JWT MUST work on admin routes. Super admin legacy token MUST
+            work on /api/superadmin/* routes but not admin/client-only routes.
+
+  - task: "Studio profile onboarding still works after Supabase login"
+    implemented: true
+    working: "NA"
+    file: "backend/server.py"
+    stuck_count: 0
+    priority: "medium"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            POST /api/auth/admin/profile with Supabase JWT should update the local user
+            row (studio_profile, profile_complete=true) using the auto-upserted user_id.
+            Validation: phone rejects repeated digits, so use a realistic Indian number
+            like +919845012345 for the happy path.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 9
+  run_ui: false
+
+test_plan:
+  current_focus:
+    - "Supabase Auth: JWT verification + local user upsert (admin & client)"
+    - "Deprecated legacy auth routes return 410"
+    - "Super Admin legacy session still works"
+    - "RBAC enforced across roles"
+    - "Studio profile onboarding still works after Supabase login"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: |
+        Supabase Auth wired end-to-end. Full DB wipe performed (test_database dropped).
+        Super Admin auto-reseeded from env.
+        
+        Test credentials (see /app/memory/test_credentials.md):
+        - Super Admin (legacy): prabhakar@pkphotography.in / Super@12345
+        - Admin/Client via Supabase: use the Supabase Admin REST to create pre-confirmed
+          users with role in user_metadata. Endpoint pattern:
+            POST https://idnrpxtapkkryhlordlt.supabase.co/auth/v1/admin/users
+            Headers: apikey + Authorization: Bearer <SUPABASE_SECRET_KEY>
+            Body: { "email": "...", "password": "...", "email_confirm": true,
+                    "user_metadata": { "role": "admin"|"client", "name": "..." } }
+          Then sign in with:
+            POST https://idnrpxtapkkryhlordlt.supabase.co/auth/v1/token?grant_type=password
+            Headers: apikey: <SUPABASE_PUBLISHABLE_KEY>, Content-Type: application/json
+            Body: { "email": "...", "password": "..." }
+          Use returned access_token as Bearer on /api requests.
+        
+        Env vars used (already in backend/.env):
+          SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, SUPABASE_SECRET_KEY
+        
+        My own smoke test showed:
+          - Admin sign-in => /api/auth/me 200 with auto-provisioned user_id, role=admin
+          - Client sign-in => 200 role=client, /api/events => 403 (RBAC)
+          - Super admin legacy => /api/superadmin/overview 200
+          - Old routes => 410 Gone
+        
+        Please run comprehensive tests to confirm end-to-end. Focus on:
+          1. Supabase JWT verification path (admin + client) — /api/auth/me
+          2. All 7 deprecated routes return 410
+          3. Super Admin legacy still works
+          4. RBAC (client hitting admin route => 403, admin hitting superadmin => 403)
+          5. Studio profile onboarding (POST /api/auth/admin/profile with valid Indian phone)
+          6. Non-JWT malformed token => 401 (not 500)
+          7. Expired / invalid JWT signature => 401 (not 500)
+        
+        DO NOT test payment / cloudinary uploads / rekognition — out of scope.
+
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL 24 TESTS PASSED - Supabase Auth integration fully functional across all 6 test suites.
+            
+            Comprehensive end-to-end testing of the Supabase Auth migration completed successfully.
+            Created fresh Supabase test users via Admin API, obtained JWTs, and verified all auth flows.
+            
+            SUITE 1 — Supabase JWT verification (HAPPY PATH) - 4/4 PASSED:
+            ✅ 1.1 Admin JWT → /auth/me (first time) → 200
+               • Auto-provisioned user_id, role=admin, plan=trial, plan_expires_at set
+               • profile_complete=false (onboarding gate working)
+            ✅ 1.2 Same admin JWT → /auth/me (second time) → 200
+               • Same user_id returned (no duplicate insert, upsert working correctly)
+            ✅ 1.3 Client JWT → /auth/me (first time) → 200
+               • Auto-provisioned user_id, role=client, plan=None (clients have no plan)
+            ✅ 1.4 Admin JWT → /events → 200
+               • Empty array returned (new admin has no events yet)
+            
+            SUITE 2 — Deprecated routes return 410 Gone - 7/7 PASSED:
+            ✅ 2.1 POST /auth/admin/register → 410 "Deprecated: sign up via Supabase"
+            ✅ 2.2 POST /auth/admin/login → 410 "Deprecated: sign in via Supabase"
+            ✅ 2.3 POST /auth/admin/forgot-password → 410 "Deprecated: use Supabase password reset"
+            ✅ 2.4 POST /auth/admin/reset-password → 410 "Deprecated: use Supabase password reset"
+            ✅ 2.5 POST /auth/session → 410 "Deprecated: use Supabase Google OAuth"
+            ✅ 2.6 POST /auth/client/request-otp → 410 "Deprecated: use Supabase email OTP"
+            ✅ 2.7 POST /auth/client/verify-otp → 410 "Deprecated: use Supabase email OTP"
+            
+            SUITE 3 — Super Admin legacy flow (unchanged) - 3/3 PASSED:
+            ✅ 3.1 POST /superadmin/login → 200
+               • Legacy session token received (st_..., opaque token format)
+               • Credentials: prabhakar@pkphotography.in / Super@12345
+            ✅ 3.2 GET /auth/me with legacy token → 200
+               • role=superadmin confirmed
+               • Dual-path token resolver working (opaque token path)
+            ✅ 3.3 GET /superadmin/overview with legacy token → 200
+               • Stats returned: total_photographers, active_photographers, total_galleries, etc.
+               • Super admin can access superadmin-only routes
+            
+            SUITE 4 — RBAC enforcement - 3/3 PASSED:
+            ✅ 4.1 Client JWT → /events → 403 "Admin access required"
+               • Clients correctly blocked from admin routes
+            ✅ 4.2 Admin JWT → /superadmin/overview → 403 "Super admin access required"
+               • Admins correctly blocked from superadmin routes
+            ✅ 4.3 Super admin legacy token → /events → 403 "Admin access required"
+               • Super admin correctly blocked from admin routes (role isolation working)
+            
+            SUITE 5 — Studio onboarding after Supabase login - 2/2 PASSED:
+            ✅ 5.1 POST /auth/admin/profile → 200
+               • Body: contact_name, studio_name, phone (+919845012345), purposes, city, country
+               • Response: profile_complete=true, studio_profile populated correctly
+               • Phone validation working (realistic Indian number accepted)
+            ✅ 5.2 GET /auth/me (verify profile_complete) → 200
+               • profile_complete=true persisted correctly
+               • Studio onboarding flow working end-to-end
+            
+            SUITE 6 — Negative / auth failure cases (must return 401, NEVER 500) - 5/5 PASSED:
+            ✅ 6.1 No Authorization header → 401 "Not authenticated"
+            ✅ 6.2 Malformed bearer "Bearer garbage_not_jwt" → 401 "Not authenticated"
+            ✅ 6.3 JWT-shaped but invalid signature (flipped byte) → 401 "Not authenticated"
+            ✅ 6.4 Empty bearer "Bearer " → 401 "Not authenticated"
+            ✅ 6.5 Random opaque token "Bearer st_deadbeef..." → 401 "Not authenticated"
+            
+            TECHNICAL VERIFICATION:
+            ✅ Supabase JWT verification via JWKS (ES256) working correctly
+            ✅ Local user auto-provisioning (upsert) working on first JWT verification
+            ✅ Role extraction from user_metadata.role working (admin/client)
+            ✅ Dual-path token resolver working (JWT vs opaque token)
+            ✅ No duplicate user inserts (same supabase_id returns same user_id)
+            ✅ Admin users get trial plan with expiry date
+            ✅ Client users have no plan (plan=None)
+            ✅ All deprecated routes return 410 Gone with correct detail messages
+            ✅ Super admin legacy flow unchanged (opaque session tokens)
+            ✅ RBAC enforcement working across all roles (admin/client/superadmin)
+            ✅ Studio profile onboarding working with Supabase JWT
+            ✅ Phone validation working (+919845012345 accepted)
+            ✅ All auth failures return 401 (never 500)
+            ✅ Invalid JWT signatures handled gracefully (401, not 500)
+            
+            SUPABASE INTEGRATION STATUS:
+            ✅ Supabase URL: https://idnrpxtapkkryhlordlt.supabase.co
+            ✅ JWKS endpoint reachable and working
+            ✅ Admin API working (user creation with email_confirm=true)
+            ✅ Token endpoint working (password grant flow)
+            ✅ JWT verification working (ES256 algorithm)
+            ✅ user_metadata.role correctly passed through to backend
+            
+            TEST USERS CREATED:
+            • pikconnect.qa+admin_1788109328@gmail.com (admin, confirmed)
+            • pikconnect.qa+client_1788109328@gmail.com (client, confirmed)
+            • pikconnect.qa+rbac_admin_1788109334@gmail.com (admin, confirmed)
+            • pikconnect.qa+rbac_client_1788109334@gmail.com (client, confirmed)
+            • pikconnect.qa+onboard_1788109338@gmail.com (admin, confirmed, onboarded)
+            • pikconnect.qa+temp_1788109341@gmail.com (client, confirmed)
+            
+            NO 4XX/5XX ERRORS DETECTED (except expected 401/403/410).
+            All endpoints return correct status codes and proper response structures.
+            Supabase Auth migration is production-ready. 0 failures.
+
+agent_communication:
+    - agent: "testing"
+      message: |
+        ✅ SUPABASE AUTH INTEGRATION TESTING COMPLETE - ALL 24 TESTS PASSED
+        
+        Comprehensive testing of all 6 suites completed successfully:
+        • Suite 1: Supabase JWT verification (4/4 passed)
+        • Suite 2: Deprecated routes return 410 (7/7 passed)
+        • Suite 3: Super Admin legacy flow (3/3 passed)
+        • Suite 4: RBAC enforcement (3/3 passed)
+        • Suite 5: Studio onboarding (2/2 passed)
+        • Suite 6: Negative/auth failure cases (5/5 passed)
+        
+        KEY FINDINGS:
+        ✅ Supabase JWT verification working correctly via JWKS (ES256)
+        ✅ Local user auto-provisioning working (no duplicate inserts)
+        ✅ Role-based access control (RBAC) enforced correctly
+        ✅ All deprecated routes return 410 Gone
+        ✅ Super admin legacy flow unchanged and working
+        ✅ Studio onboarding working with Supabase JWT
+        ✅ All auth failures return 401 (never 500)
+        
+        The Supabase Auth migration is production-ready. No issues found.
+        
+        Main agent: Please summarize and finish. The backend is fully tested and working.
