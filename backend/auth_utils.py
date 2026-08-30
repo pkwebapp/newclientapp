@@ -1,4 +1,12 @@
-"""Auth utilities: password hashing, session tokens, current-user dependency."""
+"""Auth utilities: password hashing, session tokens, current-user dependency.
+
+Dual-path authentication:
+- Supabase JWT (RS256/ES256) — used by studio admins & clients (Q3a fresh start).
+- Legacy opaque session token — used by the super admin only (internal login).
+
+All existing `Depends(...)` signatures are preserved so the ~200 protected
+routes in server.py did not need to change.
+"""
 import uuid
 import bcrypt
 from datetime import datetime, timezone, timedelta
@@ -6,6 +14,7 @@ from datetime import datetime, timezone, timedelta
 from fastapi import Header, HTTPException, Query
 
 from config import db
+from supabase_auth import user_from_supabase_bearer, looks_like_jwt
 
 SESSION_TTL_DAYS = 7
 
@@ -26,6 +35,7 @@ def new_user_id() -> str:
 
 
 async def create_session(user_id: str) -> str:
+    """Legacy opaque session — retained ONLY for the platform super admin."""
     token = f"st_{uuid.uuid4().hex}{uuid.uuid4().hex}"
     now = datetime.now(timezone.utc)
     await db.user_sessions.insert_one({
@@ -37,7 +47,7 @@ async def create_session(user_id: str) -> str:
     return token
 
 
-async def _user_from_token(token: str | None):
+async def _user_from_legacy_token(token: str | None):
     if not token:
         return None
     session = await db.user_sessions.find_one({"session_token": token}, {"_id": 0})
@@ -50,8 +60,23 @@ async def _user_from_token(token: str | None):
         expires_at = expires_at.replace(tzinfo=timezone.utc)
     if expires_at < datetime.now(timezone.utc):
         return None
-    user = await db.users.find_one({"user_id": session["user_id"]}, {"_id": 0, "password_hash": 0})
-    return user
+    return await db.users.find_one(
+        {"user_id": session["user_id"]}, {"_id": 0, "password_hash": 0}
+    )
+
+
+async def _user_from_token(token: str | None):
+    """Resolve either a Supabase JWT or a legacy opaque session token."""
+    if not token:
+        return None
+    if looks_like_jwt(token):
+        user = await user_from_supabase_bearer(token)
+        if user:
+            return user
+        # If the token *looks* like a JWT but fails verification, do NOT fall
+        # through to the legacy lookup — that would be pointless.
+        return None
+    return await _user_from_legacy_token(token)
 
 
 def _extract_bearer(authorization: str | None) -> str | None:
@@ -83,7 +108,6 @@ async def require_admin_uploads(authorization: str | None = Header(default=None)
     return user
 
 
-
 async def require_superadmin(authorization: str | None = Header(default=None)):
     user = await get_current_user(authorization)
     if user.get("role") != "superadmin":
@@ -103,7 +127,8 @@ async def user_from_token_or_header(
     token: str | None = Query(default=None),
 ):
     """For image reads: web <img> can't send headers, so accept ?token= too."""
-    user = await _user_from_token(_extract_bearer(authorization) or token)
+    raw = _extract_bearer(authorization) or token
+    user = await _user_from_token(raw)
     if not user:
         raise HTTPException(status_code=401, detail="Not authenticated")
     return user

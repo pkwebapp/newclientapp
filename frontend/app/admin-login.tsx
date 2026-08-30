@@ -1,15 +1,20 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Pressable, StyleSheet, Text, View, Platform, Linking } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-import { api, ApiError } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { goBackOr } from "@/src/navigation/back";
+import {
+  signInWithPassword,
+  signUpWithPassword,
+  sendMagicLink,
+  signInWithGoogle,
+} from "@/src/lib/auth-actions";
 
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { APP_DOMAIN, getAppSurface } from "@/src/navigation/host-routing";
@@ -18,7 +23,7 @@ export default function AdminLogin() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ mode?: string }>();
-  const { signInWithToken, startGoogleLogin } = useAuth();
+  const { user } = useAuth();
   const toast = useToast();
   const { isDesktop } = useResponsive();
   const surface = getAppSurface();
@@ -28,7 +33,13 @@ export default function AdminLogin() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [magicLoading, setMagicLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+
+  // Auto-redirect once the Supabase session lands + backend confirms the role.
+  useEffect(() => {
+    if (user?.role === "admin") router.replace("/admin");
+  }, [user, router]);
 
   const submit = async () => {
     if (!email.trim() || !password) {
@@ -37,28 +48,48 @@ export default function AdminLogin() {
     }
     setLoading(true);
     try {
-      const path = mode === "login" ? "/auth/admin/login" : "/auth/admin/register";
-      const body =
-        mode === "login"
-          ? { email: email.trim(), password }
-          : { name: name.trim() || "Studio Admin", email: email.trim(), password };
-      const res = await api.post(path, body);
-      await signInWithToken(res.session_token);
-      router.replace("/admin");
+      if (mode === "login") {
+        const { error } = await signInWithPassword(email, password);
+        if (error) throw error;
+        // AuthContext.onAuthStateChange will fetch /auth/me and the effect above routes.
+      } else {
+        const { data, error } = await signUpWithPassword({
+          email, password, role: "admin", name: name.trim() || undefined,
+        });
+        if (error) throw error;
+        if (!data.session) {
+          // Email confirmation required by the Supabase project.
+          toast.show("Check your inbox to confirm your email before signing in.", "info");
+        }
+      }
     } catch (e: any) {
-      toast.show(e instanceof ApiError ? e.message : "Login failed", "error");
+      toast.show(e?.message || "Login failed", "error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const magic = async () => {
+    if (!email.trim()) { toast.show("Enter your email first", "error"); return; }
+    setMagicLoading(true);
+    try {
+      const { error } = await sendMagicLink(email, "admin");
+      if (error) throw error;
+      toast.show("Magic link sent — open it on this device.", "success");
+    } catch (e: any) {
+      toast.show(e?.message || "Could not send magic link", "error");
+    } finally {
+      setMagicLoading(false);
     }
   };
 
   const google = async () => {
     setGoogleLoading(true);
     try {
-      await startGoogleLogin();
+      await signInWithGoogle("admin");
       if (Platform.OS !== "web") router.replace("/");
-    } catch {
-      toast.show("Google sign-in failed", "error");
+    } catch (e: any) {
+      toast.show(e?.message || "Google sign-in failed", "error");
     } finally {
       setGoogleLoading(false);
     }
@@ -140,6 +171,15 @@ export default function AdminLogin() {
             title={mode === "login" ? "Sign in" : "Create account"}
             loading={loading}
             onPress={submit}
+          />
+
+          <Button
+            testID="admin-magic-btn"
+            title="Send magic link"
+            variant="secondary"
+            icon="mail-outline"
+            loading={magicLoading}
+            onPress={magic}
           />
 
           <View style={styles.divider}>

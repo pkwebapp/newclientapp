@@ -1,16 +1,15 @@
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
-import { Platform } from "react-native";
-import * as WebBrowser from "expo-web-browser";
-import * as Linking from "expo-linking";
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
+import { AppState, Platform } from "react-native";
+import type { Session } from "@supabase/supabase-js";
 
 import { api, setAuthToken } from "@/src/api/client";
 import { LuxeLoader } from "@/src/components/ui";
 import { storage } from "@/src/utils/storage";
+import { supabase } from "@/src/lib/supabase";
+import { signOut as supabaseSignOut } from "@/src/lib/auth-actions";
 
-WebBrowser.maybeCompleteAuthSession();
-
-const TOKEN_KEY = "lumiere_session_token";
-const GOOGLE_ROLE_KEY = "pik_google_role";
+// Legacy opaque token — used ONLY for the super admin login.
+const LEGACY_TOKEN_KEY = "pik_legacy_session_token";
 
 export type User = {
   user_id: string;
@@ -26,143 +25,136 @@ export type User = {
 
 type AuthState = {
   user: User | null;
-  token: string | null;
+  session: Session | null; // Supabase session for admin/client, null for superadmin
+  token: string | null;    // The bearer we attach to backend calls
   loading: boolean;
-  signInWithToken: (token: string) => Promise<User | null>;
-  signOut: () => Promise<void>;
+  /** Superadmin sign-in helper — accepts the legacy opaque token. */
+  signInWithLegacyToken: (token: string) => Promise<User | null>;
+  /** Called after any Supabase auth event to refresh local user profile. */
   refresh: () => Promise<void>;
-  startGoogleLogin: (role?: "admin" | "client") => Promise<void>;
+  signOut: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState>({} as AuthState);
 export const useAuth = () => useContext(AuthContext);
 
-const exchanged = new Set<string>();
-
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
+  const [session, setSession] = useState<Session | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const legacyTokenRef = useRef<string | null>(null);
 
-  const applyToken = useCallback(async (t: string): Promise<User | null> => {
+  /** Compute the effective bearer token. Supabase JWT wins over legacy. */
+  const applyEffectiveToken = useCallback((sb: Session | null) => {
+    const t = sb?.access_token || legacyTokenRef.current || null;
     setAuthToken(t);
-    await storage.secureSet(TOKEN_KEY, t);
     setToken(t);
+  }, []);
+
+  const fetchMe = useCallback(async (): Promise<User | null> => {
     try {
       const res = await api.get("/auth/me");
       setUser(res.user);
       return res.user;
     } catch {
-      setAuthToken(null);
-      await storage.secureRemove(TOKEN_KEY);
-      setToken(null);
-      setUser(null);
       return null;
     }
   }, []);
 
-  const exchangeGoogle = useCallback(
-    async (sessionId: string, role: "admin" | "client" = "admin") => {
-      if (exchanged.has(sessionId)) return;
-      exchanged.add(sessionId);
-      const res = await api.post("/auth/session", { session_id: sessionId, role });
-      await applyToken(res.session_token);
-    },
-    [applyToken]
-  );
-
-  // Bootstrap
+  // Bootstrap: load legacy token (for superadmin) + hydrate Supabase session
   useEffect(() => {
+    let mounted = true;
     (async () => {
       try {
-        // Web: handle Google OAuth redirect (session_id in url) FIRST.
-        if (Platform.OS === "web" && typeof window !== "undefined") {
-          const raw = window.location.hash + " " + window.location.search;
-          const m = raw.match(/session_id=([^&#\s]+)/);
-          if (m) {
-            try {
-              const savedRole = await storage.getItem<string>(GOOGLE_ROLE_KEY, "admin");
-              await exchangeGoogle(decodeURIComponent(m[1]), savedRole === "client" ? "client" : "admin");
-              await storage.removeItem(GOOGLE_ROLE_KEY);
-              window.history.replaceState(window.history.state, "", window.location.pathname);
-            } catch {}
-            setLoading(false);
-            return;
-          }
-        }
-        const stored = await storage.secureGet<string>(TOKEN_KEY, "");
-        if (stored) {
-          setAuthToken(stored);
-          setToken(stored);
-          try {
-            const res = await api.get("/auth/me");
-            setUser(res.user);
-          } catch {
-            setAuthToken(null);
-            await storage.secureRemove(TOKEN_KEY);
-            setToken(null);
-          }
+        legacyTokenRef.current = (await storage.secureGet<string>(LEGACY_TOKEN_KEY, "")) || null;
+        const { data } = await supabase.auth.getSession();
+        if (!mounted) return;
+        setSession(data.session);
+        applyEffectiveToken(data.session);
+        // If we have any token, fetch the local user profile.
+        if (data.session?.access_token || legacyTokenRef.current) {
+          await fetchMe();
         }
       } finally {
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     })();
-  }, [exchangeGoogle]);
 
-  const signInWithToken = useCallback((t: string) => applyToken(t), [applyToken]);
+    // Auth state changes (sign-in, sign-out, token refresh, magic link)
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
+      // Avoid awaiting async work synchronously inside the callback
+      setTimeout(async () => {
+        setSession(next);
+        applyEffectiveToken(next);
+        if (next?.access_token) {
+          // A Supabase login supersedes any stale legacy session.
+          if (legacyTokenRef.current) {
+            legacyTokenRef.current = null;
+            await storage.secureRemove(LEGACY_TOKEN_KEY);
+          }
+          await fetchMe();
+        } else if (!legacyTokenRef.current) {
+          setUser(null);
+        }
+      }, 0);
+    });
+
+    // AppState background/foreground auto-refresh (native only)
+    let appStateSub: { remove: () => void } | null = null;
+    if (Platform.OS !== "web") {
+      appStateSub = AppState.addEventListener("change", (state) => {
+        if (state === "active") supabase.auth.startAutoRefresh();
+        else supabase.auth.stopAutoRefresh();
+      });
+    }
+
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+      appStateSub?.remove();
+    };
+  }, [applyEffectiveToken, fetchMe]);
+
+  const signInWithLegacyToken = useCallback(async (t: string): Promise<User | null> => {
+    legacyTokenRef.current = t;
+    await storage.secureSet(LEGACY_TOKEN_KEY, t);
+    // Clear any stale Supabase session so we don't accidentally send the wrong token.
+    try { await supabase.auth.signOut(); } catch {}
+    setAuthToken(t);
+    setToken(t);
+    const u = await fetchMe();
+    if (!u) {
+      legacyTokenRef.current = null;
+      await storage.secureRemove(LEGACY_TOKEN_KEY);
+      setAuthToken(null);
+      setToken(null);
+    }
+    return u;
+  }, [fetchMe]);
+
+  const refresh = useCallback(async () => {
+    await fetchMe();
+  }, [fetchMe]);
 
   const signOut = useCallback(async () => {
-    try {
-      await api.post("/auth/logout");
-    } catch {}
+    try { await api.post("/auth/logout"); } catch {}
+    try { await supabaseSignOut(); } catch {}
+    legacyTokenRef.current = null;
+    await storage.secureRemove(LEGACY_TOKEN_KEY);
     setAuthToken(null);
-    await storage.secureRemove(TOKEN_KEY);
     setToken(null);
+    setSession(null);
     setUser(null);
   }, []);
 
-  const refresh = useCallback(async () => {
-    try {
-      const res = await api.get("/auth/me");
-      setUser(res.user);
-    } catch {}
-  }, []);
-
-  const startGoogleLogin = useCallback(async (role: "admin" | "client" = "admin") => {
-    await storage.setItem(GOOGLE_ROLE_KEY, role);
-    if (Platform.OS === "web") {
-      const redirect = window.location.origin + "/";
-      window.location.href = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirect)}`;
-      return;
-    }
-    const redirectUrl = Linking.createURL("");
-    const authUrl = `https://auth.emergentagent.com/?redirect=${encodeURIComponent(redirectUrl)}`;
-
-    let captured: string | null = null;
-    const sub = Linking.addEventListener("url", (e) => {
-      if (e.url) captured = e.url;
-    });
-    try {
-      const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUrl);
-      let url: string | null = result.type === "success" ? result.url : null;
-      if (!url) url = captured;
-      if (!url) url = await Linking.getInitialURL();
-      if (url) {
-        const m = url.match(/[?#&]session_id=([^&#]+)/);
-        if (m) await exchangeGoogle(decodeURIComponent(m[1]), role);
-      }
-    } finally {
-      sub.remove();
-      await storage.removeItem(GOOGLE_ROLE_KEY);
-    }
-  }, [exchangeGoogle]);
-
-  if (loading) return <LuxeLoader title="Loading PIK Connect" subtitle="Preparing your galleries…" />;
-
+  if (loading) {
+    return <LuxeLoader title="Loading PIK Connect" subtitle="Preparing your galleries…" />;
+  }
 
   return (
     <AuthContext.Provider
-      value={{ user, token, loading, signInWithToken, signOut, refresh, startGoogleLogin }}
+      value={{ user, session, token, loading, signInWithLegacyToken, refresh, signOut }}
     >
       {children}
     </AuthContext.Provider>

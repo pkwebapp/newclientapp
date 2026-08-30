@@ -1,15 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-import { publicApi, ApiError } from "@/src/api/client";
-import { useAuth } from "@/src/context/AuthContext";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { goBackOr } from "@/src/navigation/back";
+import { sendPasswordReset, updatePassword } from "@/src/lib/auth-actions";
+import { supabase } from "@/src/lib/supabase";
 
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
@@ -23,93 +23,66 @@ function scorePassword(pw: string): { ok: boolean; msg: string | null } {
   }
   const hasLetter = /[A-Za-z]/.test(pw);
   const hasDigit = /[0-9]/.test(pw);
-  if (!hasLetter || !hasDigit) {
-    return { ok: false, msg: "Add at least one letter and one number." };
-  }
+  if (!hasLetter || !hasDigit) return { ok: false, msg: "Add at least one letter and one number." };
   return { ok: true, msg: "Looks good." };
 }
 
-type Step = "email" | "reset";
+type Stage = "email" | "set";
 
+/**
+ * Password reset via Supabase:
+ * 1. User enters their email → Supabase emails a magic link.
+ * 2. Link opens /auth/callback which forwards here with ?stage=set once the
+ *    PASSWORD_RECOVERY session is active. User picks a new password → updateUser.
+ */
 export default function ForgotPassword() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ email?: string }>();
-  const { signInWithToken } = useAuth();
+  const params = useLocalSearchParams<{ email?: string; stage?: string }>();
   const toast = useToast();
   const { isDesktop } = useResponsive();
 
-  const [step, setStep] = useState<Step>("email");
+  const [stage, setStage] = useState<Stage>(params.stage === "set" ? "set" : "email");
   const [email, setEmail] = useState(params.email || "");
-  const [code, setCode] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [sending, setSending] = useState(false);
   const [resetting, setResetting] = useState(false);
-  const [devCode, setDevCode] = useState<string | null>(null);
 
-  const requestCode = async () => {
-    if (!email.trim()) {
-      toast.show("Enter your studio email", "error");
-      return;
-    }
+  // If we land here from a recovery link, Supabase fires PASSWORD_RECOVERY.
+  useEffect(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "PASSWORD_RECOVERY") setStage("set");
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const requestLink = async () => {
+    if (!email.trim()) { toast.show("Enter your studio email", "error"); return; }
     setSending(true);
     try {
-      const res: any = await publicApi.post("/auth/admin/forgot-password", {
-        email: email.trim(),
-      });
-      // Backend is deliberately vague to avoid leaking account existence.
-      toast.show(
-        res?.delivered
-          ? "Reset code sent — check your email"
-          : "If this email is registered, a code was sent",
-        "success"
-      );
-      if (res?.dev_code) setDevCode(res.dev_code);
-      setStep("reset");
+      const { error } = await sendPasswordReset(email);
+      if (error) throw error;
+      toast.show("If this email is registered, a reset link was sent.", "success");
     } catch (e: any) {
-      toast.show(e instanceof ApiError ? e.message : "Could not send code", "error");
+      toast.show(e?.message || "Could not send reset link", "error");
     } finally {
       setSending(false);
     }
   };
 
-  const resendCode = async () => {
-    setDevCode(null);
-    await requestCode();
-  };
-
   const submitReset = async () => {
-    if (!code.trim()) {
-      toast.show("Enter the 6-digit code", "error");
-      return;
-    }
     const strength = scorePassword(newPassword);
-    if (!strength.ok) {
-      toast.show(strength.msg || PASSWORD_HINT, "error");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      toast.show("Passwords do not match", "error");
-      return;
-    }
+    if (!strength.ok) { toast.show(strength.msg || PASSWORD_HINT, "error"); return; }
+    if (newPassword !== confirmPassword) { toast.show("Passwords do not match", "error"); return; }
     setResetting(true);
     try {
-      const res: any = await publicApi.post("/auth/admin/reset-password", {
-        email: email.trim(),
-        code: code.trim(),
-        new_password: newPassword,
-      });
-      if (res?.session_token) {
-        await signInWithToken(res.session_token);
-        toast.show("Password reset — you're signed in", "success");
-        router.replace("/admin");
-      } else {
-        toast.show("Password reset. Please sign in.", "success");
-        router.replace("/admin-login");
-      }
+      const { error } = await updatePassword(newPassword);
+      if (error) throw error;
+      toast.show("Password updated — you're signed in.", "success");
+      router.replace("/admin");
     } catch (e: any) {
-      toast.show(e instanceof ApiError ? e.message : "Reset failed", "error");
+      toast.show(e?.message || "Reset failed", "error");
     } finally {
       setResetting(false);
     }
@@ -118,8 +91,8 @@ export default function ForgotPassword() {
   return (
     <View style={styles.container} testID="forgot-password-screen">
       <GlassHeader
-        title={step === "email" ? "Forgot password" : "Enter reset code"}
-        onBack={() => (step === "reset" ? setStep("email") : goBackOr(router, "/admin-login"))}
+        title={stage === "email" ? "Forgot password" : "Set a new password"}
+        onBack={() => (stage === "set" ? setStage("email") : goBackOr(router, "/admin-login"))}
         topInset={insets.top}
       />
       <KeyboardAwareScrollView
@@ -143,16 +116,16 @@ export default function ForgotPassword() {
             </View>
           </View>
           <Text style={styles.title}>
-            {step === "email" ? "Reset your password" : "Almost there"}
+            {stage === "email" ? "Reset your password" : "Choose a new password"}
           </Text>
           <Text style={styles.sub}>
-            {step === "email"
-              ? "Enter your studio email. We'll send you a 6-digit code to reset your password."
-              : `We sent a 6-digit code to ${email}. It expires in 15 minutes.`}
+            {stage === "email"
+              ? "Enter your studio email. We'll send you a secure reset link."
+              : `Set a new password for ${email || "your account"}. You'll stay signed in.`}
           </Text>
         </View>
 
-        {step === "email" ? (
+        {stage === "email" ? (
           <View style={{ marginTop: spacing.xl }}>
             <TextField
               testID="forgot-email-input"
@@ -165,10 +138,10 @@ export default function ForgotPassword() {
             />
             <Button
               testID="forgot-send-btn"
-              title="Send reset code"
+              title="Send reset link"
               icon="mail-outline"
               loading={sending}
-              onPress={requestCode}
+              onPress={requestLink}
             />
             <Pressable
               testID="forgot-back-to-login"
@@ -181,42 +154,18 @@ export default function ForgotPassword() {
           </View>
         ) : (
           <View style={{ marginTop: spacing.xl }}>
-            {devCode ? (
-              <View style={styles.devCodeBox}>
-                <Ionicons name="information-circle" size={16} color={colors.brand} />
-                <Text style={styles.devCodeText}>
-                  Preview mode — your code is{" "}
-                  <Text style={styles.devCodeStrong}>{devCode}</Text>
-                </Text>
-              </View>
-            ) : null}
-            <TextField
-              testID="reset-code-input"
-              label="6-digit code"
-              value={code}
-              onChangeText={(t) => setCode(t.replace(/[^0-9]/g, "").slice(0, 6))}
-              keyboardType="number-pad"
-              autoFocus
-            />
             <TextField
               testID="reset-new-password"
               label="New password"
               value={newPassword}
               onChangeText={setNewPassword}
               secureTextEntry
+              autoFocus
             />
             {(() => {
               const s = scorePassword(newPassword);
-              const color = !newPassword
-                ? colors.muted
-                : s.ok
-                ? "#2E7D32"
-                : "#C0392B";
-              const icon = !newPassword
-                ? "information-circle-outline"
-                : s.ok
-                ? "checkmark-circle"
-                : "alert-circle";
+              const color = !newPassword ? colors.muted : s.ok ? "#2E7D32" : "#C0392B";
+              const icon = !newPassword ? "information-circle-outline" : s.ok ? "checkmark-circle" : "alert-circle";
               return (
                 <View style={styles.pwHintRow}>
                   <Ionicons name={icon as any} size={14} color={color} />
@@ -236,22 +185,16 @@ export default function ForgotPassword() {
             {confirmPassword && confirmPassword !== newPassword ? (
               <View style={styles.pwHintRow}>
                 <Ionicons name="alert-circle" size={14} color="#C0392B" />
-                <Text style={[styles.pwHintText, { color: "#C0392B" }]}>
-                  Passwords do not match.
-                </Text>
+                <Text style={[styles.pwHintText, { color: "#C0392B" }]}>Passwords do not match.</Text>
               </View>
             ) : null}
             <Button
               testID="reset-submit-btn"
-              title="Reset password"
+              title="Update password"
               icon="checkmark"
               loading={resetting}
               onPress={submitReset}
             />
-            <Pressable testID="reset-resend" onPress={resendCode} style={styles.linkRow}>
-              <Ionicons name="refresh" size={14} color={colors.brand} />
-              <Text style={styles.link}>Resend code</Text>
-            </Pressable>
           </View>
         )}
       </KeyboardAwareScrollView>
@@ -271,98 +214,16 @@ const styles = StyleSheet.create({
     padding: spacing.xl,
     overflow: "hidden",
   },
-  brandGlow: {
-    position: "absolute",
-    top: -60,
-    right: -40,
-    width: 180,
-    height: 180,
-    borderRadius: 90,
-    backgroundColor: "rgba(226,98,60,0.14)",
-  },
-  brandRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    marginBottom: spacing.lg,
-  },
-  brandLogoDot: {
-    width: 40,
-    height: 40,
-    borderRadius: radius.pill,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  brandName: {
-    color: colors.onSurface,
-    fontFamily: fonts.text,
-    fontSize: fontSize.sm,
-    fontWeight: "700",
-    letterSpacing: 3,
-    flex: 1,
-  },
-  brandBadge: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 4,
-    borderRadius: radius.pill,
-    backgroundColor: colors.brand,
-  },
-  brandBadgeText: {
-    color: colors.onBrand,
-    fontFamily: fonts.text,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.5,
-  },
+  brandGlow: { position: "absolute", top: -60, right: -40, width: 180, height: 180, borderRadius: 90, backgroundColor: "rgba(226,98,60,0.14)" },
+  brandRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginBottom: spacing.lg },
+  brandLogoDot: { width: 40, height: 40, borderRadius: radius.pill, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
+  brandName: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "700", letterSpacing: 3, flex: 1 },
+  brandBadge: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.pill, backgroundColor: colors.brand },
+  brandBadgeText: { color: colors.onBrand, fontFamily: fonts.text, fontSize: 10, fontWeight: "800", letterSpacing: 1.5 },
   title: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"] },
-  sub: {
-    color: colors.muted,
-    fontFamily: fonts.text,
-    fontSize: fontSize.base,
-    marginTop: spacing.xs,
-    lineHeight: 21,
-  },
-  linkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    marginTop: spacing.xl,
-    minHeight: 44,
-  },
+  sub: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.base, marginTop: spacing.xs, lineHeight: 21 },
+  linkRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, marginTop: spacing.xl, minHeight: 44 },
   link: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "600" },
-  devCodeBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacing.sm,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: "rgba(226,98,60,0.35)",
-    backgroundColor: "rgba(226,98,60,0.08)",
-  },
-  devCodeText: {
-    flex: 1,
-    color: colors.onSurface,
-    fontFamily: fonts.text,
-    fontSize: fontSize.sm,
-    lineHeight: 20,
-  },
-  devCodeStrong: { fontWeight: "800", letterSpacing: 2, color: colors.brand },
-  pwHintRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-    marginTop: -spacing.sm,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.xs,
-  },
-  pwHintText: {
-    flex: 1,
-    fontFamily: fonts.text,
-    fontSize: fontSize.sm,
-    lineHeight: 18,
-  },
+  pwHintRow: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: -spacing.sm, marginBottom: spacing.md, paddingHorizontal: spacing.xs },
+  pwHintText: { flex: 1, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 18 },
 });

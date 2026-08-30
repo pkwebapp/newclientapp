@@ -323,3 +323,35 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - Previous attempts (touch-action, canvas bg color) only masked it. DOM inspection showed the web scroller was an overflow:auto div nested 9 levels deep inside position:absolute/flex ancestors all pinned to the height computed at FIRST load. On iOS Safari the layer stayed rasterized at that stale height → content beyond it clipped at a hard line until refresh.
 - Fix: `src/components/Reveal.tsx` web branch now renders a real DOM div with `position: fixed; inset 0; overflow-y: auto`, escaping the ancestor chain entirely. iOS sizes/repaints fixed-position scrollers directly against the viewport. Applies to landing page + all marketing pages (MarketingPage.tsx uses RevealScroll).
 - Removed deprecated `-webkit-overflow-scrolling: touch`.
+
+
+## Supabase Auth migration (2026-08) — Q2c + Q3c(full DB drop) + Q5a full JWT swap
+- Migrated **Studio Admin + Client** login to Supabase (`https://idnrpxtapkkryhlordlt.supabase.co`). Super Admin unchanged — still uses legacy opaque `user_sessions` bearer.
+- Features enabled/wired: email+password sign-up & sign-in, magic link, 6-digit email OTP, Google OAuth (needs enabling in Supabase dashboard before use), password reset via email.
+- Full DB wipe: dropped entire `test_database`. Super Admin auto-reseeded from env on next startup.
+- Backend
+  - New `backend/supabase_auth.py`: JWKS-based ES256/RS256 verification (`jwt.PyJWKClient` cached 600s), audience=`authenticated`, issuer=`{project}/auth/v1`. On first successful verify, upserts a local `users` row keyed by `supabase_id` with role from `user_metadata.role` (frontend sets `admin` or `client`).
+  - `backend/auth_utils.py` `_user_from_token()` now dual-path: JWT-shaped tokens → Supabase verify; opaque tokens → legacy session lookup (superadmin only). Every existing `Depends(require_admin/require_client/get_current_user/user_from_token_or_header)` signature preserved → ~200 protected routes untouched.
+  - Removed routes (return 410): `/api/auth/admin/{register,login,forgot-password,reset-password}`, `/api/auth/session` (Google exchange), `/api/auth/client/{request-otp,verify-otp}`.
+  - Kept: `/api/auth/me`, `/api/auth/logout` (no-op), `/api/auth/admin/profile` (studio onboarding).
+  - New index: `users.supabase_id` (unique, sparse). Removed old admin seed (users self-signup via Supabase now).
+- Frontend
+  - New `src/lib/supabase.ts` (createClient + AsyncStorage on native, `detectSessionInUrl=true` on web).
+  - New `src/lib/auth-actions.ts`: signUp, signIn, magicLink, sendEmailOtp, verifyEmailOtp, sendPasswordReset, updatePassword, signInWithGoogle (WebBrowser + Linking on native), signOut.
+  - New `src/lib/redirect.ts`: makes `<origin>/auth/callback` on web / `pikconnect://auth/callback` on native.
+  - New `app/auth/callback.tsx`: handles magic-link, OAuth, and PASSWORD_RECOVERY events.
+  - Rewrote `src/context/AuthContext.tsx`: backed by `supabase.auth.onAuthStateChange`; retains `signInWithLegacyToken(...)` for the super-admin flow. Effective bearer = Supabase JWT || legacy token.
+  - Rewrote `app/admin-login.tsx`: password + register + magic link + Google.
+  - Rewrote `app/client-login.tsx`: 6-digit OTP + magic link + Google.
+  - Rewrote `app/forgot-password.tsx`: Supabase resetPasswordForEmail → land on `/auth/callback` → PASSWORD_RECOVERY → set new password via `updateUser`.
+  - `app.json` scheme changed to `pikconnect` for native deep-linking.
+- Verified live (curl)
+  - Admin-create confirmed user → password sign-in → `/api/auth/me` **200** with auto-provisioned local user_id, `role=admin`, trial plan.
+  - Client sign-in → `/api/auth/me` **200** with `role=client`. Client → `/api/events` = **403** (RBAC).
+  - Super Admin legacy login → `/api/superadmin/overview` **200**.
+  - Deprecated old routes → **410 Gone**.
+- Dashboard config the user still needs to do
+  1. Supabase → Auth → Providers → Google: enable + paste Google client ID/secret. Redirect URL: `https://idnrpxtapkkryhlordlt.supabase.co/auth/v1/callback`.
+  2. Supabase → Auth → URL Configuration: add `https://44463a86-6b40-4901-9582-b0d2a229f044.preview.emergentagent.com/**` and `pikconnect://auth/callback`.
+  3. Supabase → Auth → Email Templates → Magic Link: uses `{{ .ConfirmationURL }}` by default (fine). For 6-digit OTP the template needs to contain `{{ .Token }}` — Supabase supports both concurrently.
+  4. If you want signup to bypass email confirmation for testing, disable "Confirm email" under Auth → Providers → Email.

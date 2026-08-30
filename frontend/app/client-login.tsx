@@ -1,16 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
 import { Pressable, StyleSheet, Text, View, Linking, Platform } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
-import { api, ApiError } from "@/src/api/client";
 import { useAuth } from "@/src/context/AuthContext";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
-import { PhoneField } from "@/src/components/PhoneField";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { goBackOr } from "@/src/navigation/back";
+import {
+  sendEmailOtp, verifyEmailOtp, sendMagicLink, signInWithGoogle,
+} from "@/src/lib/auth-actions";
 
 import { lightColors as colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { ThemeProvider } from "@/src/theme-context";
@@ -19,77 +20,81 @@ import { APP_DOMAIN, getAppSurface } from "@/src/navigation/host-routing";
 export default function ClientLogin() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signInWithToken, startGoogleLogin } = useAuth();
+  const { user } = useAuth();
   const toast = useToast();
   const { isDesktop } = useResponsive();
   const surface = getAppSurface();
 
-  const [channel, setChannel] = useState<"email" | "phone">("email");
   const [step, setStep] = useState<"identify" | "verify">("identify");
-  const [value, setValue] = useState("");
-  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(false);
+  const [magicLoading, setMagicLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
 
-  const google = async () => {
-    setGoogleLoading(true);
-    try {
-      await startGoogleLogin("client");
-      if (Platform.OS !== "web") router.replace("/client");
-    } catch {
-      toast.show("Google sign-in failed", "error");
-    } finally {
-      setGoogleLoading(false);
-    }
-  };
+  // Auto-route once the Supabase session lands + backend confirms the role.
+  useEffect(() => {
+    if (user?.role === "client") router.replace("/client");
+  }, [user, router]);
 
   const requestOtp = async () => {
-    if (!value.trim()) {
-      toast.show(channel === "email" ? "Enter your email" : "Enter your phone number", "error");
+    if (!email.trim()) {
+      toast.show("Enter your email", "error");
       return;
     }
     setLoading(true);
     try {
-      const body: any = { channel };
-      if (channel === "email") body.email = value.trim();
-      else body.phone = value.trim();
-      const res = await api.post("/auth/client/request-otp", body);
+      const { error } = await sendEmailOtp(email, "client");
+      if (error) throw error;
       setStep("verify");
-      if (res.dev_code) {
-        toast.show(`Demo code: ${res.dev_code}`, "info");
-        setCode(res.dev_code);
-      } else {
-        toast.show("Code sent. Check your inbox.", "success");
-      }
+      toast.show("6-digit code sent. Check your inbox.", "success");
     } catch (e: any) {
-      toast.show(e instanceof ApiError ? e.message : "Could not send code", "error");
+      toast.show(e?.message || "Could not send code", "error");
     } finally {
       setLoading(false);
     }
   };
 
   const verify = async () => {
-    if (code.length < 4) {
+    if (code.length < 6) {
       toast.show("Enter the 6-digit code", "error");
-      return;
-    }
-    if (!name.trim()) {
-      toast.show("Enter your name to continue", "error");
       return;
     }
     setLoading(true);
     try {
-      const body: any = { channel, code: code.trim(), name: name.trim() || undefined };
-      if (channel === "email") body.email = value.trim();
-      else body.phone = value.trim();
-      const res = await api.post("/auth/client/verify-otp", body);
-      await signInWithToken(res.session_token);
-      router.replace("/client");
+      const { error } = await verifyEmailOtp(email, code);
+      if (error) throw error;
+      // AuthContext.onAuthStateChange picks up the new session.
     } catch (e: any) {
-      toast.show(e instanceof ApiError ? e.message : "Verification failed", "error");
+      toast.show(e?.message || "Verification failed", "error");
     } finally {
       setLoading(false);
+    }
+  };
+
+  const magic = async () => {
+    if (!email.trim()) { toast.show("Enter your email first", "error"); return; }
+    setMagicLoading(true);
+    try {
+      const { error } = await sendMagicLink(email, "client");
+      if (error) throw error;
+      toast.show("Magic link sent — open it on this device.", "success");
+    } catch (e: any) {
+      toast.show(e?.message || "Could not send magic link", "error");
+    } finally {
+      setMagicLoading(false);
+    }
+  };
+
+  const google = async () => {
+    setGoogleLoading(true);
+    try {
+      await signInWithGoogle("client");
+      if (Platform.OS !== "web") router.replace("/client");
+    } catch (e: any) {
+      toast.show(e?.message || "Google sign-in failed", "error");
+    } finally {
+      setGoogleLoading(false);
     }
   };
 
@@ -127,49 +132,26 @@ export default function ClientLogin() {
             <Text style={styles.title}>Find your photos</Text>
             <Text style={styles.sub}>We’ll send a one-time code to verify it’s you.</Text>
 
-            <View style={styles.tabs}>
-              {(["email", "phone"] as const).map((c) => (
-                <Pressable
-                  key={c}
-                  testID={`channel-${c}`}
-                  onPress={() => {
-                    setChannel(c);
-                    setValue("");
-                  }}
-                  style={[styles.tab, channel === c && styles.tabActive]}
-                >
-                  <Ionicons
-                    name={c === "email" ? "mail-outline" : "call-outline"}
-                    size={16}
-                    color={channel === c ? colors.onBrand : colors.onSurfaceTertiary}
-                  />
-                  <Text style={[styles.tabText, channel === c && styles.tabTextActive]}>
-                    {c === "email" ? "Email" : "Phone"}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
-
             <View style={{ marginTop: spacing.xl }}>
-              {channel === "phone" ? (
-                <PhoneField
-                  testID="client-identifier-input"
-                  value={value}
-                  onChangeText={setValue}
-                  placeholder="Enter mobile number"
-                />
-              ) : (
-                <TextField
-                  testID="client-identifier-input"
-                  label="Email address"
-                  value={value}
-                  onChangeText={setValue}
-                  placeholder="you@example.com"
-                  autoCapitalize="none"
-                  keyboardType="email-address"
-                />
-              )}
-              <Button testID="request-otp-btn" title="Send code" loading={loading} onPress={requestOtp} />
+              <TextField
+                testID="client-identifier-input"
+                label="Email address"
+                value={email}
+                onChangeText={setEmail}
+                placeholder="you@example.com"
+                autoCapitalize="none"
+                keyboardType="email-address"
+              />
+              <Button testID="request-otp-btn" title="Send 6-digit code" loading={loading} onPress={requestOtp} />
+
+              <Button
+                testID="client-magic-btn"
+                title="Send magic link instead"
+                variant="secondary"
+                icon="mail-outline"
+                loading={magicLoading}
+                onPress={magic}
+              />
 
               <View style={styles.divider}>
                 <View style={styles.line} />
@@ -190,7 +172,7 @@ export default function ClientLogin() {
         ) : (
           <>
             <Text style={styles.title}>Enter your code</Text>
-            <Text style={styles.sub}>Sent to {value}</Text>
+            <Text style={styles.sub}>Sent to {email}</Text>
             <View style={{ marginTop: spacing.xl }}>
               <TextField
                 testID="otp-code-input"
@@ -200,13 +182,6 @@ export default function ClientLogin() {
                 placeholder="000000"
                 keyboardType="number-pad"
                 maxLength={6}
-              />
-              <TextField
-                testID="client-name-input"
-                label="Your name"
-                value={name}
-                onChangeText={setName}
-                placeholder="e.g. Priya"
               />
               <Button testID="verify-otp-btn" title="Verify & continue" loading={loading} onPress={verify} />
               <Pressable testID="resend-otp" onPress={requestOtp} style={{ marginTop: spacing.lg, alignItems: "center" }}>
@@ -239,25 +214,6 @@ const styles = StyleSheet.create({
   },
   title: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["2xl"] },
   sub: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.base, marginTop: spacing.xs },
-  tabs: {
-    flexDirection: "row",
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.md,
-    padding: spacing.xs,
-    marginTop: spacing.xl,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    paddingVertical: spacing.md,
-    borderRadius: radius.sm,
-  },
-  tabActive: { backgroundColor: colors.brand },
-  tabText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.base },
-  tabTextActive: { color: colors.onBrand, fontWeight: "600" },
   divider: { flexDirection: "row", alignItems: "center", marginVertical: spacing.xl },
   line: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.borderStrong },
   or: { color: colors.muted, marginHorizontal: spacing.md, fontFamily: fonts.text, fontSize: fontSize.sm },

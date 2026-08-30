@@ -12,7 +12,7 @@ import { APP_DOMAIN, getAppSurface } from "@/src/navigation/host-routing";
 export default function SuperAdminLogin() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signInWithToken } = useAuth();
+  const { signInWithLegacyToken } = useAuth();
   const toast = useToast();
   const surface = getAppSurface();
   const [email, setEmail] = useState("");
@@ -23,7 +23,7 @@ export default function SuperAdminLogin() {
     setLoading(true);
     try {
       const result = await api.post("/superadmin/login", { email: email.trim(), password });
-      await signInWithToken(result.session_token);
+      await signInWithLegacyToken(result.session_token);
       router.replace("/superadmin");
     } catch (error: any) {
       toast.show(error instanceof ApiError ? error.message : "Could not sign in", "error");

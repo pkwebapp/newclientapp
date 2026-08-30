@@ -33,7 +33,7 @@ from email_service import send_otp_email
 from auth_utils import (
     hash_password, verify_password, new_user_id, create_session,
     get_current_user, require_admin, require_admin_uploads, require_client, user_from_token_or_header,
-)
+)  # noqa: F401  (some imports retained for tests / superadmin flow)
 import plans
 from notifications_service import (
     notify, notify_superadmins, get_disabled_types, set_disabled_types,
@@ -193,346 +193,65 @@ def _phone_or_400(value: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Auth — admin (email+password & Google) + client (OTP)
+# Auth — routes replaced by Supabase (admin & client)
 # ---------------------------------------------------------------------------
-class AdminRegister(BaseModel):
-    name: str
-    email: EmailStr
-    password: str
-
-
-class AdminLogin(BaseModel):
-    email: EmailStr
-    password: str
-
-
-class SessionExchange(BaseModel):
-    session_id: str
-    role: Optional[str] = "admin"
-
-
-class OtpRequest(BaseModel):
-    channel: str  # "email" | "phone"
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-
-
-class OtpVerify(BaseModel):
-    channel: str
-    email: Optional[EmailStr] = None
-    phone: Optional[str] = None
-    code: str
-    name: Optional[str] = None
+# All login/signup/password-reset/OTP/Google-exchange for admins and clients now
+# happens directly on the frontend via `@supabase/supabase-js` against the
+# Supabase project. The backend simply verifies the Supabase JWT on every
+# protected request (see `auth_utils.py` -> `_user_from_token`) and lazily
+# creates a matching local `users` row on first sight (see `supabase_auth.py`).
+#
+# The only auth-adjacent endpoints kept here are:
+#   - GET  /auth/me              — return the current local user profile
+#   - POST /auth/logout          — no-op (Supabase SDK clears its own session)
+#   - POST /auth/admin/profile   — the studio-onboarding form
+#
+# The super-admin login (legacy opaque session) lives in `superadmin_routes.py`.
 
 
 @api_router.post("/auth/admin/register")
-async def admin_register(body: AdminRegister):
-    email = body.email.lower()
-    _validate_password_or_400(body.password)
-    if await db.users.find_one({"email": email}):
-        raise HTTPException(status_code=409, detail="An account with this email already exists")
-    user = {
-        "user_id": new_user_id(),
-        "role": "admin",
-        "name": body.name,
-        "email": email,
-        "phone": None,
-        "password_hash": hash_password(body.password),
-        "auth_provider": "password",
-        "created_at": now_iso(),
-        **plans.new_studio_plan_fields(),
-    }
-    await db.users.insert_one(user)
-    token = await create_session(user["user_id"])
-
-    # Notify superadmins that a new photographer joined the platform.
-    try:
-        await notify_superadmins(
-            type_key="sa_new_studio",
-            title="New photographer joined",
-            body=f'{body.name} ({email}) just created a studio account.',
-            action_url=f"/superadmin/studio/{user['user_id']}",
-            meta={"studio_id": user["user_id"], "name": body.name, "email": email},
-            dedupe_key=f"sa_new_studio:{user['user_id']}",
-        )
-    except Exception as e:  # noqa: BLE001
-        logger.warning(f"sa_new_studio notify failed: {e}")
-
-    return {"session_token": token, "user": _public_user(user)}
+async def _deprecated_admin_register():
+    raise HTTPException(status_code=410, detail="Deprecated: sign up via Supabase")
 
 
 @api_router.post("/auth/admin/login")
-async def admin_login(body: AdminLogin):
-    email = body.email.lower()
-    user = await db.users.find_one({"email": email, "role": "admin"})
-    if not user or not user.get("password_hash") or not verify_password(body.password, user["password_hash"]):
-        raise HTTPException(status_code=401, detail="Invalid email or password")
-    token = await create_session(user["user_id"])
-    return {"session_token": token, "user": _public_user(user)}
-
-
-class ForgotPasswordRequest(BaseModel):
-    email: EmailStr
-
-
-class ResetPasswordRequest(BaseModel):
-    email: EmailStr
-    code: str
-    new_password: str
-
-
-PASSWORD_MIN_LENGTH = 8
-PASSWORD_RULES_MESSAGE = (
-    "Password must be at least 8 characters and include a letter and a number."
-)
-
-
-def _validate_password_or_400(password: str) -> None:
-    """Raise a friendly 400 if the password fails our minimum rules."""
-    pw = password or ""
-    if len(pw) < PASSWORD_MIN_LENGTH:
-        raise HTTPException(status_code=400, detail=PASSWORD_RULES_MESSAGE)
-    if not any(c.isalpha() for c in pw) or not any(c.isdigit() for c in pw):
-        raise HTTPException(status_code=400, detail=PASSWORD_RULES_MESSAGE)
+async def _deprecated_admin_login():
+    raise HTTPException(status_code=410, detail="Deprecated: sign in via Supabase")
 
 
 @api_router.post("/auth/admin/forgot-password")
-async def admin_forgot_password(body: ForgotPasswordRequest):
-    """Send a 6-digit reset code to the studio-admin email.
-
-    Behaviour is intentionally identical for known/unknown emails so we never
-    leak account existence. The code is stored in `otp_codes` (identifier
-    prefixed with `pwreset:` to keep it separate from client OTPs) and expires
-    in 15 minutes.
-    """
-    email = body.email.lower().strip()
-    identifier = f"pwreset:{email}"
-    code = gen_otp()
-
-    user = await db.users.find_one({"email": email, "role": "admin"})
-    delivered = False
-    if user:
-        await db.otp_codes.update_one(
-            {"identifier": identifier},
-            {"$set": {
-                "identifier": identifier,
-                "channel": "email",
-                "code": code,
-                "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=15)).isoformat(),
-                "attempts": 0,
-                "created_at": now_iso(),
-            }},
-            upsert=True,
-        )
-        try:
-            await send_otp_email(email, code)
-            delivered = True
-        except Exception as e:
-            logger.error(f"Password-reset email send failed: {e}")
-
-    resp = {"status": "sent", "delivered": delivered}
-    # In dev/preview mode we surface the code so it can be tested without inbox
-    # access. Never enable OTP_DEV_MODE in production.
-    if OTP_DEV_MODE and user:
-        resp["dev_code"] = code
-    return resp
+async def _deprecated_admin_forgot():
+    raise HTTPException(status_code=410, detail="Deprecated: use Supabase password reset")
 
 
 @api_router.post("/auth/admin/reset-password")
-async def admin_reset_password(body: ResetPasswordRequest):
-    email = body.email.lower().strip()
-    identifier = f"pwreset:{email}"
-
-    _validate_password_or_400(body.new_password)
-
-    record = await db.otp_codes.find_one({"identifier": identifier})
-    if not record:
-        raise HTTPException(status_code=400, detail="Request a reset code first")
-    expires_at = record["expires_at"]
-    if isinstance(expires_at, str):
-        expires_at = datetime.fromisoformat(expires_at)
-    if expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=400, detail="Code expired. Request a new one.")
-    if record.get("attempts", 0) >= 5:
-        raise HTTPException(status_code=429, detail="Too many attempts. Request a new code.")
-    if body.code.strip() != record["code"]:
-        await db.otp_codes.update_one({"identifier": identifier}, {"$inc": {"attempts": 1}})
-        raise HTTPException(status_code=401, detail="Incorrect code")
-
-    user = await db.users.find_one({"email": email, "role": "admin"})
-    if not user:
-        # code matched but user is gone — clean up
-        await db.otp_codes.delete_one({"identifier": identifier})
-        raise HTTPException(status_code=404, detail="Account not found")
-
-    await db.users.update_one(
-        {"user_id": user["user_id"]},
-        {"$set": {"password_hash": hash_password(body.new_password), "auth_provider": "password"}},
-    )
-    await db.otp_codes.delete_one({"identifier": identifier})
-
-    # Auto sign-in on successful reset
-    token = await create_session(user["user_id"])
-    return {"status": "reset", "session_token": token, "user": _public_user(user)}
+async def _deprecated_admin_reset():
+    raise HTTPException(status_code=410, detail="Deprecated: use Supabase password reset")
 
 
 @api_router.post("/auth/session")
-async def google_session(body: SessionExchange):
-    """Exchange an Emergent Google OAuth session_id for a session token.
-    The `role` intent decides what a NEW account becomes: "client" for the
-    guest login, "admin" (default) for the studio login. Existing accounts are
-    reused by email regardless of intent."""
-    async with httpx.AsyncClient(timeout=30) as hc:
-        resp = await hc.get(
-            "https://demobackend.emergentagent.com/auth/v1/env/oauth/session-data",
-            headers={"X-Session-ID": body.session_id},
-        )
-    if resp.status_code != 200:
-        raise HTTPException(status_code=401, detail="Invalid or expired session")
-    data = resp.json()
-    email = (data.get("email") or "").lower()
-    if not email:
-        raise HTTPException(status_code=401, detail="No email from provider")
-    user = await db.users.find_one({"email": email})
-    if not user:
-        name = data.get("name") or email.split("@")[0]
-        if body.role == "client":
-            user = {
-                "user_id": new_user_id(),
-                "role": "client",
-                "name": name,
-                "email": email,
-                "phone": None,
-                "password_hash": None,
-                "picture": data.get("picture"),
-                "auth_provider": "google",
-                "verified_email": True,
-                "verified_phone": False,
-                "created_at": now_iso(),
-            }
-        else:
-            user = {
-                "user_id": new_user_id(),
-                "role": "admin",
-                "name": name,
-                "email": email,
-                "phone": None,
-                "password_hash": None,
-                "picture": data.get("picture"),
-                "auth_provider": "google",
-                "created_at": now_iso(),
-                **plans.new_studio_plan_fields(),
-            }
-        await db.users.insert_one(user)
-    token = await create_session(user["user_id"])
-    return {"session_token": token, "user": _public_user(user)}
+async def _deprecated_google_session():
+    raise HTTPException(status_code=410, detail="Deprecated: use Supabase Google OAuth")
 
 
 @api_router.post("/auth/client/request-otp")
-async def request_otp(body: OtpRequest):
-    if body.channel == "email":
-        if not body.email:
-            raise HTTPException(status_code=400, detail="Email is required")
-        identifier = body.email.lower()
-    elif body.channel == "phone":
-        if not body.phone:
-            raise HTTPException(status_code=400, detail="Phone number is required")
-        identifier = _phone_or_400(body.phone)
-    else:
-        raise HTTPException(status_code=400, detail="Invalid channel")
-
-    code = gen_otp()
-    await db.otp_codes.update_one(
-        {"identifier": identifier},
-        {"$set": {
-            "identifier": identifier,
-            "channel": body.channel,
-            "code": code,
-            "expires_at": (datetime.now(timezone.utc) + timedelta(minutes=10)).isoformat(),
-            "attempts": 0,
-            "created_at": now_iso(),
-        }},
-        upsert=True,
-    )
-
-    delivered = False
-    if body.channel == "email":
-        try:
-            await send_otp_email(identifier, code)
-            delivered = True
-        except Exception as e:
-            logger.error(f"OTP email send failed: {e}")
-    else:
-        # SMS provider not configured -> code returned in dev mode only.
-        logger.info(f"[SMS:{SMS_PROVIDER}] OTP for {identifier}: {code}")
-
-    resp = {"status": "sent", "channel": body.channel, "delivered": delivered}
-    if OTP_DEV_MODE:
-        resp["dev_code"] = code
-    return resp
+async def _deprecated_request_otp():
+    raise HTTPException(status_code=410, detail="Deprecated: use Supabase email OTP")
 
 
 @api_router.post("/auth/client/verify-otp")
-async def verify_otp(body: OtpVerify):
-    if body.channel == "email":
-        identifier = (body.email or "").lower()
-    else:
-        identifier = _phone_or_400(body.phone or "")
-    if not identifier:
-        raise HTTPException(status_code=400, detail="Missing identifier")
-
-    record = await db.otp_codes.find_one({"identifier": identifier})
-    if not record:
-        raise HTTPException(status_code=400, detail="Request a code first")
-    expires_at = record["expires_at"]
-    if isinstance(expires_at, str):
-        expires_at = datetime.fromisoformat(expires_at)
-    if expires_at < datetime.now(timezone.utc):
-        raise HTTPException(status_code=400, detail="Code expired. Request a new one.")
-    if record.get("attempts", 0) >= 5:
-        raise HTTPException(status_code=429, detail="Too many attempts. Request a new code.")
-    if body.code != record["code"]:
-        await db.otp_codes.update_one({"identifier": identifier}, {"$inc": {"attempts": 1}})
-        raise HTTPException(status_code=401, detail="Incorrect code")
-
-    await db.otp_codes.delete_one({"identifier": identifier})
-
-    query = {"email": identifier} if body.channel == "email" else {"phone": {"$in": phone_variants(identifier)}}
-    user = await db.users.find_one(query)
-    if not user:
-        user = {
-            "user_id": new_user_id(),
-            "role": "client",
-            "name": body.name or (identifier.split("@")[0] if body.channel == "email" else "Guest"),
-            "email": identifier if body.channel == "email" else None,
-            "phone": identifier if body.channel == "phone" else None,
-            "password_hash": None,
-            "auth_provider": f"otp_{body.channel}",
-            "verified_email": body.channel == "email",
-            "verified_phone": body.channel == "phone",
-            "created_at": now_iso(),
-        }
-        await db.users.insert_one(user)
-    else:
-        if user.get("role") != "client":
-            raise HTTPException(status_code=403, detail="This contact belongs to a studio account")
-        verified_field = "verified_email" if body.channel == "email" else "verified_phone"
-        await db.users.update_one({"user_id": user["user_id"]}, {"$set": {verified_field: True}})
-        if body.name and body.name.strip() and body.name.strip() != user.get("name"):
-            user["name"] = body.name.strip()
-            await db.users.update_one({"user_id": user["user_id"]}, {"$set": {"name": user["name"]}})
-
-    token = await create_session(user["user_id"])
-    return {"session_token": token, "user": _public_user(user)}
+async def _deprecated_verify_otp():
+    raise HTTPException(status_code=410, detail="Deprecated: use Supabase email OTP")
 
 
 @api_router.get("/auth/me")
 async def auth_me(user: dict = Depends(get_current_user)):
-    return {"user": user}
+    return {"user": _public_user(user)}
 
 
 @api_router.post("/auth/logout")
-async def logout(user: dict = Depends(get_current_user)):
+async def logout():
+    """No-op — Supabase SDK on the client clears its own session."""
     return {"status": "ok"}
 
 
@@ -2962,6 +2681,7 @@ async def on_startup():
     try:
         await db.users.create_index("user_id", unique=True)
         await db.users.create_index("email", sparse=True)
+        await db.users.create_index("supabase_id", unique=True, sparse=True)
         await db.user_sessions.create_index("session_token", unique=True)
         await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
         await db.events.create_index("event_id", unique=True)
@@ -2991,23 +2711,10 @@ async def on_startup():
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
 
-    # Seed admin (idempotent)
-    try:
-        existing = await db.users.find_one({"email": ADMIN_SEED_EMAIL.lower()})
-        if not existing:
-            await db.users.insert_one({
-                "user_id": new_user_id(),
-                "role": "admin",
-                "name": "Studio Admin",
-                "email": ADMIN_SEED_EMAIL.lower(),
-                "phone": None,
-                "password_hash": hash_password(ADMIN_SEED_PASSWORD),
-                "auth_provider": "password",
-                "created_at": now_iso(),
-            })
-            logger.info(f"Seeded admin {ADMIN_SEED_EMAIL}")
-    except Exception as e:
-        logger.error(f"Admin seed failed: {e}")
+    # Seed admin (removed — new studios now sign up via Supabase, then the
+    # first authenticated request creates their local `users` row via
+    # `supabase_auth.upsert_user_from_claims`).
+    pass
 
 
     # Recover any photos left mid-indexing by a previous restart, then start the worker.
