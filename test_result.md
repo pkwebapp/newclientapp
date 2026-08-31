@@ -11311,10 +11311,117 @@ metadata:
 
 test_plan:
   current_focus:
-    - "White-screen fix: graceful Supabase client fallback (public pages must render)"
+    - "Synology NAS gallery source — /events/synology create + parsing + listing"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+backend:
+  - task: "Synology NAS gallery source (URL-based) — POST /api/events/synology + image extraction + photo listing"
+    implemented: true
+    working: true
+    file: "backend/server.py, backend/storage_service.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            User added a Synology NAS gallery source (alongside Cloudinary). It is URL-based: the
+            admin pastes a public HTTP/WebDAV directory URL of a NAS folder; the backend fetches the
+            listing HTML, extracts image URLs by extension (extract_gallery_image_urls), and creates
+            an event (source="synology", indexing_status="ready") plus one photo doc per image that
+            points directly at the NAS URL (no bytes copied). SynologyStorage.public_url resolves
+            file URLs relative to SYNOLOGY_BASE_URL; get_object proxies bytes if needed.
+            Endpoint: POST /api/events/synology {name, category?, date?, gallery_url} (admin auth).
+            Validations: empty url -> 400 "Paste a Synology gallery URL"; non-http url -> 400 "Use a
+            full http:// or https:// gallery URL"; unreachable url -> 400 "not reachable"; no images
+            found -> 400. Single image content-type -> treated as 1-photo gallery.
+            AUTH NOTE (dev/preview): Supabase is NOT configured here, so admin login is unavailable.
+            A legacy admin session was seeded for testing — the resolver `_user_from_token` accepts
+            legacy opaque tokens for any role, so this Bearer authenticates as a real admin:
+              Bearer st_06befe4427a247d693dfae185e0181f885096316a4b54c01b2c87dcf02ada7bc
+              (user_id user_qa_admin_synology, role=admin; re-seed via `python backend/seed_test_admin.py`).
+            SETUP FOR TESTING: start a local static dir server to act as the NAS, e.g.
+              mkdir -p /tmp/nas_gallery && cd /tmp/nas_gallery
+              create index.html with <a href="a.jpg"><img src="./b.png"><a href="c.jpeg"> + a notes.txt link
+              create dummy a.jpg / b.png / c.jpeg files
+              python -m http.server 9099 --directory /tmp/nas_gallery &
+            Then test with gallery_url "http://localhost:9099/".
+            PLEASE VERIFY:
+              1) POST /events/synology (valid dir) -> 200, source="synology", photo_count=3 (txt ignored),
+                 cover_url is one of the image URLs.
+              2) GET /events/{id}/photos -> 3 items, each source="synology" with direct url/thumb_url.
+              3) Error cases: empty gallery_url -> 400; ftp:// url -> 400; unreachable url -> 400.
+              4) Single image URL (http://localhost:9099/a.jpg) -> 200 with 1 photo.
+              5) DELETE /events/{id} -> 200 (cleanup). Confirm existing Cloudinary/upload event flow
+                 is unaffected (regression: create a normal event still 200).
+              My own curl run already passed all of the above; please confirm independently.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL 12 TESTS PASSED - Synology NAS gallery source fully functional.
+            
+            Tested comprehensive end-to-end Synology NAS integration with mock NAS server on localhost:9099.
+            Used pre-seeded admin token (re-generated via seed_test_admin.py): user_qa_admin_synology, role=admin.
+            
+            SANITY CHECKS (Tests 1-2):
+            1. ✅ GET /api/auth/me → 200 with role=admin, user_id=user_qa_admin_synology
+            2. ✅ GET /api/events → 200 (events list accessible)
+            
+            VALID GALLERY CREATION (Tests 3-4):
+            3. ✅ POST /api/events/synology {"name":"Divik 27 March","category":"event","gallery_url":"http://localhost:9099/"} → 200
+               • event_id: evt_f98faa0fc512
+               • source: "synology" ✓
+               • photo_count: 3 ✓ (notes.txt correctly ignored)
+               • indexing_status: "ready" ✓
+               • cover_url: http://localhost:9099/a.jpg ✓
+            
+            4. ✅ GET /api/events/{event_id}/photos → 200
+               • total: 3 ✓
+               • All photos have source="synology" ✓
+               • Filenames: c.jpeg, b.png, a.jpg ✓
+               • All URLs point to http://localhost:9099/ ✓
+               • Response format: {"items": [...], "total": 3, "offset": 0, "limit": 60, "has_more": false}
+            
+            NEGATIVE TESTS (Tests 5-7):
+            5. ✅ POST /api/events/synology {"name":"Bad","gallery_url":""} → 400
+               • Error: "Paste a Synology gallery URL" ✓
+            
+            6. ✅ POST /api/events/synology {"name":"X","gallery_url":"ftp://x"} → 400
+               • Error: "Use a full http:// or https:// gallery URL" ✓
+            
+            7. ✅ POST /api/events/synology {"name":"Bad","gallery_url":"http://localhost:1/nope"} → 400
+               • Error: "That gallery URL is not reachable: [Errno 99] Cannot assign requested address" ✓
+            
+            SINGLE IMAGE TEST (Test 8):
+            8. ✅ POST /api/events/synology {"name":"Single","gallery_url":"http://localhost:9099/a.jpg"} → 200
+               • event_id: evt_923c6936a356
+               • photo_count: 1 ✓
+               • Single image URL correctly treated as 1-photo gallery ✓
+            
+            REGRESSION TEST (Test 10):
+            10. ✅ POST /api/events {"name":"QA Regression","category":"event"} → 200
+                • event_id: evt_d7378eb1deec
+                • source: "upload" (not "synology") ✓
+                • Existing Cloudinary/upload event creation unaffected ✓
+            
+            CLEANUP (Test 9):
+            ✅ DELETE /api/events/{event_id} → 200 for all 3 created events
+            • All events deleted successfully ✓
+            
+            INTEGRATION STATUS:
+            ✅ Synology NAS gallery source: WORKING (URL-based, no bytes copied)
+            ✅ Image extraction: WORKING (HTML parsing, extension filtering)
+            ✅ Photo listing: WORKING (direct NAS URLs in response)
+            ✅ Validation: WORKING (empty URL, non-HTTP scheme, unreachable URL)
+            ✅ Single image handling: WORKING (content-type detection)
+            ✅ Existing upload path: UNAFFECTED (regression test passed)
+            
+            NO 4XX/5XX ERRORS DETECTED (except expected 400 validation errors).
+            All endpoints return correct status codes and proper response structures.
+            Synology NAS gallery source is production-ready. 0 failures.
 
 frontend:
   - task: "Fix white screen on fresh clone when Supabase env is not configured"
@@ -11551,3 +11658,36 @@ agent_communication:
         to render normally. Login will not succeed (expected), but NO white screens occur.
         
         Main agent: The white-screen bug fix is VERIFIED and production-ready.
+    
+    - agent: "testing"
+      message: |
+        ✅ SYNOLOGY NAS GALLERY SOURCE TESTING COMPLETE - ALL 12 TESTS PASSED
+        
+        Comprehensive testing of the newly-added Synology NAS gallery source feature completed successfully.
+        This is a URL-based gallery source that sits ALONGSIDE Cloudinary (not replacing it).
+        
+        TEST SUMMARY:
+        • Sanity checks: 2/2 passed (auth token validation, events list)
+        • Valid gallery creation: 2/2 passed (directory listing, photo listing)
+        • Negative tests: 3/3 passed (empty URL, non-HTTP scheme, unreachable URL)
+        • Single image test: 1/1 passed
+        • Regression test: 1/1 passed (existing Cloudinary/upload path unaffected)
+        • Cleanup: 3/3 passed (all created events deleted)
+        
+        KEY FINDINGS:
+        ✅ POST /api/events/synology creates events with source="synology"
+        ✅ Image extraction working (HTML parsing, extension filtering)
+        ✅ Non-image files correctly ignored (notes.txt filtered out)
+        ✅ Photo listing returns direct NAS URLs (no bytes copied)
+        ✅ All validation working (empty URL, non-HTTP scheme, unreachable URL)
+        ✅ Single image URL correctly treated as 1-photo gallery
+        ✅ Existing Cloudinary/upload event creation unaffected
+        
+        AUTHENTICATION:
+        • Used pre-seeded legacy admin token (re-generated via seed_test_admin.py)
+        • Token: st_01685e4cb2964a91b0c2287e090f31ffebe776c10a734442b2e1b89abe7a0162
+        • User: user_qa_admin_synology, role=admin
+        
+        The Synology NAS gallery source is production-ready. No issues found.
+        
+        Main agent: Please summarize and finish. The backend is fully tested and working.
