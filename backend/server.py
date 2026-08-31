@@ -260,6 +260,71 @@ async def logout():
     return {"status": "ok"}
 
 
+class DevLoginBody(BaseModel):
+    role: str = "admin"  # admin | client
+
+
+@api_router.post("/auth/dev/mock-login")
+async def dev_mock_login(body: DevLoginBody):
+    """DEV ONLY: return a real legacy session token for a demo admin/client so the
+    app can exercise the full backend without Supabase configured. Disabled unless
+    DEV_LOGIN_ENABLED=true (keep it off / unset in production)."""
+    if os.environ.get("DEV_LOGIN_ENABLED", "false").strip().lower() != "true":
+        raise HTTPException(status_code=404, detail="Not found")
+
+    role = (body.role or "admin").strip().lower()
+    if role not in ("admin", "client"):
+        raise HTTPException(status_code=400, detail="role must be admin or client")
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if role == "admin":
+        user_id = "demo_studio_admin"
+        base = {
+            "user_id": user_id,
+            "role": "admin",
+            "name": "Demo Studio",
+            "email": "demo@studio.test",
+            "profile_complete": True,
+            "uploads_disabled": False,
+            "status": "active",
+            "studio_profile": {
+                "studio_name": "Demo Studio",
+                "contact_name": "Demo Admin",
+                "phone": "+91 90000 00000",
+                "city": "Bengaluru",
+                "country": "India",
+                "purposes": ["events"],
+            },
+            "auth_provider": "dev-mock",
+        }
+        existing = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        if not existing:
+            base.update(plans.new_studio_plan_fields())
+            base["created_at"] = now_iso
+        base["last_seen_at"] = now_iso
+        await db.users.update_one({"user_id": user_id}, {"$set": base}, upsert=True)
+    else:
+        user_id = "demo_client_user"
+        base = {
+            "user_id": user_id,
+            "role": "client",
+            "name": "Demo Client",
+            "email": "client@demo.test",
+            "profile_complete": True,
+            "status": "active",
+            "auth_provider": "dev-mock",
+            "last_seen_at": now_iso,
+        }
+        existing = await db.users.find_one({"user_id": user_id}, {"_id": 0})
+        if not existing:
+            base["created_at"] = now_iso
+        await db.users.update_one({"user_id": user_id}, {"$set": base}, upsert=True)
+
+    token = await create_session(user_id)
+    user = await db.users.find_one({"user_id": user_id}, {"_id": 0, "password_hash": 0})
+    return {"token": token, "user": _public_user(user)}
+
+
 class StudioProfile(BaseModel):
     contact_name: str
     studio_name: str

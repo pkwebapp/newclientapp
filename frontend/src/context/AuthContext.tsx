@@ -99,14 +99,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         legacyTokenRef.current = (await storage.secureGet<string>(LEGACY_TOKEN_KEY, "")) || null;
 
         if (!isSupabaseConfigured) {
-          const mockRole = (await storage.secureGet<string>(MOCK_ROLE_KEY, "")) || "";
-          if (!mounted) return;
-          if (mockRole === "admin" || mockRole === "client") {
-            mockRoleRef.current = mockRole;
-            setUser(MOCK_USERS[mockRole]);
-          } else if (legacyTokenRef.current) {
-            // Super admin legacy session still works without Supabase.
+          if (legacyTokenRef.current) {
+            // Real demo session (dev-login token) OR super admin — has backend data.
+            if (!mounted) return;
+            setAuthToken(legacyTokenRef.current);
+            setToken(legacyTokenRef.current);
             await fetchMe();
+          } else {
+            const mockRole = (await storage.secureGet<string>(MOCK_ROLE_KEY, "")) || "";
+            if (!mounted) return;
+            if (mockRole === "admin" || mockRole === "client") {
+              mockRoleRef.current = mockRole;
+              setUser(MOCK_USERS[mockRole]);
+            }
           }
           return;
         }
@@ -182,16 +187,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signInAsMock = useCallback(async (role: "admin" | "client"): Promise<User | null> => {
     mockRoleRef.current = role;
+    // Preferred: get a REAL backend session token from the dev-only endpoint so
+    // demo mode exercises the full API with real data. This mirrors the final
+    // (Supabase) flow exactly — same screens, same data path.
+    try {
+      const res: any = await api.post("/auth/dev/mock-login", { role });
+      if (res?.token) {
+        const u = await signInWithLegacyToken(res.token);
+        if (u) {
+          await storage.secureRemove(MOCK_ROLE_KEY);
+          return u;
+        }
+      }
+    } catch {
+      // dev endpoint disabled (e.g. production) — fall through to a UI-only mock
+    }
+    // Fallback: render the dashboards with a fake user (no backend token → empty data).
     await storage.secureSet(MOCK_ROLE_KEY, role);
-    // No backend token in mock mode — data calls will 401 and screens show
-    // empty states until the real API/Supabase is wired up.
     setAuthToken(null);
     setToken(null);
     setSession(null);
     setUser(MOCK_USERS[role]);
     setLoading(false);
     return MOCK_USERS[role];
-  }, []);
+  }, [signInWithLegacyToken]);
 
   const refresh = useCallback(async () => {
     await fetchMe();

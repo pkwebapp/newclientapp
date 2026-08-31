@@ -86,6 +86,27 @@ export const ADMIN_TAB_ROOTS = [
 // Less-used destinations live in the slide-in drawer to keep the tab bar clean.
 export const ADMIN_DRAWER_ITEMS: DrawerItem[] = [
   {
+    key: "revenue",
+    label: "Revenue",
+    sublabel: "Booked vs collected, trends & sources",
+    icon: "trending-up-outline",
+    href: "/admin/revenue",
+  },
+  {
+    key: "invoices",
+    label: "Invoices",
+    sublabel: "Create GST invoices, PDF & share links",
+    icon: "receipt-outline",
+    href: "/admin/invoices",
+  },
+  {
+    key: "invoice-settings",
+    label: "Invoice Settings",
+    sublabel: "GSTIN, address & invoice defaults",
+    icon: "document-text-outline",
+    href: "/admin/invoice-settings",
+  },
+  {
     key: "billing",
     label: "Plan & Billing",
     sublabel: "Your plan, usage & upgrades",

@@ -11311,10 +11311,32 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Invoicing module (GST/HSN, PDF, shareable link) + Revenue engine (Booked vs Collected, de-dup)"
+    - "Frontend: Revenue screen, Invoices list/create/detail, Invoice settings, public invoice page, dashboard revenue card"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+frontend:
+  - task: "Invoicing + Revenue frontend (admin) + dev demo-login for mock mode"
+    implemented: true
+    working: "NA"
+    file: "frontend/app/admin/revenue.tsx, invoices.tsx, invoice-settings.tsx, invoice/new.tsx, invoice/[id].tsx, app/i/[id].tsx, src/api/invoices.ts, src/context/AuthContext.tsx, backend/server.py(/auth/dev/mock-login)"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            Built the full invoicing + revenue UI. Demo mode now fetches a REAL backend token via
+            POST /api/auth/dev/mock-login (gated by DEV_LOGIN_ENABLED=true) so admin screens show real
+            data in preview; with Supabase configured this is unused (final flow). Verified via
+            screenshots: dashboard revenue card, Revenue screen (period filter, 12-mo chart, by-source,
+            transactions), Invoices list (totals+filters), Invoice detail (items, CGST/SGST, payments,
+            Download PDF, share link, cancel), New Invoice form (client/gallery pickers, GST toggle,
+            line items, live totals). Sidebar (desktop) + drawer (mobile) now include Revenue & Invoices.
+
+
 
 backend:
   - task: "Invoicing + Revenue engine — /api/invoices, /api/invoice-settings, /api/revenue"

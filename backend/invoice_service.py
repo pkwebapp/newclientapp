@@ -403,17 +403,17 @@ _INVOICE_CSS = """
 * { font-family: sans-serif; font-size: 9.5pt; color: #1a1a1a; }
 .doc { }
 .studio { font-size: 15pt; font-weight: bold; color: #0f172a; }
-.tax-invoice { font-size: 16pt; font-weight: bold; color: #7c3aed; text-align: right; }
+.tax-invoice { font-size: 16pt; font-weight: bold; color: #E2623C; text-align: right; }
 table { width: 100%; border-collapse: collapse; }
 table.head td { vertical-align: top; padding: 2px 0; }
 td.title { text-align: right; }
-.badge { display: inline-block; margin-top: 6px; padding: 2px 8px; background: #ede9fe; color: #6d28d9; font-weight: bold; font-size: 8pt; }
+.badge { display: inline-block; margin-top: 6px; padding: 2px 8px; background: #F6E5DC; color: #C8532F; font-weight: bold; font-size: 8pt; }
 table.parties { margin-top: 12px; border-top: 1px solid #e5e7eb; }
 table.parties td { vertical-align: top; padding: 8px 6px; width: 50%; }
 .lbl { color: #6b7280; font-size: 7.5pt; font-weight: bold; letter-spacing: 1px; }
 .cname { font-weight: bold; font-size: 11pt; }
 table.items { margin-top: 10px; }
-table.items th { background: #7c3aed; color: #ffffff; padding: 6px 5px; text-align: left; font-size: 8.5pt; }
+table.items th { background: #E2623C; color: #ffffff; padding: 6px 5px; text-align: left; font-size: 8.5pt; }
 table.items td { border-bottom: 1px solid #eee; padding: 6px 5px; vertical-align: top; }
 .num { text-align: right; }
 table.items th.num { text-align: right; }
@@ -422,7 +422,7 @@ table.foot td { vertical-align: top; padding: 4px; }
 td.words { width: 58%; }
 td.totals { width: 42%; }
 td.totals table td { padding: 3px 6px; border-bottom: 1px solid #f0f0f0; }
-tr.grand td { font-weight: bold; font-size: 11pt; color: #0f172a; border-top: 2px solid #7c3aed; }
+tr.grand td { font-weight: bold; font-size: 11pt; color: #0f172a; border-top: 2px solid #E2623C; }
 .sign { margin-top: 26px; text-align: right; color: #374151; }
 """
 

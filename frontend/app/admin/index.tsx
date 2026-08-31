@@ -19,6 +19,7 @@ import { EmptyState, Button, GlassHeader, useToast } from "@/src/components/ui";
 import { NotificationBell } from "@/src/components/NotificationBell";
 import { HeaderMenuButton } from "@/src/components/MobileShell";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
+import { formatINR } from "@/src/utils/format";
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -28,6 +29,7 @@ export default function AdminDashboard() {
   const [events, setEvents] = useState<any[]>([]);
   const [clientCount, setClientCount] = useState<number>(0);
   const [plan, setPlan] = useState<any>(null);
+  const [revenue, setRevenue] = useState<any>(null);
   const [notifications, setNotifications] = useState<any[]>([]);
   const [unreadNotifications, setUnreadNotifications] = useState(0);
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
@@ -45,6 +47,7 @@ export default function AdminDashboard() {
       setEvents(ev);
       setClientCount(Array.isArray(cl) ? cl.length : 0);
       setPlan(pl);
+      api.get("/revenue/summary?period=this_month").then(setRevenue).catch(() => {});
       setNotifications(notificationData.items || []);
       setUnreadNotifications(notificationData.unread_count || 0);
     } catch {
@@ -67,9 +70,10 @@ export default function AdminDashboard() {
   const QUICK: { key: string; label: string; icon: any; onPress: () => void }[] = [
     { key: "gallery", label: "New Gallery", icon: "add-circle", onPress: () => router.push("/admin/new-event") },
     { key: "client", label: "Add Client", icon: "person-add", onPress: () => router.push("/admin/new-client") },
+    { key: "invoice", label: "New Invoice", icon: "receipt", onPress: () => router.push("/admin/invoice/new") },
+    { key: "revenue", label: "Revenue", icon: "trending-up", onPress: () => router.push("/admin/revenue") },
     { key: "album", label: "New Album", icon: "book", onPress: () => router.push("/admin/albums") },
     { key: "bookings", label: "Bookings", icon: "calendar", onPress: () => router.push("/admin/bookings") },
-    { key: "calendar", label: "Calendar", icon: "calendar-outline", onPress: () => router.push("/admin/calendar") },
     { key: "settings", label: "Settings", icon: "settings", onPress: () => router.push("/admin/settings") },
   ];
 
@@ -109,6 +113,20 @@ export default function AdminDashboard() {
             <Stat label="Photos" value={totalPhotos} icon="image-outline" />
             <Stat label="Clients" value={clientCount} icon="people-outline" />
           </View>
+
+          <Pressable testID="revenue-card" onPress={() => router.push("/admin/revenue")} style={styles.revenueCard}>
+            <View style={styles.revenueTop}>
+              <View style={styles.revenueIcon}><Ionicons name="trending-up" size={18} color={colors.brand} /></View>
+              <Text style={styles.revenueTitle}>Revenue · this month</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.brand} />
+            </View>
+            <Text style={styles.revenueValue}>{formatINR(revenue?.collected)}</Text>
+            <View style={styles.revenueMetaRow}>
+              <Text style={styles.revenueMeta}>Booked {formatINR(revenue?.booked)}</Text>
+              <Text style={styles.revenueMetaDot}>·</Text>
+              <Text style={[styles.revenueMeta, { color: colors.onWarning }]}>Pending {formatINR(revenue?.pending)}</Text>
+            </View>
+          </Pressable>
 
           {plan && (plan.plan === "trial" || plan.locked) && (
             <Pressable
@@ -259,6 +277,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   statsRow: { flexDirection: "row", gap: spacing.sm, marginBottom: spacing.xl },
+  revenueCard: { backgroundColor: colors.brandTertiary, borderRadius: radius.lg, padding: spacing.lg, borderWidth: 1, borderColor: colors.brand, marginBottom: spacing.xl },
+  revenueTop: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  revenueIcon: { width: 34, height: 34, borderRadius: radius.pill, backgroundColor: colors.surface, alignItems: "center", justifyContent: "center" },
+  revenueTitle: { flex: 1, color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
+  revenueValue: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize["3xl"], marginTop: spacing.md },
+  revenueMetaRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, marginTop: spacing.xs },
+  revenueMeta: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
+  revenueMetaDot: { color: colors.muted },
   planBanner: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.brandTertiary, borderWidth: 1, borderColor: colors.brand, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.xl },
   planBannerLocked: { backgroundColor: colors.error, borderColor: colors.error },
   uploadDisabledBanner: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.error, borderWidth: 1, borderColor: colors.error, borderRadius: radius.lg, padding: spacing.lg, marginBottom: spacing.xl },

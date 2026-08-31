@@ -16,6 +16,8 @@ const ADMIN_NAV: NavItem[] = [
   { label: "Client Galleries", icon: "images-outline", href: "/admin/galleries" },
   { label: "Clients", icon: "people-outline", href: "/admin/clients" },
   { label: "Albums", icon: "book-outline", href: "/admin/albums" },
+  { label: "Revenue", icon: "trending-up-outline", href: "/admin/revenue" },
+  { label: "Invoices", icon: "receipt-outline", href: "/admin/invoices" },
 ];
 
 const CLIENT_NAV: NavItem[] = [
@@ -50,6 +52,8 @@ export function DesktopShell({
     if (href === "/admin/galleries") return pathname.startsWith("/admin/galleries") || pathname.startsWith("/admin/event");
     if (href === "/admin/clients") return pathname === "/admin/clients" || pathname.startsWith("/admin/client");
     if (href === "/admin/albums") return pathname.startsWith("/admin/album");
+    if (href === "/admin/revenue") return pathname === "/admin/revenue";
+    if (href === "/admin/invoices") return pathname.startsWith("/admin/invoice");
     if (href === "/client/bookings") return pathname === "/client/bookings" || pathname.startsWith("/client/booking");
     if (href === "/client/services") return pathname === "/client/services";
     if (href === "/client") return pathname === "/client";
