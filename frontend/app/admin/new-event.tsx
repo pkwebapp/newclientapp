@@ -54,9 +54,10 @@ export default function NewEvent() {
   const [calendarMonth, setCalendarMonth] = useState(new Date(today.getFullYear(), today.getMonth(), 1));
   const [photographer, setPhotographer] = useState("Ritik");
   const [category, setCategory] = useState("portrait");
-  const [mode, setMode] = useState<"upload" | "gdrive">("upload");
+  const [mode, setMode] = useState<"upload" | "gdrive" | "synology">("upload");
   const [faceSearchEnabled, setFaceSearchEnabled] = useState(true);
   const [driveLink, setDriveLink] = useState("");
+  const [synologyUrl, setSynologyUrl] = useState("");
   const [value, setValue] = useState("");
   const [clients, setClients] = useState<any[]>([]);
   const [clientId, setClientId] = useState<string | null>(null);
@@ -75,6 +76,10 @@ export default function NewEvent() {
       toast.show("Paste a Google Drive folder link", "error");
       return;
     }
+    if (mode === "synology" && !synologyUrl.trim()) {
+      toast.show("Paste a Synology gallery URL", "error");
+      return;
+    }
     setLoading(true);
     try {
       let res: any;
@@ -91,6 +96,19 @@ export default function NewEvent() {
         });
         const n = res?.sync?.total ?? 0;
         toast.show(`Gallery created — ${n} photo${n === 1 ? "" : "s"} found`, "success");
+      } else if (mode === "synology") {
+        res = await api.post("/events/synology", {
+          name: name.trim(),
+          date: date.trim() || undefined,
+          photographer: photographer.trim() || undefined,
+          category,
+          face_search_enabled: false,
+          gallery_url: synologyUrl.trim(),
+          value: value.trim() ? Number(value.trim()) : undefined,
+          client_id: clientId || undefined,
+        });
+        const n = res?.photo_count ?? 0;
+        toast.show(`NAS gallery created — ${n} photo${n === 1 ? "" : "s"} found`, "success");
       } else {
         res = await api.post("/events", {
           name: name.trim(),
@@ -125,6 +143,10 @@ export default function NewEvent() {
             <Ionicons name="logo-google" size={16} color={mode === "gdrive" ? colors.onBrand : colors.onSurfaceTertiary} />
             <Text style={[styles.segText, mode === "gdrive" && styles.segTextActive]}>Google Drive</Text>
           </Pressable>
+          <Pressable testID="source-synology" onPress={() => setMode("synology")} style={[styles.segBtn, mode === "synology" && styles.segBtnActive]}>
+            <Ionicons name="server-outline" size={16} color={mode === "synology" ? colors.onBrand : colors.onSurfaceTertiary} />
+            <Text style={[styles.segText, mode === "synology" && styles.segTextActive]}>Synology NAS</Text>
+          </Pressable>
         </View>
 
         {mode === "gdrive" && (
@@ -141,6 +163,25 @@ export default function NewEvent() {
               <Ionicons name="information-circle-outline" size={15} color={colors.muted} />
               <Text style={styles.hint}>
                 Share the folder as “Anyone with the link → Viewer”. Originals stay on Drive — we build a fast preview gallery with face search.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {mode === "synology" && (
+          <View style={styles.driveBox}>
+            <TextField
+              testID="synology-link-input"
+              label="Synology gallery URL"
+              value={synologyUrl}
+              onChangeText={setSynologyUrl}
+              placeholder="https://nas.example.com/photo/Divik 27 march"
+              autoCapitalize="none"
+            />
+            <View style={styles.hintRow}>
+              <Ionicons name="information-circle-outline" size={15} color={colors.muted} />
+              <Text style={styles.hint}>
+                Paste the URL of the NAS gallery folder. The app will read image files from that directory and build the gallery from it.
               </Text>
             </View>
           </View>
@@ -223,7 +264,7 @@ export default function NewEvent() {
           )}
 
           <View style={{ marginTop: spacing.xl }}>
-            <Button testID="create-event-btn" title={mode === "gdrive" ? "Create Drive gallery" : "Create event"} loading={loading} onPress={create} />
+            <Button testID="create-event-btn" title={mode === "gdrive" ? "Create Drive gallery" : mode === "synology" ? "Create NAS gallery" : "Create event"} loading={loading} onPress={create} />
           </View>
         </View>
       </KeyboardAwareScrollView>

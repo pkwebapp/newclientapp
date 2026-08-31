@@ -90,6 +90,36 @@ class EmergentObjectStorage(StorageBackend):
 _storage: StorageBackend | None = None
 
 
+class SynologyStorage(StorageBackend):
+    """Simple NAS-backed gallery source.
+
+    Synology galleries are typically served from a public HTTP/WebDAV path or a
+    reverse-proxied directory. This backend does not upload bytes to the NAS; it
+    exposes a gallery root and resolves file URLs relative to that root.
+    """
+
+    def __init__(self, base_url: str):
+        self._base_url = base_url.rstrip("/")
+
+    def init(self) -> str:
+        return self._base_url
+
+    def put_object(self, path: str, data: bytes, content_type: str) -> dict:
+        raise NotImplementedError("Synology NAS is URL-based; upload is handled by the gallery source, not object storage.")
+
+    def get_object(self, path: str) -> tuple[bytes, str]:
+        url = self._base_url + "/" + path.lstrip("/")
+        resp = requests.get(url, timeout=60)
+        resp.raise_for_status()
+        ctype = mimetypes.guess_type(path)[0] or "application/octet-stream"
+        return resp.content, ctype
+
+    def public_url(self, path: str) -> str | None:
+        if not path:
+            return None
+        return self._base_url + "/" + path.lstrip("/")
+
+
 class CloudinaryStorage(StorageBackend):
     """Cloudinary-backed blob storage.
 
@@ -179,6 +209,11 @@ def get_storage() -> StorageBackend:
                     "are required for the cloudinary storage backend"
                 )
             _storage = CloudinaryStorage(cloud_name, api_key, api_secret)
+        elif STORAGE_BACKEND == "synology":
+            base_url = os.environ.get("SYNOLOGY_BASE_URL") or os.environ.get("NAS_BASE_URL")
+            if not base_url:
+                raise RuntimeError("SYNOLOGY_BASE_URL / NAS_BASE_URL are required for the synology storage backend")
+            _storage = SynologyStorage(base_url)
         else:
             raise RuntimeError(f"Unsupported STORAGE_BACKEND: {STORAGE_BACKEND}")
     return _storage

@@ -5,11 +5,33 @@ import type { Session } from "@supabase/supabase-js";
 import { api, setAuthToken } from "@/src/api/client";
 import { LuxeLoader } from "@/src/components/ui";
 import { storage } from "@/src/utils/storage";
-import { supabase } from "@/src/lib/supabase";
+import { supabase, isSupabaseConfigured } from "@/src/lib/supabase";
 import { signOut as supabaseSignOut } from "@/src/lib/auth-actions";
 
 // Legacy opaque token — used ONLY for the super admin login.
 const LEGACY_TOKEN_KEY = "pik_legacy_session_token";
+
+// DEV/mock mode: when Supabase keys are not configured we let admin/client into
+// their dashboards with a fake session so the UI can be built/reviewed without
+// a backend auth wired up. Data calls still 401 (empty states) until the real
+// API is added. Persisted so a browser refresh keeps you signed in.
+const MOCK_ROLE_KEY = "pik_mock_role";
+const MOCK_USERS: Record<"admin" | "client", User> = {
+  admin: {
+    user_id: "mock_admin",
+    role: "admin",
+    name: "Demo Studio",
+    email: "demo@studio.test",
+    profile_complete: true,
+    studio_profile: { studio_name: "Demo Studio", contact_name: "Demo Admin" },
+  },
+  client: {
+    user_id: "mock_client",
+    role: "client",
+    name: "Demo Client",
+    email: "demo@client.test",
+  },
+};
 
 export type User = {
   user_id: string;
@@ -30,6 +52,10 @@ type AuthState = {
   loading: boolean;
   /** Superadmin sign-in helper — accepts the legacy opaque token. */
   signInWithLegacyToken: (token: string) => Promise<User | null>;
+  /** DEV/mock: true when Supabase is not configured (demo dashboards allowed). */
+  mockMode: boolean;
+  /** DEV/mock: enter an admin/client dashboard without Supabase configured. */
+  signInAsMock: (role: "admin" | "client") => Promise<User | null>;
   /** Called after any Supabase auth event to refresh local user profile. */
   refresh: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -44,6 +70,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const legacyTokenRef = useRef<string | null>(null);
+  const mockRoleRef = useRef<"admin" | "client" | null>(null);
 
   /** Compute the effective bearer token. Supabase JWT wins over legacy. */
   const applyEffectiveToken = useCallback((sb: Session | null) => {
@@ -62,12 +89,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // Bootstrap: load legacy token (for superadmin) + hydrate Supabase session
+  // Bootstrap: load legacy token (for superadmin) + hydrate Supabase session.
+  // When Supabase is NOT configured we run in DEV/mock mode: restore a saved
+  // mock admin/client session so the dashboards stay reachable for UI work.
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
         legacyTokenRef.current = (await storage.secureGet<string>(LEGACY_TOKEN_KEY, "")) || null;
+
+        if (!isSupabaseConfigured) {
+          const mockRole = (await storage.secureGet<string>(MOCK_ROLE_KEY, "")) || "";
+          if (!mounted) return;
+          if (mockRole === "admin" || mockRole === "client") {
+            mockRoleRef.current = mockRole;
+            setUser(MOCK_USERS[mockRole]);
+          } else if (legacyTokenRef.current) {
+            // Super admin legacy session still works without Supabase.
+            await fetchMe();
+          }
+          return;
+        }
+
         const { data } = await supabase.auth.getSession();
         if (!mounted) return;
         setSession(data.session);
@@ -81,28 +124,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     })();
 
-    // Auth state changes (sign-in, sign-out, token refresh, magic link)
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, next) => {
-      // Avoid awaiting async work synchronously inside the callback
-      setTimeout(async () => {
-        setSession(next);
-        applyEffectiveToken(next);
-        if (next?.access_token) {
-          // A Supabase login supersedes any stale legacy session.
-          if (legacyTokenRef.current) {
-            legacyTokenRef.current = null;
-            await storage.secureRemove(LEGACY_TOKEN_KEY);
+    // Auth state changes — only meaningful when Supabase is configured.
+    let sub: { subscription: { unsubscribe: () => void } } | null = null;
+    if (isSupabaseConfigured) {
+      const res = supabase.auth.onAuthStateChange((_event, next) => {
+        // Avoid awaiting async work synchronously inside the callback
+        setTimeout(async () => {
+          setSession(next);
+          applyEffectiveToken(next);
+          if (next?.access_token) {
+            // A Supabase login supersedes any stale legacy session.
+            if (legacyTokenRef.current) {
+              legacyTokenRef.current = null;
+              await storage.secureRemove(LEGACY_TOKEN_KEY);
+            }
+            await fetchMe();
+          } else if (!legacyTokenRef.current) {
+            setUser(null);
           }
-          await fetchMe();
-        } else if (!legacyTokenRef.current) {
-          setUser(null);
-        }
-      }, 0);
-    });
+        }, 0);
+      });
+      sub = res.data;
+    }
 
     // AppState background/foreground auto-refresh (native only)
     let appStateSub: { remove: () => void } | null = null;
-    if (Platform.OS !== "web") {
+    if (Platform.OS !== "web" && isSupabaseConfigured) {
       appStateSub = AppState.addEventListener("change", (state) => {
         if (state === "active") supabase.auth.startAutoRefresh();
         else supabase.auth.stopAutoRefresh();
@@ -111,7 +158,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       mounted = false;
-      sub.subscription.unsubscribe();
+      sub?.subscription.unsubscribe();
       appStateSub?.remove();
     };
   }, [applyEffectiveToken, fetchMe]);
@@ -133,6 +180,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return u;
   }, [fetchMe]);
 
+  const signInAsMock = useCallback(async (role: "admin" | "client"): Promise<User | null> => {
+    mockRoleRef.current = role;
+    await storage.secureSet(MOCK_ROLE_KEY, role);
+    // No backend token in mock mode — data calls will 401 and screens show
+    // empty states until the real API/Supabase is wired up.
+    setAuthToken(null);
+    setToken(null);
+    setSession(null);
+    setUser(MOCK_USERS[role]);
+    setLoading(false);
+    return MOCK_USERS[role];
+  }, []);
+
   const refresh = useCallback(async () => {
     await fetchMe();
   }, [fetchMe]);
@@ -141,7 +201,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try { await api.post("/auth/logout"); } catch {}
     try { await supabaseSignOut(); } catch {}
     legacyTokenRef.current = null;
+    mockRoleRef.current = null;
     await storage.secureRemove(LEGACY_TOKEN_KEY);
+    await storage.secureRemove(MOCK_ROLE_KEY);
     setAuthToken(null);
     setToken(null);
     setSession(null);
@@ -154,7 +216,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ user, session, token, loading, signInWithLegacyToken, refresh, signOut }}
+      value={{ user, session, token, loading, mockMode: !isSupabaseConfigured, signInWithLegacyToken, signInAsMock, refresh, signOut }}
     >
       {children}
     </AuthContext.Provider>

@@ -20,7 +20,7 @@ import { APP_DOMAIN, getAppSurface } from "@/src/navigation/host-routing";
 export default function ClientLogin() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user } = useAuth();
+  const { user, signInAsMock, mockMode } = useAuth();
   const toast = useToast();
   const { isDesktop } = useResponsive();
   const surface = getAppSurface();
@@ -127,6 +127,22 @@ export default function ClientLogin() {
           <Ionicons name="sparkles" size={28} color={colors.brand} />
         </View>
 
+        {mockMode && (
+          <View style={styles.demoBox}>
+            <Text style={styles.demoLabel}>DEMO MODE · Supabase not configured</Text>
+            <Text style={styles.demoHint}>Preview the client gallery without signing in.</Text>
+            <Button
+              testID="client-demo-btn"
+              title="Enter Client Gallery (Demo)"
+              icon="sparkles-outline"
+              onPress={async () => {
+                await signInAsMock("client");
+                router.replace("/client");
+              }}
+            />
+          </View>
+        )}
+
         {step === "identify" ? (
           <>
             <Text style={styles.title}>Find your photos</Text>
@@ -218,4 +234,7 @@ const styles = StyleSheet.create({
   line: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.borderStrong },
   or: { color: colors.muted, marginHorizontal: spacing.md, fontFamily: fonts.text, fontSize: fontSize.sm },
   toggle: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base },
+  demoBox: { backgroundColor: colors.brandTertiary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.xl },
+  demoLabel: { color: colors.brand, fontFamily: fonts.text, fontSize: 11, fontWeight: "800", letterSpacing: 1.2, marginBottom: 4 },
+  demoHint: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginBottom: spacing.md },
 });

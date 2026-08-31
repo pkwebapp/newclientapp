@@ -23,7 +23,7 @@ export default function AdminLogin() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ mode?: string }>();
-  const { user } = useAuth();
+  const { user, signInAsMock, mockMode } = useAuth();
   const toast = useToast();
   const { isDesktop } = useResponsive();
   const surface = getAppSurface();
@@ -133,6 +133,21 @@ export default function AdminLogin() {
         </View>
 
         <View style={{ marginTop: spacing.xl }}>
+          {mockMode && (
+            <View style={styles.demoBox}>
+              <Text style={styles.demoLabel}>DEMO MODE · Supabase not configured</Text>
+              <Text style={styles.demoHint}>Preview the Studio dashboard without signing in.</Text>
+              <Button
+                testID="admin-demo-btn"
+                title="Enter Studio Dashboard (Demo)"
+                icon="briefcase-outline"
+                onPress={async () => {
+                  await signInAsMock("admin");
+                  router.replace("/admin");
+                }}
+              />
+            </View>
+          )}
           {mode === "register" && (
             <TextField
               testID="admin-name-input"
@@ -242,4 +257,7 @@ const styles = StyleSheet.create({
   superadminLink: { color: "#98A2B3", fontFamily: fonts.text, fontSize: fontSize.sm },
   forgotRow: { alignSelf: "flex-end", minHeight: 44, justifyContent: "center", marginTop: -spacing.sm, marginBottom: spacing.md, paddingHorizontal: spacing.xs },
   forgotText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
+  demoBox: { backgroundColor: colors.brandTertiary, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: spacing.lg, marginBottom: spacing.xl },
+  demoLabel: { color: colors.brand, fontFamily: fonts.text, fontSize: 11, fontWeight: "800", letterSpacing: 1.2, marginBottom: 4 },
+  demoHint: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginBottom: spacing.md },
 });

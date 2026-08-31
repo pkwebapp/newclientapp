@@ -1,6 +1,7 @@
 """Lumiere Gallery — client photo gallery with face-recognition search."""
 import io
 import os
+import re
 import csv
 import uuid
 import hmac
@@ -11,6 +12,7 @@ import asyncio
 import logging
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+from urllib.parse import urljoin, urlparse
 
 import qrcode
 import httpx
@@ -156,6 +158,8 @@ def public_event(event: dict) -> dict:
     cover_url = _public_url(event.get("cover_path"))
     if event.get("source") == "gdrive" and event.get("cover_drive_id"):
         cover_url = _gdrive_proxy_url(event["cover_drive_id"], 600)
+    elif event.get("source") == "synology":
+        cover_url = event.get("cover_url") or event.get("gallery_url")
     return {
         "event_id": event["event_id"],
         "name": event["name"],
@@ -173,6 +177,7 @@ def public_event(event: dict) -> dict:
         "source": event.get("source", "upload"),
         "drive_folder_id": event.get("drive_folder_id"),
         "drive_folder_link": event.get("drive_folder_link"),
+        "gallery_url": event.get("gallery_url"),
         "last_synced_at": event.get("last_synced_at"),
         "client_id": event.get("client_id"),
         "value": event.get("value", 0) or 0,
@@ -572,6 +577,16 @@ class GDriveEventCreate(BaseModel):
     drive_link: str
 
 
+class SynologyEventCreate(BaseModel):
+    name: str
+    date: Optional[str] = None
+    category: str = "event"
+    photographer: Optional[str] = None
+    similarity_threshold: Optional[float] = None
+    face_search_enabled: bool = False
+    gallery_url: str
+
+
 async def _sync_gdrive_event(event: dict, images: Optional[list] = None) -> dict:
     """Re-scan the Drive folder: add new images, re-index changed ones, remove
     deleted ones. Only metadata + web previews are used — no originals copied."""
@@ -726,6 +741,77 @@ async def create_gdrive_event(body: GDriveEventCreate, admin: dict = Depends(req
     sync = await _sync_gdrive_event(event, images=probe)
     fresh = await get_event_or_404(event_id)
     return {**public_event(fresh), "sync": sync}
+
+
+@api_router.post("/events/synology")
+async def create_synology_event(body: SynologyEventCreate, admin: dict = Depends(require_admin_uploads)):
+    """Create a gallery backed by a Synology NAS folder or public HTTP directory."""
+    if body.category not in CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Category must be one of {CATEGORIES}")
+    gallery_url = (body.gallery_url or "").strip()
+    if not gallery_url:
+        raise HTTPException(status_code=400, detail="Paste a Synology gallery URL")
+    if not gallery_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Use a full http:// or https:// gallery URL")
+
+    try:
+        resp = httpx.get(gallery_url, timeout=20, follow_redirects=True)
+        resp.raise_for_status()
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"That gallery URL is not reachable: {exc}") from exc
+
+    text = resp.text or ""
+    image_urls = extract_gallery_image_urls(gallery_url, text)
+    if resp.headers.get("Content-Type", "").lower().startswith("image/"):
+        image_urls = [gallery_url]
+    if not image_urls:
+        raise HTTPException(status_code=400, detail="No image files were found at that gallery URL")
+
+    event_id = f"evt_{uuid.uuid4().hex[:12]}"
+    event = {
+        "event_id": event_id,
+        "name": body.name,
+        "date": body.date,
+        "category": body.category,
+        "photographer": body.photographer,
+        "similarity_threshold": body.similarity_threshold or DEFAULT_SIMILARITY_THRESHOLD,
+        "face_search_enabled": False,
+        "collection_id": None,
+        "indexing_status": "ready",
+        "photo_count": 0,
+        "cover_path": None,
+        "cover_url": image_urls[0],
+        "share_enabled": True,
+        "source": "synology",
+        "gallery_url": gallery_url,
+        "last_synced_at": now_iso(),
+        "created_by": admin["user_id"],
+        "created_at": now_iso(),
+    }
+    await db.events.insert_one(event)
+
+    photo_docs = []
+    for i, image_url in enumerate(image_urls):
+        photo_docs.append({
+            "photo_id": f"pho_{uuid.uuid4().hex[:12]}",
+            "event_id": event_id,
+            "source": "synology",
+            "gallery_url": gallery_url,
+            "url": image_url,
+            "thumb_url": image_url,
+            "filename": os.path.basename(urlparse(image_url).path) or f"image_{i + 1}.jpg",
+            "folder": "",
+            "width": None,
+            "height": None,
+            "face_count": 0,
+            "indexing_status": "manual",
+            "uploaded_at": now_iso(),
+        })
+    if photo_docs:
+        await db.photos.insert_many(photo_docs)
+    await db.events.update_one({"event_id": event_id}, {"$set": {"photo_count": len(photo_docs), "cover_url": image_urls[0]}})
+    fresh = await get_event_or_404(event_id)
+    return public_event(fresh)
 
 
 @api_router.post("/events/{event_id}/sync")
@@ -1660,6 +1746,38 @@ def _gdrive_proxy_url(file_id: str, width: int) -> str:
     return f"{base}/api/gdrive/thumb/{file_id}?w={width}"
 
 
+def build_absolute_gallery_url(base_url: str, candidate: str) -> str:
+    """Normalize NAS/gallery URLs relative to the base gallery folder."""
+    value = (candidate or "").strip()
+    if not value:
+        return ""
+    if value.startswith(("http://", "https://", "data:")):
+        return value
+    base = (base_url or "").strip()
+    if not base:
+        return value
+    try:
+        return str(urljoin(base.rstrip("/") + "/", value))
+    except Exception:
+        return value
+
+
+def extract_gallery_image_urls(base_url: str, html: str) -> list[str]:
+    """Extract image URLs from a NAS directory listing or HTML landing page."""
+    matches = re.findall(r'''(?is)<(?:img|source|a)\b[^>]+(?:src|href)=["']([^"']+)["']''', html or "")
+    urls: list[str] = []
+    for match in matches:
+        url = build_absolute_gallery_url(base_url, match)
+        if not url:
+            continue
+        lower = url.lower()
+        if not any(lower.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".avif", ".heic")):
+            continue
+        if url not in urls:
+            urls.append(url)
+    return urls
+
+
 def public_photo(p: dict) -> dict:
     if p.get("source") == "gdrive":
         fid = p.get("drive_file_id")
@@ -1674,6 +1792,23 @@ def public_photo(p: dict) -> dict:
             "thumb_url": _gdrive_proxy_url(fid, 600),
             "filename": p.get("filename"),
             "folder": p.get("folder_path") or "",
+            "width": p.get("width"),
+            "height": p.get("height"),
+            "face_count": p.get("face_count", 0),
+            "indexing_status": p.get("indexing_status"),
+        }
+    if p.get("source") == "synology":
+        url = p.get("url") or p.get("gallery_url")
+        return {
+            "photo_id": p["photo_id"],
+            "event_id": p["event_id"],
+            "source": "synology",
+            "thumb_path": None,
+            "storage_path": None,
+            "url": url,
+            "thumb_url": url,
+            "filename": p.get("filename"),
+            "folder": p.get("folder") or "",
             "width": p.get("width"),
             "height": p.get("height"),
             "face_count": p.get("face_count", 0),
