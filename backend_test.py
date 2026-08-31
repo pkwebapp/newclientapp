@@ -11,7 +11,7 @@ import requests
 from datetime import datetime
 
 # Configuration
-BACKEND_URL = "https://44463a86-6b40-4901-9582-b0d2a229f044.preview.emergentagent.com/api"
+BACKEND_URL = "https://repo-pull-dev.preview.emergentagent.com/api"
 SUPABASE_URL = "https://idnrpxtapkkryhlordlt.supabase.co"
 SUPABASE_PUBLISHABLE_KEY = "sb_publishable_K2VFAYgV_LsrT74yAm-LBw_4dZdljnP"
 SUPABASE_SECRET_KEY = os.environ["SUPABASE_KEY"]

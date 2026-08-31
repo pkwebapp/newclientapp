@@ -8,7 +8,7 @@ import sys
 import time
 
 # Backend URL from environment
-BASE_URL = "https://qa-testing-hub-13.preview.emergentagent.com/api"
+BASE_URL = "https://repo-pull-dev.preview.emergentagent.com/api"
 
 # Test credentials
 ADMIN_EMAIL = "admin@lumiere.studio"

@@ -7,7 +7,7 @@ import os
 import sys
 
 # Backend URL from environment
-BACKEND_URL = "https://qa-testing-hub-13.preview.emergentagent.com/api"
+BACKEND_URL = "https://repo-pull-dev.preview.emergentagent.com/api"
 
 # Admin credentials
 ADMIN_EMAIL = "admin@lumiere.studio"
