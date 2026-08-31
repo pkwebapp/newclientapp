@@ -2701,6 +2701,10 @@ app.include_router(superadmin_router)
 from push_service import push_router  # noqa: E402
 app.include_router(push_router)
 
+# Invoicing + Revenue module — /api/invoices, /api/invoice-settings, /api/revenue.
+from invoice_routes import invoice_router  # noqa: E402
+app.include_router(invoice_router)
+
 
 # ---------------------------------------------------------------------------
 # Notification preferences + broadcast

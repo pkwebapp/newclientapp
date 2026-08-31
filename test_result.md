@@ -11311,12 +11311,174 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Synology NAS gallery source — /events/synology create + parsing + listing"
+    - "Invoicing module (GST/HSN, PDF, shareable link) + Revenue engine (Booked vs Collected, de-dup)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
 
 backend:
+  - task: "Invoicing + Revenue engine — /api/invoices, /api/invoice-settings, /api/revenue"
+    implemented: true
+    working: true
+    file: "backend/invoice_routes.py, backend/invoice_service.py, backend/server.py"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            NEW FEATURE (admin/photographer scoped by studio_id == admin.user_id). Adds GST invoicing
+            + an auto revenue engine that shows Booked vs Collected with de-duplication.
+            AUTH (dev/preview — Supabase not configured): re-seed a legacy admin token first:
+              `python /app/backend/seed_test_admin.py`  -> use printed TEST_ADMIN_BEARER_TOKEN as
+              `Authorization: Bearer <token>` (role=admin user_qa_admin_synology). Sanity: GET /api/auth/me -> role admin.
+            ENDPOINTS TO VERIFY:
+              1) GET /api/invoice-settings -> 200; auto-creates defaults (prefix "INV-", default_gst_mode
+                 cgst_sgst, next_number_preview "INV-0001"). PUT /api/invoice-settings {invoice_prefix,
+                 gstin, state, default_gst_rate} -> 200 persists.
+              2) POST /api/invoices with body {client:{name,state,phone}, gst_mode:"cgst_sgst",
+                 line_items:[{description,hsn_sac,qty:1,rate:50000,gst_rate:18}], place_of_supply}
+                 -> 200; invoice_number "INV-0001"; total 59000 (18% GST); status "sent"; balance_due 59000.
+                 Verify GST math: subtotal 50000, cgst_total 4500, sgst_total 4500, total 59000.
+              3) IGST mode: gst_mode:"igst" -> igst_total set, cgst/sgst 0.
+              4) POST /api/invoices/{id}/payments {amount:30000,method:"upi"} -> status "partial",
+                 amount_received 30000, balance_due 29000. Add another payment to fully pay -> status "paid".
+              5) DELETE /api/invoices/{id}/payments/{payment_id} -> recalculates.
+              6) GET /api/invoices/{id}/pdf -> 200, Content-Type application/pdf, non-empty body.
+              7) POST /api/invoices/{id}/share {enabled:true} -> returns share_url .../i/<token>.
+                 GET /api/public/invoices/<token> (NO auth) -> 200 invoice json.
+                 GET /api/public/invoices/<token>/pdf (NO auth) -> 200 application/pdf.
+                 Public endpoints for a non-shared/invalid token -> 404.
+              8) GET /api/invoices (list) -> {items, count, booked, received}; filters status/client_id/from/to.
+              9) PATCH /api/invoices/{id} changing line_items/gst_mode recomputes totals. status:"cancelled" cancels.
+             10) DELETE /api/invoices/{id} -> {ok:true}.
+            REVENUE ENGINE + DE-DUP (critical):
+             11) Create a gallery: POST /api/events {name,category:"event",value:20000}. GET
+                 /api/revenue/summary?period=all -> booked includes 20000 under by_source.galleries,
+                 collected includes 20000 (uninvoiced gallery value is treated as received).
+             12) Now POST /api/invoices with event_id=<that gallery> and rate 20000 (gst_mode none).
+                 GET /api/revenue/summary?period=all again -> the gallery is SUPERSEDED: by_source.galleries
+                 count drops to 0, its value now counts ONLY via the invoice (NO double counting). booked
+                 unchanged by the relink; collected reflects the invoice's payments (unpaid => lower collected).
+             13) GET /api/revenue/summary returns fields: booked, collected, pending(=booked-collected),
+                 invoice_count, gallery_count, by_source{invoices,galleries}, monthly[12 rolling months
+                 each {month,booked,collected}], all_time{booked,collected,pending}, period/from/to.
+                 period=this_month and this_year filter by date; custom uses from/to (YYYY-MM-DD).
+             14) GET /api/revenue/records?period=all -> {items:[{type invoice|gallery, ref_id, number,
+                 title, date, booked, collected, status}], booked, collected, pending}.
+            NOTE: my own curl run already passed create/payment/pdf/share/dedup; please verify independently
+            and CLEAN UP any events/invoices you create for user_qa_admin_synology at the end (delete them)
+            so revenue totals aren't polluted. Regression: existing POST /api/events still works.
+        - working: true
+          agent: "testing"
+          comment: |
+            ✅ ALL 109 TESTS PASSED - Invoicing + Revenue Engine module fully functional.
+            
+            Comprehensive end-to-end testing completed successfully with 100% pass rate.
+            
+            TEST COVERAGE:
+            
+            A. INVOICE SETTINGS (10 tests) - ✅ ALL PASSED
+            • GET /api/invoice-settings → 200 with auto-created defaults
+              - invoice_prefix: "INV-"
+              - default_gst_mode: "cgst_sgst"
+              - next_number_preview: "INV-0001"
+            • PUT /api/invoice-settings → 200 with persisted values
+              - GSTIN: "29ABCDE1234F1Z5"
+              - State: "Karnataka"
+              - default_gst_rate: 18
+            
+            B. INVOICE CRUD + GST MATH (29 tests) - ✅ ALL PASSED
+            • POST /api/invoices (CGST/SGST mode) → 200
+              - Invoice number: INV-0001
+              - Subtotal: 50000, CGST: 4500, SGST: 4500, Tax: 9000, Total: 59000 ✓
+              - Status: "sent", Balance due: 59000 ✓
+              - Amount in words: "Rupees Fifty Nine Thousand Only" ✓
+            • POST /api/invoices (IGST mode) → 200
+              - IGST: 1800, CGST: 0, SGST: 0, Total: 11800 ✓
+            • GET /api/invoices/{id} → 200 with correct invoice data
+            • GET /api/invoices → 200 with {items, count, booked, received}
+            • GET /api/invoices?status=sent → 200 (filter working)
+            • GET /api/invoices?from=2020-01-01&to=2020-12-31 → 200 (date filter working)
+            • PATCH /api/invoices/{id} (rate change 50000→60000) → 200
+              - Total recomputed: 70800 (60000 + 18% = 10800) ✓
+              - CGST: 5400, SGST: 5400 ✓
+            • PATCH /api/invoices/{id} (status=cancelled) → 200
+              - Status: "cancelled" ✓
+            
+            C. PAYMENTS (12 tests) - ✅ ALL PASSED
+            • POST /api/invoices/{id}/payments (30000) → 200
+              - Status: "partial", Amount received: 30000, Balance due: 40800 ✓
+            • POST /api/invoices/{id}/payments (40800) → 200
+              - Status: "paid", Amount received: 70800, Balance due: 0 ✓
+            • DELETE /api/invoices/{id}/payments/{payment_id} → 200
+              - Amount received recalculated: 40800 ✓
+              - Balance due recalculated: 30000 ✓
+              - Status recalculated: "partial" ✓
+            
+            D. PDF + SHARE (14 tests) - ✅ ALL PASSED
+            • GET /api/invoices/{id}/pdf → 200
+              - Content-Type: application/pdf ✓
+              - PDF size: 97188 bytes (>1000 bytes) ✓
+            • POST /api/invoices/{id}/share (enabled=true) → 200
+              - share_url: https://.../i/CcEPAidLqxbF7mNuQwLPqw3n7NaE2g7Q ✓
+            • GET /api/public/invoices/{token} (NO auth) → 200
+              - Invoice JSON with invoice_number and total ✓
+            • GET /api/public/invoices/{token}/pdf (NO auth) → 200
+              - PDF served correctly ✓
+            • GET /api/public/invoices/deadbeef-invalid-token → 404 ✓
+            • POST /api/invoices/{id}/share (enabled=false) → 200
+            • GET /api/public/invoices/{token} (after disabled) → 404 ✓
+            
+            E. REVENUE ENGINE + DE-DUPLICATION (41 tests) - ✅ ALL PASSED (CRITICAL)
+            • POST /api/events (value=20000) → 200 with event_id
+            • GET /api/revenue/summary?period=all (before invoice) → 200
+              - All required fields present: booked, collected, pending, invoice_count, gallery_count,
+                by_source, monthly (12 months), all_time, period, from, to ✓
+              - Gallery appears: count=1, booked=20000, collected=20000 ✓
+            • POST /api/invoices (event_id linked, rate=20000, gst_mode=none) → 200
+              - Invoice total: 20000, event_id set correctly ✓
+            • GET /api/revenue/summary?period=all (after invoice) → 200
+              - 🎯 CRITICAL DE-DUPLICATION VERIFIED:
+                • Gallery SUPERSEDED: count dropped from 1 to 0 ✓
+                • NO DOUBLE COUNTING: booked stayed at 90800 (did not increase by 20000) ✓
+                • Collected DROPPED: 60800 → 40800 (unpaid invoice replaced paid gallery) ✓
+              - by_source.galleries: count=0, booked=0, collected=0 ✓
+              - by_source.invoices: count=2, booked=90800, collected=40800 ✓
+            • GET /api/revenue/records?period=all → 200
+              - Response has items, booked, collected, pending ✓
+              - Record structure verified: type, ref_id, number, title, date, booked, collected, status ✓
+            • GET /api/revenue/summary?period=this_month → 200 (period filter working)
+            • GET /api/revenue/summary?period=this_year → 200 (period filter working)
+            • GET /api/revenue/summary?period=custom&from=2020-01-01&to=2020-12-31 → 200
+              - No data in 2020 range (booked=0) ✓
+            
+            F. REGRESSION (2 tests) - ✅ ALL PASSED
+            • POST /api/events (existing gallery flow) → 200
+              - Event created successfully, existing flow unaffected ✓
+            
+            CLEANUP (1 test) - ✅ COMPLETED
+            • Deleted all test data: 3 invoices + 2 events
+            • Revenue totals not polluted for future runs ✓
+            
+            AUTHENTICATION:
+            • Admin token: st_faa06ce423414bb3882b631d6a220a01fa97728ccbdb41c88887d81b47025775
+            • User: user_qa_admin_synology, role=admin
+            • Auth verified: GET /api/auth/me → 200 with role=admin ✓
+            
+            CRITICAL FEATURES VERIFIED:
+            ✅ GST math (CGST/SGST and IGST modes) - accurate calculations
+            ✅ Invoice numbering (sequential INV-0001, INV-0002, etc.)
+            ✅ Payment tracking (partial, paid status transitions)
+            ✅ PDF generation (PyMuPDF rendering working, 97KB PDF)
+            ✅ Shareable links (public access with token, 404 for invalid/disabled)
+            ✅ Revenue de-duplication (gallery superseded by invoice, no double counting)
+            ✅ Period filters (all, this_month, this_year, custom date range)
+            ✅ Amount in words (Indian numbering system)
+            
+            NO 4XX/5XX ERRORS DETECTED. All endpoints returned correct status codes.
+            Backend is production-ready. 0 failures.
   - task: "Synology NAS gallery source (URL-based) — POST /api/events/synology + image extraction + photo listing"
     implemented: true
     working: true
@@ -11689,5 +11851,69 @@ agent_communication:
         • User: user_qa_admin_synology, role=admin
         
         The Synology NAS gallery source is production-ready. No issues found.
+        
+        Main agent: Please summarize and finish. The backend is fully tested and working.
+
+
+    - agent: "testing"
+      message: |
+        ✅ INVOICING + REVENUE ENGINE TESTING COMPLETE - ALL 109 TESTS PASSED (100% SUCCESS RATE)
+        
+        Comprehensive testing of the newly-added Invoicing + Revenue Engine module completed successfully.
+        This is a GST-compliant invoicing system with automatic revenue tracking and de-duplication.
+        
+        TEST SUMMARY BY CATEGORY:
+        • Invoice Settings: 10/10 passed (GET/PUT with auto-defaults)
+        • Invoice CRUD + GST Math: 29/29 passed (CGST/SGST, IGST, filters, PATCH)
+        • Payments: 12/12 passed (partial, paid, delete with recalculation)
+        • PDF + Share: 14/14 passed (PDF generation, shareable links, public access)
+        • Revenue Engine + De-duplication: 41/41 passed (CRITICAL de-dup verified)
+        • Regression: 2/2 passed (existing gallery flow unaffected)
+        • Cleanup: 1/1 passed (all test data deleted)
+        
+        CRITICAL FEATURES VERIFIED:
+        ✅ GST math accuracy (CGST/SGST: 50000 + 18% = 59000 with 4500+4500 split)
+        ✅ IGST mode (10000 + 18% = 11800 with 1800 IGST, 0 CGST/SGST)
+        ✅ Invoice numbering (sequential INV-0001, INV-0002, etc.)
+        ✅ Payment status transitions (sent → partial → paid)
+        ✅ Payment recalculation on delete (70800 → 40800 after removing 30000 payment)
+        ✅ PDF generation (PyMuPDF rendering, 97KB PDF with Indian formatting)
+        ✅ Shareable links (public access with token, 404 for invalid/disabled)
+        ✅ Amount in words (Indian numbering: "Rupees Fifty Nine Thousand Only")
+        
+        🎯 CRITICAL DE-DUPLICATION VERIFIED (Steps 16-19):
+        • Created gallery with value=20000
+        • Revenue summary showed: galleries.count=1, booked=20000, collected=20000
+        • Created invoice linked to gallery (event_id) with rate=20000
+        • Revenue summary after invoice:
+          - Gallery SUPERSEDED: galleries.count dropped from 1 to 0 ✓
+          - NO DOUBLE COUNTING: booked stayed at 90800 (did not increase by 20000) ✓
+          - Collected DROPPED: 60800 → 40800 (unpaid invoice replaced paid gallery) ✓
+        • De-duplication logic working perfectly: gallery value counted ONLY via invoice
+        
+        AUTHENTICATION:
+        • Used pre-seeded legacy admin token (re-generated via seed_test_admin.py)
+        • Token: st_faa06ce423414bb3882b631d6a220a01fa97728ccbdb41c88887d81b47025775
+        • User: user_qa_admin_synology, role=admin
+        
+        ALL ENDPOINTS TESTED:
+        ✅ GET /api/invoice-settings (auto-creates defaults)
+        ✅ PUT /api/invoice-settings (persists values)
+        ✅ POST /api/invoices (CGST/SGST and IGST modes)
+        ✅ GET /api/invoices (list with filters: status, date range)
+        ✅ GET /api/invoices/{id} (single invoice)
+        ✅ PATCH /api/invoices/{id} (recomputes totals, cancel)
+        ✅ DELETE /api/invoices/{id}
+        ✅ POST /api/invoices/{id}/payments (add payment)
+        ✅ DELETE /api/invoices/{id}/payments/{payment_id} (remove payment)
+        ✅ POST /api/invoices/{id}/share (enable/disable sharing)
+        ✅ GET /api/invoices/{id}/pdf (PDF generation)
+        ✅ GET /api/public/invoices/{token} (public invoice view, NO auth)
+        ✅ GET /api/public/invoices/{token}/pdf (public PDF, NO auth)
+        ✅ GET /api/revenue/summary (all, this_month, this_year, custom)
+        ✅ GET /api/revenue/records (transaction list)
+        ✅ POST /api/events (regression - existing gallery flow)
+        
+        The Invoicing + Revenue Engine is production-ready. No issues found.
         
         Main agent: Please summarize and finish. The backend is fully tested and working.
