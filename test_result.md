@@ -11311,14 +11311,40 @@ metadata:
 
 test_plan:
   current_focus:
-    - "Supabase Auth: JWT verification + local user upsert (admin & client)"
-    - "Deprecated legacy auth routes return 410"
-    - "Super Admin legacy session still works"
-    - "RBAC enforced across roles"
-    - "Studio profile onboarding still works after Supabase login"
+    - "White-screen fix: graceful Supabase client fallback (public pages must render)"
   stuck_tasks: []
   test_all: false
   test_priority: "high_first"
+
+frontend:
+  - task: "Fix white screen on fresh clone when Supabase env is not configured"
+    implemented: true
+    working: true
+    file: "frontend/src/lib/supabase.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            USER-REPORTED BUG: "white screen only" after fresh repo pull.
+            ROOT CAUSE: frontend/src/lib/supabase.ts called createClient(url ?? '', key ?? '')
+            with EMPTY strings because EXPO_PUBLIC_SUPABASE_URL / _PUBLISHABLE_KEY are not set
+            (the .env with real keys is gitignored and not in the clone). @supabase/supabase-js
+            createClient() throws synchronously "supabaseUrl is required" at import time, and since
+            AuthContext imports this module, the WHOLE JS bundle crashed -> white screen on every
+            route (including public landing/marketing pages that don't need auth).
+            FIX: added `isSupabaseConfigured` guard; when env is missing, createClient is given a
+            harmless placeholder URL/key ('https://placeholder.supabase.co') so the module loads
+            without throwing. Public pages now render; real auth calls simply fail (handled by
+            callers) instead of white-screening. When real keys are set, behavior is unchanged.
+            VERIFY (no auth needed): route "/" renders the PIK Connect landing hero ("Your event
+            photos, found in an instant.") instead of a blank white screen; the public marketing
+            pages (/how-it-works, /features, /for-photographers, /pricing) also render; the login
+            screens (/login, /admin-login, /client-login, /superadmin-login) render their forms
+            (login itself won't succeed without Supabase keys — that's expected). Test on desktop
+            (1440px) and mobile (390px). Confirm NO blank white screen anywhere.
 
 agent_communication:
     - agent: "main"
@@ -11484,3 +11510,44 @@ agent_communication:
         The Supabase Auth migration is production-ready. No issues found.
         
         Main agent: Please summarize and finish. The backend is fully tested and working.
+    
+    - agent: "testing"
+      message: |
+        ✅ WHITE-SCREEN BUG FIX VERIFIED - ALL 9 PAGES RENDER CORRECTLY
+        
+        Tested Supabase graceful degradation when env keys are intentionally missing.
+        Verified all 9 pages on BOTH desktop (1440px) and mobile (390px) viewports.
+        
+        PAGES TESTED (ALL PASS):
+        1. ✅ "/" (landing) - Shows hero "Your event photos, found in an instant." + "Find my photos" button
+        2. ✅ "/how-it-works" - Marketing content renders ("A SIMPLER WAY TO DELIVER PHOTOS")
+        3. ✅ "/features" - Marketing content renders ("THE PIK CONNECT TOOLKIT")
+        4. ✅ "/for-photographers" - Marketing content renders
+        5. ✅ "/pricing" - Pricing content renders
+        6. ✅ "/login" - Client entry screen renders with "Find my photos"
+        7. ✅ "/admin-login" - Admin login form renders (Email/Password fields visible)
+        8. ✅ "/client-login" - Client login screen renders ("Find your photos")
+        9. ✅ "/superadmin-login" - Superadmin login form renders ("Platform control")
+        
+        CONSOLE LOG ANALYSIS:
+        ✅ Expected Supabase warning present (benign, as documented):
+           "[supabase] Missing EXPO_PUBLIC_SUPABASE_URL / EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY — 
+            auth is disabled until these are configured. Public pages still render."
+        ✅ NO fatal JavaScript errors detected
+        ✅ NO white screens or blank pages detected
+        ✅ All pages render visible content on both desktop and mobile
+        
+        VERIFICATION SCREENSHOTS CAPTURED:
+        • desktop-landing.png - Hero section with "Find my photos" button
+        • mobile-landing.png - Mobile hero layout
+        • desktop-admin-login.png - Admin login form
+        • mobile-client-login.png - Client login form
+        • how-it-works-investigation.png - Marketing content visible
+        • features-investigation.png - Marketing content visible
+        
+        CONCLUSION:
+        The Supabase client graceful degradation fix is working perfectly. When Supabase env keys
+        are missing, the client creates a placeholder instead of crashing, allowing all public pages
+        to render normally. Login will not succeed (expected), but NO white screens occur.
+        
+        Main agent: The white-screen bug fix is VERIFIED and production-ready.
