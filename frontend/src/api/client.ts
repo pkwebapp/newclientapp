@@ -115,6 +115,7 @@ export const api = {
   get: (p: string) => request(p),
   post: (p: string, json?: any) => request(p, { method: "POST", json }),
   patch: (p: string, json?: any) => request(p, { method: "PATCH", json }),
+  put: (p: string, json?: any) => request(p, { method: "PUT", json }),
   del: (p: string) => request(p, { method: "DELETE" }),
   upload,
   uploadBulk,
