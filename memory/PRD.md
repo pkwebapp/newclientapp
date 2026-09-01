@@ -352,6 +352,6 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
   - Deprecated old routes → **410 Gone**.
 - Dashboard config the user still needs to do
   1. Supabase → Auth → Providers → Google: enable + paste Google client ID/secret. Redirect URL: `https://idnrpxtapkkryhlordlt.supabase.co/auth/v1/callback`.
-  2. Supabase → Auth → URL Configuration: add `https://repo-pull-dev.preview.emergentagent.com/**` and `pikconnect://auth/callback`.
+  2. Supabase → Auth → URL Configuration: add `https://client-hub-439.preview.emergentagent.com/**` and `pikconnect://auth/callback`.
   3. Supabase → Auth → Email Templates → Magic Link: uses `{{ .ConfirmationURL }}` by default (fine). For 6-digit OTP the template needs to contain `{{ .Token }}` — Supabase supports both concurrently.
   4. If you want signup to bypass email confirmation for testing, disable "Confirm email" under Auth → Providers → Email.

@@ -9,7 +9,7 @@ import sys
 from typing import Optional
 
 # Configuration
-BASE_URL = "https://4cce6077-1555-4a87-a525-8c13b345c33c.preview.emergentagent.com/api"
+BASE_URL = "https://client-hub-439.preview.emergentagent.com/api"
 ADMIN_TOKEN = "st_faa06ce423414bb3882b631d6a220a01fa97728ccbdb41c88887d81b47025775"
 
 # Test tracking

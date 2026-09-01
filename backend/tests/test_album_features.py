@@ -12,7 +12,7 @@ import uuid
 import pytest
 import requests
 
-BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://repo-pull-dev.preview.emergentagent.com").rstrip("/")
+BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL", "https://client-hub-439.preview.emergentagent.com").rstrip("/")
 API = f"{BASE_URL}/api"
 
 SEED_ADMIN_EMAIL = "admin@lumiere.studio"
