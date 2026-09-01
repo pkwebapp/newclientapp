@@ -62,12 +62,14 @@ class InvoiceIn(BaseModel):
     client_id: Optional[str] = None
     client: Optional[PartyIn] = None
     event_id: Optional[str] = None
+    doc_type: str = "invoice"  # invoice | proforma
     issue_date: Optional[str] = None
     due_date: Optional[str] = None
     place_of_supply: Optional[str] = None
     reference: Optional[str] = None
     gst_mode: str = "cgst_sgst"
     discount_amount: float = 0.0
+    advance_amount: float = 0.0
     round_off_enabled: bool = True
     line_items: list[LineItemIn] = Field(default_factory=list)
     notes: Optional[str] = None
@@ -85,6 +87,7 @@ class InvoiceUpdate(BaseModel):
     reference: Optional[str] = None
     gst_mode: Optional[str] = None
     discount_amount: Optional[float] = None
+    advance_amount: Optional[float] = None
     round_off_enabled: Optional[bool] = None
     line_items: Optional[list[LineItemIn]] = None
     notes: Optional[str] = None
@@ -160,14 +163,35 @@ async def _settings_doc(studio_id: str, admin: dict) -> dict:
         "email": sp.get("booking_email") or admin.get("email") or "",
         "logo_base64": "",
         "invoice_prefix": "INV-",
+        "proforma_prefix": "PRO-",
+        "number_format": "prefix_seq",
+        "number_padding": 4,
         "number_start": 1,
         "default_gst_rate": 18,
         "default_gst_mode": "cgst_sgst",
         "default_terms": "Thank you for your business.",
         "place_of_supply_default": sp.get("state") or "",
+        # transfer / payment details (shown on the invoice)
+        "bank_account_name": "",
+        "bank_name": "",
+        "bank_account_number": "",
+        "bank_ifsc": "",
+        "upi": "",
+        "qr_base64": "",
     }
     await db.invoice_settings.insert_one({**doc})
     return doc
+
+
+def _bank_snapshot(s: dict) -> dict:
+    return {
+        "account_name": s.get("bank_account_name") or "",
+        "bank_name": s.get("bank_name") or "",
+        "account_number": s.get("bank_account_number") or "",
+        "ifsc": s.get("bank_ifsc") or "",
+        "upi": s.get("upi") or "",
+        "qr_base64": s.get("qr_base64") or "",
+    }
 
 
 def _studio_snapshot(s: dict) -> dict:
@@ -244,6 +268,9 @@ async def _compute_and_pack(body: InvoiceIn | dict, studio_id: str, admin: dict,
         "event_id": event_id,
         "event_name": event_name,
         "studio": _studio_snapshot(settings),
+        "bank": _bank_snapshot(settings),
+        "doc_type": data.get("doc_type") or (existing or {}).get("doc_type") or "invoice",
+        "advance_amount": svc._round2(data.get("advance_amount") or (existing or {}).get("advance_amount") or 0),
         "issue_date": _clean_date(data.get("issue_date"), "issue_date") or (existing or {}).get("issue_date") or _today(),
         "due_date": _clean_date(data.get("due_date"), "due_date"),
         "place_of_supply": data.get("place_of_supply") or settings.get("place_of_supply_default") or "",
@@ -262,11 +289,24 @@ async def _compute_and_pack(body: InvoiceIn | dict, studio_id: str, admin: dict,
 @invoice_router.get("/invoice-settings")
 async def get_invoice_settings(admin: dict = Depends(require_admin)):
     settings = await _settings_doc(admin["user_id"], admin)
-    counter = await db.invoice_counters.find_one({"studio_id": admin["user_id"]}, {"_id": 0})
-    next_seq = (int(counter.get("base", settings.get("number_start", 1))) if counter else settings.get("number_start", 1))
-    if counter:
-        next_seq = int(counter.get("base", 1)) - 1 + int(counter.get("seq", 0)) + 1
-    return {**settings, "next_number_preview": f"{settings.get('invoice_prefix', 'INV-')}{next_seq:04d}"}
+    studio_id = admin["user_id"]
+    fmt_key = settings.get("number_format") or "prefix_seq"
+    padding = int(settings.get("number_padding", 4) or 4)
+    start_at = int(settings.get("number_start", 1) or 1)
+    fy = svc.financial_year(None)
+
+    inv_seq = await svc.peek_seq(studio_id, "invoice", fy, start_at)
+    pro_seq = await svc.peek_seq(studio_id, "proforma", fy, start_at)
+    inv_preview = svc.build_invoice_number(fmt_key, settings.get("invoice_prefix", "INV-") or "INV-", fy, inv_seq, padding)
+    pro_preview = svc.build_invoice_number(fmt_key, settings.get("proforma_prefix", "PRO-") or "PRO-", fy, pro_seq, padding)
+    return {
+        **settings,
+        "next_number_preview": inv_preview,
+        "next_proforma_preview": pro_preview,
+        "number_format_options": [
+            {"key": k, "label": v["label"]} for k, v in svc.INVOICE_NUMBER_FORMATS.items()
+        ],
+    }
 
 
 @invoice_router.put("/invoice-settings")
@@ -290,14 +330,25 @@ async def create_invoice(body: InvoiceIn, admin: dict = Depends(require_admin)):
     settings = await _settings_doc(studio_id, admin)
     payload = await _compute_and_pack(body, studio_id, admin)
 
-    number, seq = await svc.next_invoice_number(
-        studio_id, settings.get("invoice_prefix", "INV-"), int(settings.get("number_start", 1))
-    )
+    doc_type = "proforma" if payload.get("doc_type") == "proforma" else "invoice"
+    fy = svc.financial_year(payload["issue_date"])
+    prefix = (
+        settings.get("proforma_prefix", "PRO-") if doc_type == "proforma"
+        else settings.get("invoice_prefix", "INV-")
+    ) or ("PRO-" if doc_type == "proforma" else "INV-")
+    fmt_key = settings.get("number_format") or "prefix_seq"
+    padding = int(settings.get("number_padding", 4) or 4)
+    start_at = int(settings.get("number_start", 1) or 1)
+    seq = await svc.next_seq(studio_id, doc_type, fy, start_at)
+    number = svc.build_invoice_number(fmt_key, prefix, fy, seq, padding)
+
     now = svc.now_iso()
     doc = {
         "invoice_id": svc.new_invoice_id(),
         "invoice_number": number,
+        "doc_type": doc_type,
         "seq": seq,
+        "fy": fy,
         "status": "draft" if body.status == "draft" else "sent",
         "payments": [],
         "share_enabled": False,
@@ -306,6 +357,7 @@ async def create_invoice(body: InvoiceIn, admin: dict = Depends(require_admin)):
         "updated_at": now,
         **payload,
     }
+    doc["doc_type"] = doc_type  # ensure canonical value wins over payload
     await db.invoices.insert_one({**doc})
     return svc.public_invoice(doc)
 
@@ -344,9 +396,9 @@ async def list_invoices(
         ql = q.strip().lower()
         out = [d for d in out if ql in (d.get("invoice_number") or "").lower()
                or ql in ((d.get("client") or {}).get("name") or "").lower()]
-    # lightweight aggregate for the list header
-    booked = sum(d.get("total") or 0 for d in out if d.get("status") != "cancelled")
-    received = sum(d.get("amount_received") or 0 for d in out if d.get("status") != "cancelled")
+    # lightweight aggregate for the list header (proforma excluded — not real revenue)
+    booked = sum(d.get("total") or 0 for d in out if d.get("status") != "cancelled" and d.get("doc_type") != "proforma")
+    received = sum(d.get("amount_received") or 0 for d in out if d.get("status") != "cancelled" and d.get("doc_type") != "proforma")
     return {"items": out, "count": len(out), "booked": round(booked, 2), "received": round(received, 2)}
 
 
@@ -384,6 +436,7 @@ async def update_invoice(invoice_id: str, body: InvoiceUpdate, admin: dict = Dep
         "reference": data.get("reference", doc.get("reference")),
         "gst_mode": data.get("gst_mode", doc.get("gst_mode")),
         "discount_amount": data.get("discount_amount", doc.get("discount_amount")),
+        "advance_amount": data.get("advance_amount", doc.get("advance_amount")),
         "round_off_enabled": data.get("round_off_enabled", doc.get("round_off_enabled", True)),
         "line_items": data.get("line_items", doc.get("line_items")),
         "notes": data.get("notes", doc.get("notes")),
@@ -532,7 +585,7 @@ def _in_range(d: Optional[str], start: Optional[str], end: Optional[str]) -> boo
 
 async def compute_revenue(studio_id: str, start: Optional[str], end: Optional[str]) -> dict:
     invoices = await db.invoices.find(
-        {"studio_id": studio_id, "status": {"$ne": "cancelled"}}, {"_id": 0}
+        {"studio_id": studio_id, "status": {"$ne": "cancelled"}, "doc_type": {"$ne": "proforma"}}, {"_id": 0}
     ).to_list(5000)
     events = await db.events.find(
         {"created_by": studio_id, "status": {"$ne": "deleted"}}, {"_id": 0}

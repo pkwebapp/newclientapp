@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import {
   ActivityIndicator,
@@ -56,6 +56,8 @@ export default function InvoiceFormScreen() {
 
   const [issueDate, setIssueDate] = useState(todayIso());
   const [dueDate, setDueDate] = useState("");
+  const [docType, setDocType] = useState<"invoice" | "proforma">("invoice");
+  const [advance, setAdvance] = useState("");
   const [placeOfSupply, setPlaceOfSupply] = useState("");
   const [gstMode, setGstMode] = useState<GstMode>("cgst_sgst");
   const [defaultGst, setDefaultGst] = useState("18");
@@ -93,6 +95,8 @@ export default function InvoiceFormScreen() {
           setEventName(inv.event_name || "");
           setIssueDate(inv.issue_date || todayIso());
           setDueDate(inv.due_date || "");
+          setDocType(inv.doc_type === "proforma" ? "proforma" : "invoice");
+          setAdvance(inv.advance_amount ? String(inv.advance_amount) : "");
           setPlaceOfSupply(inv.place_of_supply || "");
           setGstMode(inv.gst_mode || "cgst_sgst");
           setDiscount(inv.discount_amount ? String(inv.discount_amount) : "");
@@ -156,11 +160,13 @@ export default function InvoiceFormScreen() {
       client_id: clientId || undefined,
       client: { name: clientName, state: clientState, gstin: clientGstin, phone: clientPhone, address: clientAddress },
       event_id: eventId || undefined,
+      doc_type: docType,
       issue_date: issueDate || undefined,
       due_date: dueDate || undefined,
       place_of_supply: placeOfSupply || undefined,
       gst_mode: gstMode,
       discount_amount: Number(discount) || 0,
+      advance_amount: Number(advance) || 0,
       line_items: validRows.map((r) => ({
         description: r.description.trim(),
         hsn_sac: r.hsn_sac.trim(),
@@ -176,7 +182,7 @@ export default function InvoiceFormScreen() {
     setSaving(true);
     try {
       const res = isEdit ? await api.patch(`/invoices/${id}`, payload) : await api.post("/invoices", payload);
-      toast.show(isEdit ? "Invoice updated" : "Invoice created", "success");
+      toast.show(isEdit ? "Saved" : (docType === "proforma" ? "Proforma created" : "Invoice created"), "success");
       router.replace(`/admin/invoice/${res.invoice_id}`);
     } catch {
       toast.show("Could not save invoice", "error");
@@ -185,10 +191,14 @@ export default function InvoiceFormScreen() {
     }
   };
 
+  const headerTitle = docType === "proforma"
+    ? (isEdit ? "Edit Proforma" : "New Proforma")
+    : (isEdit ? "Edit Invoice" : "New Invoice");
+
   if (loading) {
     return (
       <View style={styles.container}>
-        <GlassHeader title={isEdit ? "Edit Invoice" : "New Invoice"} topInset={insets.top} onBack={() => router.back()} />
+        <GlassHeader title={headerTitle} topInset={insets.top} onBack={() => router.back()} />
         <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
       </View>
     );
@@ -196,9 +206,22 @@ export default function InvoiceFormScreen() {
 
   return (
     <View style={styles.container} testID="admin-invoice-form-screen">
-      <GlassHeader title={isEdit ? "Edit Invoice" : "New Invoice"} topInset={insets.top} onBack={() => router.back()} />
+      <GlassHeader title={headerTitle} topInset={insets.top} onBack={() => router.back()} />
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 160 }} keyboardShouldPersistTaps="handled">
+          {/* Document type */}
+          <Text style={styles.fieldLabel}>Document type</Text>
+          <View style={styles.modeRow}>
+            {([{ key: "invoice", label: "Tax Invoice" }, { key: "proforma", label: "Proforma" }] as const).map((d) => (
+              <Pressable key={d.key} testID={`doctype-${d.key}`} onPress={() => setDocType(d.key)} style={[styles.modeBtn, docType === d.key && styles.modeBtnActive]}>
+                <Text style={[styles.modeLabel, docType === d.key && styles.modeLabelActive]}>{d.label}</Text>
+              </Pressable>
+            ))}
+          </View>
+          {docType === "proforma" && (
+            <Text style={styles.helper}>Proforma is an estimate — it uses a separate number series and is NOT counted in revenue.</Text>
+          )}
+
           {/* Client */}
           <Text style={styles.section}>Bill to</Text>
           <Pressable testID="pick-client" onPress={() => setClientPicker(true)} style={styles.pickerBtn}>
@@ -276,6 +299,10 @@ export default function InvoiceFormScreen() {
           </Pressable>
 
           <TextField label="Discount (₹)" value={discount} onChangeText={setDiscount} keyboardType="numeric" placeholder="0" />
+          <TextField label="Advance received (₹)" value={advance} onChangeText={setAdvance} keyboardType="numeric" placeholder="0" testID="advance-input" />
+          {!!(Number(advance) || 0) && (
+            <Text style={styles.helper}>Balance due after advance: {formatINR(Math.max(totals.total - (Number(advance) || 0), 0))}</Text>
+          )}
 
           {/* Live totals */}
           <View style={styles.totalsCard}>

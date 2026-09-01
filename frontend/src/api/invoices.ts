@@ -22,6 +22,7 @@ export type LineItem = {
 export type Invoice = {
   invoice_id: string;
   invoice_number: string;
+  doc_type?: "invoice" | "proforma";
   status: "draft" | "sent" | "partial" | "paid" | "cancelled";
   client?: any;
   studio?: any;
@@ -42,6 +43,7 @@ export type Invoice = {
   round_off: number;
   total: number;
   amount_in_words?: string;
+  advance_amount?: number;
   payments?: any[];
   amount_received: number;
   balance_due: number;

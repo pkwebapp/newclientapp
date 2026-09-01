@@ -37,6 +37,9 @@ export default function NewClient() {
   const [status, setStatus] = useState("active");
   const [tags, setTags] = useState("");
   const [notes, setNotes] = useState("");
+  const [gstin, setGstin] = useState("");
+  const [stateName, setStateName] = useState("");
+  const [address, setAddress] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([
     { name: "", role: "", phone: "", email: "", is_primary: true },
   ]);
@@ -84,6 +87,9 @@ export default function NewClient() {
         notes: notes.trim() || undefined,
         contacts: cleanContacts,
         important_dates: cleanDates,
+        gstin: gstin.trim() || undefined,
+        state: stateName.trim() || undefined,
+        address: address.trim() || undefined,
       });
       toast.show("Client created", "success");
       router.replace(`/admin/client/${res.client_id}`);
@@ -191,6 +197,17 @@ export default function NewClient() {
             />
           </View>
         ))}
+
+        {/* Billing / GST */}
+        <View style={styles.sectionHead}>
+          <Text style={styles.sectionTitle}>Billing / GST</Text>
+        </View>
+        <Text style={styles.hint}>Optional. Saved here, it auto-fills invoices for this client (GSTIN, state, address).</Text>
+        <View style={styles.card}>
+          <TextField testID="client-gstin-input" label="GSTIN" value={gstin} onChangeText={setGstin} placeholder="27AAICR2063H1ZC" autoCapitalize="characters" />
+          <TextField testID="client-state-input" label="State" value={stateName} onChangeText={setStateName} placeholder="Maharashtra" />
+          <TextField testID="client-address-input" label="Billing address" value={address} onChangeText={setAddress} placeholder="Building, Area, City, PIN" multiline />
+        </View>
 
         <View style={{ marginTop: spacing.xl }}>
           <TextField testID="client-notes-input" label="Notes" value={notes} onChangeText={setNotes} placeholder="Anything worth remembering…" multiline />

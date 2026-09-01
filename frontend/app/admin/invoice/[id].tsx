@@ -134,6 +134,12 @@ export default function InvoiceDetailScreen() {
             <Pill label={meta.label} tone={meta.tone} />
             <Text style={styles.issueDate}>{inv.issue_date}{inv.due_date ? `  ·  due ${inv.due_date}` : ""}</Text>
           </View>
+          {inv.doc_type === "proforma" && (
+            <View style={styles.proformaBadge}>
+              <Ionicons name="document-text-outline" size={13} color={colors.brand} />
+              <Text style={styles.proformaText}>PROFORMA · not counted in revenue</Text>
+            </View>
+          )}
           <Text style={styles.grandValue}>{formatINR(inv.total)}</Text>
           <View style={styles.balRow}>
             <Text style={styles.balText}>Received {formatINR(inv.amount_received)}</Text>
@@ -176,6 +182,15 @@ export default function InvoiceDetailScreen() {
             <Text style={styles.grandLabel}>Total</Text>
             <Text style={styles.grandTotal}>{formatINR(inv.total)}</Text>
           </View>
+          {!!inv.advance_amount && (
+            <>
+              <Row label="Advance received" value={`- ${formatINR(inv.advance_amount)}`} />
+              <View style={styles.sumRow}>
+                <Text style={[styles.sumLabel, { fontWeight: "700", color: colors.onSurface }]}>Balance due</Text>
+                <Text style={[styles.sumValue, { fontWeight: "700", color: inv.balance_due > 0 ? colors.onWarning : colors.onSuccess }]}>{formatINR(inv.balance_due)}</Text>
+              </View>
+            </>
+          )}
           {!!inv.amount_in_words && <Text style={styles.words}>{inv.amount_in_words}</Text>}
         </View>
 
@@ -255,6 +270,8 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
   topCard: { backgroundColor: colors.brandTertiary, borderRadius: radius.lg, padding: spacing.xl, borderWidth: 1, borderColor: colors.brand, marginBottom: spacing.lg },
   issueDate: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm },
+  proformaBadge: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: spacing.sm, alignSelf: "flex-start", backgroundColor: colors.surface, borderRadius: radius.sm, paddingHorizontal: spacing.sm, paddingVertical: 4, borderWidth: 1, borderColor: colors.brand },
+  proformaText: { color: colors.brand, fontFamily: fonts.text, fontSize: 11, fontWeight: "800", letterSpacing: 0.5 },
   grandValue: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.hero, marginTop: spacing.md },
   balRow: { flexDirection: "row", justifyContent: "space-between", marginTop: spacing.sm },
   balText: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "600" },

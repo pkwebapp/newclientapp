@@ -140,6 +140,9 @@ def public_client(doc: dict, *, contacts=None, important_dates=None,
         "pipeline_stage": doc.get("pipeline_stage") or stage_from_status(doc.get("status", "active")),
         "tags": doc.get("tags", []),
         "notes": doc.get("notes"),
+        "gstin": doc.get("gstin", ""),
+        "state": doc.get("state", ""),
+        "address": doc.get("address", ""),
         "created_at": doc.get("created_at"),
         "updated_at": doc.get("updated_at"),
     }
@@ -301,6 +304,10 @@ class ClientCreate(BaseModel):
     notes: Optional[str] = None
     contacts: list[ContactIn] = []
     important_dates: list[ImportantDateIn] = []
+    # Billing / GST (used to pre-fill invoices for this client)
+    gstin: Optional[str] = None
+    state: Optional[str] = None
+    address: Optional[str] = None
 
 
 class ClientUpdate(BaseModel):
@@ -310,6 +317,10 @@ class ClientUpdate(BaseModel):
     pipeline_stage: Optional[str] = None
     tags: Optional[list[str]] = None
     notes: Optional[str] = None
+    # Billing / GST
+    gstin: Optional[str] = None
+    state: Optional[str] = None
+    address: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +347,9 @@ async def create_client(body: ClientCreate, admin: dict = Depends(require_admin)
         "pipeline_stage": stage,
         "tags": [t.strip() for t in body.tags if t.strip()],
         "notes": body.notes,
+        "gstin": (body.gstin or "").strip(),
+        "state": (body.state or "").strip(),
+        "address": (body.address or "").strip(),
         "created_at": ts,
         "updated_at": ts,
     }
