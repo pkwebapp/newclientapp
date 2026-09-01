@@ -112,11 +112,21 @@ class SettingsIn(BaseModel):
     email: Optional[str] = None
     logo_base64: Optional[str] = None
     invoice_prefix: Optional[str] = None
+    proforma_prefix: Optional[str] = None
+    number_format: Optional[str] = None
+    number_padding: Optional[int] = None
     number_start: Optional[int] = None
     default_gst_rate: Optional[float] = None
     default_gst_mode: Optional[str] = None
     default_terms: Optional[str] = None
     place_of_supply_default: Optional[str] = None
+    # transfer / payment details
+    bank_account_name: Optional[str] = None
+    bank_name: Optional[str] = None
+    bank_account_number: Optional[str] = None
+    bank_ifsc: Optional[str] = None
+    upi: Optional[str] = None
+    qr_base64: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------

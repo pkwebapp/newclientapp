@@ -201,11 +201,13 @@ def compute_totals(line_items: list[dict], gst_mode: str, discount_amount: float
 
 
 def payment_rollup(invoice: dict) -> dict:
+    advance = _round2(invoice.get("advance_amount") or 0)
     payments = invoice.get("payments") or []
-    received = _round2(sum(float(p.get("amount") or 0) for p in payments))
+    paid = _round2(sum(float(p.get("amount") or 0) for p in payments))
+    received = _round2(advance + paid)
     total = _round2(invoice.get("total") or 0)
     balance = _round2(max(total - received, 0))
-    return {"amount_received": received, "balance_due": balance}
+    return {"advance": advance, "payments_total": paid, "amount_received": received, "balance_due": balance}
 
 
 def derive_status(invoice: dict) -> str:
@@ -223,19 +225,55 @@ def derive_status(invoice: dict) -> str:
 
 
 # ---------------------------------------------------------------------------
-# invoice numbering (per-studio sequence)
+# invoice numbering (per-studio, per-doc-type, per-financial-year series)
 # ---------------------------------------------------------------------------
-async def next_invoice_number(studio_id: str, prefix: str, start_at: int = 1) -> tuple[str, int]:
+# GST Rule 46(b): consecutive, unique per FY, <=16 chars, only A-Z 0-9 - /.
+INVOICE_NUMBER_FORMATS = {
+    "prefix_seq": {"label": "INV-0001", "template": "{prefix}{seq}"},
+    "prefix_fy_seq": {"label": "INV/25-26/0001", "template": "{prefix}/{fy}/{seq}"},
+    "fy_prefix_seq": {"label": "25-26/INV/0001", "template": "{fy}/{prefix}/{seq}"},
+    "prefix_fy_dash": {"label": "INV-25-26-0001", "template": "{prefix}-{fy}-{seq}"},
+}
+
+
+def financial_year(iso_date: str | None) -> str:
+    try:
+        d = datetime.strptime((iso_date or "")[:10], "%Y-%m-%d").date()
+    except Exception:
+        d = datetime.now(timezone.utc).date()
+    start = d.year if d.month >= 4 else d.year - 1
+    return f"{str(start)[-2:]}-{str(start + 1)[-2:]}"
+
+
+def build_invoice_number(fmt_key: str, prefix: str, fy: str, seq: int, padding: int = 4) -> str:
+    tpl = (INVOICE_NUMBER_FORMATS.get(fmt_key) or INVOICE_NUMBER_FORMATS["prefix_seq"])["template"]
+    number = (
+        tpl.replace("{prefix}", prefix or "")
+        .replace("{fy}", fy)
+        .replace("{seq}", str(seq).zfill(max(1, padding)))
+    )
+    return number[:16]
+
+
+async def next_seq(studio_id: str, doc_type: str, fy: str, start_at: int = 1) -> int:
+    key = f"{studio_id}:{doc_type}:{fy}"
     doc = await db.invoice_counters.find_one_and_update(
-        {"studio_id": studio_id},
-        {"$inc": {"seq": 1}, "$setOnInsert": {"studio_id": studio_id, "base": start_at}},
+        {"key": key},
+        {"$inc": {"seq": 1}, "$setOnInsert": {"key": key, "base": start_at}},
         upsert=True,
         return_document=True,
     )
     base = int(doc.get("base") or start_at)
-    seq = base - 1 + int(doc.get("seq") or 1)
-    number = f"{prefix}{seq:04d}"
-    return number, seq
+    return base - 1 + int(doc.get("seq") or 1)
+
+
+async def peek_seq(studio_id: str, doc_type: str, fy: str, start_at: int = 1) -> int:
+    key = f"{studio_id}:{doc_type}:{fy}"
+    doc = await db.invoice_counters.find_one({"key": key}, {"_id": 0})
+    if not doc:
+        return start_at
+    base = int(doc.get("base") or start_at)
+    return base + int(doc.get("seq") or 0)
 
 
 # ---------------------------------------------------------------------------
@@ -254,6 +292,8 @@ def public_invoice(doc: dict) -> dict:
         return {}
     out = {k: v for k, v in doc.items() if k != "_id"}
     roll = payment_rollup(doc)
+    out["advance_amount"] = roll["advance"]
+    out["payments_total"] = roll["payments_total"]
     out["amount_received"] = roll["amount_received"]
     out["balance_due"] = roll["balance_due"]
     out["status"] = derive_status(doc)
@@ -286,7 +326,7 @@ def _row_html(idx: int, r: dict, gst_mode: str) -> str:
     return (
         "<tr>"
         f"<td class='num'>{idx}</td>"
-        f"<td>{_esc(r['description'])}</td>"
+        f"<td>{_esc(r['description']).replace(chr(10), '<br/>')}</td>"
         f"<td class='num'>{_esc(r['hsn_sac'])}</td>"
         f"<td class='num'>{r['qty']:g}</td>"
         f"<td class='num'>{money(r['rate'])}</td>"
@@ -327,9 +367,29 @@ def build_invoice_html(inv: dict) -> str:
         totals_rows.append(f"<tr><td>Round Off</td><td class='num'>{money(inv.get('round_off'))}</td></tr>")
     totals_rows.append(f"<tr class='grand'><td>Total (INR)</td><td class='num'>Rs {money(inv.get('total'))}</td></tr>")
     roll = payment_rollup(inv)
+    if roll["advance"]:
+        totals_rows.append(f"<tr><td>Advance</td><td class='num'>- {money(roll['advance'])}</td></tr>")
+    if roll["payments_total"]:
+        totals_rows.append(f"<tr><td>Received</td><td class='num'>- {money(roll['payments_total'])}</td></tr>")
     if roll["amount_received"]:
-        totals_rows.append(f"<tr><td>Received</td><td class='num'>Rs {money(roll['amount_received'])}</td></tr>")
         totals_rows.append(f"<tr class='grand'><td>Balance Due</td><td class='num'>Rs {money(roll['balance_due'])}</td></tr>")
+
+    doc_title = "PROFORMA INVOICE" if inv.get("doc_type") == "proforma" else "TAX INVOICE"
+
+    bank = inv.get("bank") or {}
+    bank_rows = ""
+    for lbl, key in [("Account Name", "account_name"), ("Bank", "bank_name"), ("A/C No", "account_number"), ("IFSC", "ifsc"), ("UPI", "upi")]:
+        if bank.get(key):
+            bank_rows += f"<div><b>{lbl}:</b> {_esc(bank[key])}</div>"
+    qr = bank.get("qr_base64") or ""
+    qr_img = f"<img src='{qr}' width='96' height='96'/>" if qr.startswith("data:image") else ""
+    transfer_html = ""
+    if bank_rows or qr_img:
+        transfer_html = (
+            "<table class='transfer'><tr>"
+            f"<td><div class='lbl'>TRANSFER DETAILS</div>{bank_rows}</td>"
+            f"<td class='qr'>{qr_img}</td></tr></table>"
+        )
 
     def line(label, val):
         return f"<div><b>{_esc(label)}</b> {_esc(val)}</div>" if val else ""
@@ -348,7 +408,7 @@ def build_invoice_html(inv: dict) -> str:
           {line('Email:', studio.get('email'))}
         </td>
         <td class="title">
-          <div class="tax-invoice">TAX INVOICE</div>
+          <div class="tax-invoice">{doc_title}</div>
           <div><b># </b>{_esc(inv.get('invoice_number'))}</div>
           <div><b>Date: </b>{_esc(inv.get('issue_date'))}</div>
           {line('Due:', inv.get('due_date'))}
@@ -393,7 +453,8 @@ def build_invoice_html(inv: dict) -> str:
         </td>
       </tr></table>
 
-      <div class="sign">For {_esc(studio.get('name') or 'Studio')}<br/><br/><br/>Authorised Signatory</div>
+      {transfer_html}
+      <div class="footer">PIK Connect &middot; www.PIKconnect.com</div>
     </div>
     """
     return html
@@ -424,22 +485,35 @@ td.totals { width: 42%; }
 td.totals table td { padding: 3px 6px; border-bottom: 1px solid #f0f0f0; }
 tr.grand td { font-weight: bold; font-size: 11pt; color: #0f172a; border-top: 2px solid #E2623C; }
 .sign { margin-top: 26px; text-align: right; color: #374151; }
+table.transfer { margin-top: 18px; border-top: 1px solid #e5e7eb; }
+table.transfer td { vertical-align: top; padding: 10px 4px; }
+table.transfer td.qr { width: 110px; text-align: right; }
+.footer { margin-top: 22px; padding-top: 10px; border-top: 1px solid #e5e7eb; text-align: center; color: #9aa0a6; font-size: 8pt; letter-spacing: 0.5px; }
 """
 
 
 def render_invoice_pdf(inv: dict) -> bytes:
-    """Render the invoice dict (already computed) to PDF bytes via PyMuPDF."""
+    """Render the invoice dict (already computed) to PDF bytes via PyMuPDF.
+
+    Falls back to a version without embedded images (QR) if the HTML image
+    renderer trips on the data URI, so PDF generation never hard-fails.
+    """
     html = build_invoice_html(inv)
-    buf = io.BytesIO()
-    story = pymupdf.Story(html=html, user_css=_INVOICE_CSS)
-    writer = pymupdf.DocumentWriter(buf)
-    mediabox = pymupdf.paper_rect("a4")
-    where = mediabox + (40, 40, -40, -50)
-    more = 1
-    while more:
-        dev = writer.begin_page(mediabox)
-        more, _ = story.place(where)
-        story.draw(dev)
-        writer.end_page()
-    writer.close()
-    return buf.getvalue()
+    for candidate in (html, re.sub(r"<img[^>]*>", "", html)):
+        try:
+            buf = io.BytesIO()
+            story = pymupdf.Story(html=candidate, user_css=_INVOICE_CSS)
+            writer = pymupdf.DocumentWriter(buf)
+            mediabox = pymupdf.paper_rect("a4")
+            where = mediabox + (40, 40, -40, -50)
+            more = 1
+            while more:
+                dev = writer.begin_page(mediabox)
+                more, _ = story.place(where)
+                story.draw(dev)
+                writer.end_page()
+            writer.close()
+            return buf.getvalue()
+        except Exception:
+            continue
+    raise RuntimeError("Could not render invoice PDF")
