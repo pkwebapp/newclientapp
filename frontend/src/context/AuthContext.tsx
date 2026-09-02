@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { AppState, Platform } from "react-native";
 import type { Session } from "@supabase/supabase-js";
 
@@ -229,14 +229,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  // Memoized for the same reason the toast context is (see ui.tsx): useAuth() is read by
+  // nearly every screen, often inside an effect that reloads data on mount, so a fresh object
+  // here on every unrelated re-render of AuthProvider would retrigger those effects constantly.
+  const value = useMemo(
+    () => ({ user, session, token, loading, mockMode: !isSupabaseConfigured, signInWithLegacyToken, signInAsMock, refresh, signOut }),
+    [user, session, token, loading, signInWithLegacyToken, signInAsMock, refresh, signOut]
+  );
+
   if (loading) {
     return <LuxeLoader title="Loading PIK Connect" subtitle="Preparing your galleries…" />;
   }
 
   return (
-    <AuthContext.Provider
-      value={{ user, session, token, loading, mockMode: !isSupabaseConfigured, signInWithLegacyToken, signInAsMock, refresh, signOut }}
-    >
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );

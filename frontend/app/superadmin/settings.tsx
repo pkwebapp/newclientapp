@@ -2,7 +2,7 @@ import { useCallback, useState } from "react";
 import { useFocusEffect } from "expo-router";
 import { ActivityIndicator, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { api } from "@/src/api/client";
-import { Button } from "@/src/components/ui";
+import { Button, useToast } from "@/src/components/ui";
 import { SuperAdminHeader } from "@/src/components/SuperAdminShell";
 import { NotificationPrefs } from "@/src/components/NotificationPrefs";
 import { fonts, radius, spacing } from "@/src/theme";
@@ -12,6 +12,7 @@ export default function Settings() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const toast = useToast();
 
   const load = useCallback(async () => {
     try {
@@ -29,10 +30,18 @@ export default function Settings() {
   );
 
   const save = async () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      toast.show("Platform name can't be empty", "error");
+      return;
+    }
     setSaving(true);
     try {
-      await api.patch("/superadmin/settings", { platform_name: name });
+      await api.patch("/superadmin/settings", { platform_name: trimmed });
+      setName(trimmed);
       setMessage("Settings saved");
+    } catch {
+      toast.show("Could not save settings", "error");
     } finally {
       setSaving(false);
     }

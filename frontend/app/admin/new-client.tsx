@@ -10,6 +10,7 @@ import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import DatePickerField, { todayIso } from "@/src/components/DatePickerField";
 import { PhoneField } from "@/src/components/PhoneField";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { gstinError, emailError } from "@/src/utils/validators";
 import { goBackOr } from "@/src/navigation/back";
 
 
@@ -38,6 +39,7 @@ export default function NewClient() {
   const [tags, setTags] = useState("");
   const [notes, setNotes] = useState("");
   const [gstin, setGstin] = useState("");
+  const gstinErr = gstinError(gstin);
   const [stateName, setStateName] = useState("");
   const [address, setAddress] = useState("");
   const [contacts, setContacts] = useState<Contact[]>([
@@ -62,6 +64,16 @@ export default function NewClient() {
   const save = async () => {
     if (!name.trim()) {
       toast.show("Give this client a name (e.g. Sharma Family)", "error");
+      return;
+    }
+
+    if (gstinErr) {
+      toast.show(gstinErr, "error");
+      return;
+    }
+    const badEmail = contacts.find((c) => emailError(c.email));
+    if (badEmail) {
+      toast.show(emailError(badEmail.email) || "Enter a valid email address", "error");
       return;
     }
     const cleanContacts = contacts
@@ -164,7 +176,7 @@ export default function NewClient() {
               placeholder="Enter mobile number"
               required={false}
             />
-            <TextField testID={`contact-email-${i}`} label="Email" value={c.email} onChangeText={(v) => updateContact(i, { email: v })} placeholder="name@email.com" autoCapitalize="none" keyboardType="email-address" />
+            <TextField testID={`contact-email-${i}`} label="Email" value={c.email} onChangeText={(v) => updateContact(i, { email: v })} placeholder="name@email.com" autoCapitalize="none" keyboardType="email-address" error={emailError(c.email) || undefined} />
           </View>
         ))}
 
@@ -204,7 +216,7 @@ export default function NewClient() {
         </View>
         <Text style={styles.hint}>Optional. Saved here, it auto-fills invoices for this client (GSTIN, state, address).</Text>
         <View style={styles.card}>
-          <TextField testID="client-gstin-input" label="GSTIN" value={gstin} onChangeText={setGstin} placeholder="27AAICR2063H1ZC" autoCapitalize="characters" />
+          <TextField testID="client-gstin-input" label="GSTIN" value={gstin} onChangeText={(v) => setGstin(v.toUpperCase())} placeholder="27AAICR2063H1ZC" autoCapitalize="characters" error={gstinErr || undefined} />
           <TextField testID="client-state-input" label="State" value={stateName} onChangeText={setStateName} placeholder="Maharashtra" />
           <TextField testID="client-address-input" label="Billing address" value={address} onChangeText={setAddress} placeholder="Building, Area, City, PIN" multiline />
         </View>

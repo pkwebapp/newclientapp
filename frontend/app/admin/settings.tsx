@@ -63,7 +63,7 @@ export default function StudioSettings() {
 
   return (
     <View style={styles.container} testID="studio-settings-screen">
-      <GlassHeader title="Studio Settings" onBack={() => goBackOr(router, "/admin")} topInset={insets.top} />
+      <GlassHeader title="Settings" subtitle="Studio profile, invoicing & billing" onBack={() => goBackOr(router, "/admin")} topInset={insets.top} />
       {loading ? (
         <View style={styles.center}><ActivityIndicator color={colors.brand} /></View>
       ) : (
@@ -72,6 +72,30 @@ export default function StudioSettings() {
             <Ionicons name="information-circle-outline" size={16} color={colors.muted} />
             <Text style={styles.infoText}>These details power the client Quick Actions — Message (WhatsApp), Call, and the Google review link.</Text>
           </View>
+
+          <Text style={styles.sectionTitle}>More settings</Text>
+          <Pressable testID="open-invoice-settings" onPress={() => router.push("/admin/invoice-settings")} style={styles.tile}>
+            <View style={styles.tileIcon}>
+              <Ionicons name="receipt-outline" size={20} color={colors.brand} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.tileTitle}>Invoice & GST settings</Text>
+              <Text style={styles.tileSub}>GSTIN, bank details, numbering & invoice defaults</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+          </Pressable>
+          <Pressable testID="open-billing" onPress={() => router.push("/admin/billing")} style={styles.tile}>
+            <View style={styles.tileIcon}>
+              <Ionicons name="card-outline" size={20} color={colors.brand} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.tileTitle}>Plan & billing</Text>
+              <Text style={styles.tileSub}>Your plan, usage & upgrades</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={18} color={colors.muted} />
+          </Pressable>
+
+          <Text style={styles.sectionTitle}>Studio profile</Text>
           <TextField testID="studio-name" label="Studio name" value={name} onChangeText={setName} placeholder="PK Photography" />
           <PhoneField testID="studio-whatsapp" label="WhatsApp number" value={whatsapp} onChangeText={setWhatsapp} placeholder="Enter mobile number" required={false} />
           <PhoneField testID="studio-phone" label="Call number" value={phone} onChangeText={setPhone} placeholder="Enter mobile number" required={false} />

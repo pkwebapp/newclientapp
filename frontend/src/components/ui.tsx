@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -258,8 +258,15 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   const bg = type === "error" ? colors.error : type === "success" ? colors.success : colors.surfaceTertiary;
   const fg = type === "error" ? colors.onError : type === "success" ? colors.onSuccess : colors.onSurface;
 
+  // Memoized so the context value keeps its identity across renders unless show changes
+  // (it never does -- see the useCallback above). Without this, every render of ToastProvider
+  // (which happens on every toast.show(), since it flips local msg/type state) would hand
+  // consumers a brand-new { show } object, and any effect that lists toast as a dependency --
+  // several screens do, to reload data on mount -- would re-fire and clobber in-progress form state.
+  const value = useMemo(() => ({ show }), [show]);
+
   return (
-    <ToastCtx.Provider value={{ show }}>
+    <ToastCtx.Provider value={value}>
       {children}
       {msg && (
         <Animated.View

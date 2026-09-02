@@ -23,6 +23,7 @@ import { Button, TextField, GlassHeader, Pill, useToast } from "@/src/components
 import { PhoneField } from "@/src/components/PhoneField";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { goBackOr } from "@/src/navigation/back";
+import { emailError, phoneError } from "@/src/utils/validators";
 
 
 type Tab = "pages" | "share" | "access" | "settings";
@@ -68,6 +69,7 @@ export default function AlbumDetail() {
   // access form
   const [channel, setChannel] = useState<"email" | "phone">("email");
   const [grantValue, setGrantValue] = useState("");
+  const grantErr = grantValue.trim() ? (channel === "phone" ? phoneError(grantValue) : emailError(grantValue)) : null;
 
   // delete confirm
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -202,6 +204,10 @@ export default function AlbumDetail() {
     const value = grantValue.trim();
     if (!value) {
       toast.show(channel === "email" ? "Enter an email" : "Enter a phone number", "error");
+      return;
+    }
+    if (grantErr) {
+      toast.show(grantErr, "error");
       return;
     }
     try {
@@ -525,6 +531,7 @@ export default function AlbumDetail() {
                 placeholder="client@example.com"
                 autoCapitalize="none"
                 keyboardType="email-address"
+              error={grantErr || undefined}
               />
             )}
             <Button testID="album-add-grant-btn" title="Grant access" icon="person-add-outline" onPress={addGrant} />

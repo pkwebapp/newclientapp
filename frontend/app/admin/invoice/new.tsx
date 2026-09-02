@@ -19,6 +19,8 @@ import { Button, GlassHeader, TextField, useToast } from "@/src/components/ui";
 import { computeTotals, GstMode } from "@/src/api/invoices";
 import { formatINR } from "@/src/utils/format";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { gstinError, phoneError } from "@/src/utils/validators";
+import DatePickerField from "@/src/components/DatePickerField";
 
 type Row = { description: string; hsn_sac: string; qty: string; rate: string; gst_rate: string };
 
@@ -49,6 +51,8 @@ export default function InvoiceFormScreen() {
   const [clientState, setClientState] = useState("");
   const [clientGstin, setClientGstin] = useState("");
   const [clientPhone, setClientPhone] = useState("");
+  const clientGstinErr = gstinError(clientGstin);
+  const clientPhoneErr = phoneError(clientPhone);
   const [clientAddress, setClientAddress] = useState("");
 
   const [eventId, setEventId] = useState<string | null>(null);
@@ -127,6 +131,9 @@ export default function InvoiceFormScreen() {
     [rows, gstMode, discount]
   );
 
+  const discountTooHigh = totals.subtotal > 0 && (Number(discount) || 0) > totals.subtotal;
+  const advanceExceedsTotal = totals.total > 0 && (Number(advance) || 0) > totals.total;
+
   const updateRow = (idx: number, key: keyof Row, val: string) =>
     setRows((prev) => prev.map((r, i) => (i === idx ? { ...r, [key]: val } : r)));
   const addRow = () => setRows((prev) => [...prev, { description: "", hsn_sac: "", qty: "1", rate: "", gst_rate: defaultGst }]);
@@ -153,8 +160,13 @@ export default function InvoiceFormScreen() {
 
   const save = async () => {
     if (!clientName.trim()) return toast.show("Add a client name", "error");
-    const validRows = rows.filter((r) => r.description.trim() && (Number(r.rate) || 0) > 0);
+    if (clientGstinErr) return toast.show(clientGstinErr, "error");
+    if (clientPhoneErr) return toast.show(clientPhoneErr, "error");
+    const validRows = rows.filter((r) => r.description.trim() && (Number(r.rate) || 0) > 0 && (Number(r.qty) || 0) > 0);
     if (validRows.length === 0) return toast.show("Add at least one item with a rate", "error");
+    const badGst = validRows.find((r) => { const g = Number(r.gst_rate) || 0; return g < 0 || g > 100; });
+    if (badGst) return toast.show("GST % must be between 0 and 100", "error");
+    if (discountTooHigh) return toast.show("Discount can't exceed the subtotal", "error");
 
     const payload: any = {
       client_id: clientId || undefined,
@@ -232,10 +244,10 @@ export default function InvoiceFormScreen() {
           <TextField label="Client name" value={clientName} onChangeText={setClientName} placeholder="e.g. Divik Sharma" />
           <View style={styles.two}>
             <View style={{ flex: 1 }}><TextField label="State" value={clientState} onChangeText={setClientState} placeholder="Karnataka" /></View>
-            <View style={{ flex: 1 }}><TextField label="Client GSTIN" value={clientGstin} onChangeText={setClientGstin} autoCapitalize="characters" placeholder="optional" /></View>
+            <View style={{ flex: 1 }}><TextField label="Client GSTIN" value={clientGstin} onChangeText={(v) => setClientGstin(v.toUpperCase())} autoCapitalize="characters" placeholder="optional" error={clientGstinErr || undefined} /></View>
           </View>
           <View style={styles.two}>
-            <View style={{ flex: 1 }}><TextField label="Phone" value={clientPhone} onChangeText={setClientPhone} keyboardType="phone-pad" placeholder="optional" /></View>
+            <View style={{ flex: 1 }}><TextField label="Phone" value={clientPhone} onChangeText={setClientPhone} keyboardType="phone-pad" placeholder="optional" error={clientPhoneErr || undefined} /></View>
             <View style={{ flex: 1 }}><TextField label="Address" value={clientAddress} onChangeText={setClientAddress} placeholder="optional" /></View>
           </View>
 
@@ -255,8 +267,8 @@ export default function InvoiceFormScreen() {
           {/* Dates + GST */}
           <Text style={styles.section}>Invoice details</Text>
           <View style={styles.two}>
-            <View style={{ flex: 1 }}><TextField label="Issue date" value={issueDate} onChangeText={setIssueDate} placeholder="YYYY-MM-DD" autoCapitalize="none" /></View>
-            <View style={{ flex: 1 }}><TextField label="Due date" value={dueDate} onChangeText={setDueDate} placeholder="YYYY-MM-DD" autoCapitalize="none" /></View>
+            <View style={{ flex: 1 }}><DatePickerField label="Issue date" value={issueDate} onChange={setIssueDate} testID="issue-date-picker" /></View>
+            <View style={{ flex: 1 }}><DatePickerField label="Due date" value={dueDate} onChange={setDueDate} testID="due-date-picker" emptyLabel="No due date" /></View>
           </View>
           <Text style={styles.fieldLabel}>GST type</Text>
           <View style={styles.modeRow}>
@@ -298,8 +310,9 @@ export default function InvoiceFormScreen() {
             <Text style={styles.addText}>Add item</Text>
           </Pressable>
 
-          <TextField label="Discount (₹)" value={discount} onChangeText={setDiscount} keyboardType="numeric" placeholder="0" />
+          <TextField label="Discount (₹)" value={discount} onChangeText={setDiscount} keyboardType="numeric" placeholder="0" error={discountTooHigh ? `Can't exceed the subtotal (${formatINR(totals.subtotal)})` : undefined} />
           <TextField label="Advance received (₹)" value={advance} onChangeText={setAdvance} keyboardType="numeric" placeholder="0" testID="advance-input" />
+          {advanceExceedsTotal ? <Text style={styles.helper}>This is more than the invoice total ({formatINR(totals.total)}).</Text> : null}
           {!!(Number(advance) || 0) && (
             <Text style={styles.helper}>Balance due after advance: {formatINR(Math.max(totals.total - (Number(advance) || 0), 0))}</Text>
           )}

@@ -113,9 +113,11 @@ class SettingsIn(BaseModel):
     state: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
+    website: Optional[str] = None
     logo_base64: Optional[str] = None
     invoice_prefix: Optional[str] = None
     proforma_prefix: Optional[str] = None
+    quotation_prefix: Optional[str] = None
     number_format: Optional[str] = None
     number_padding: Optional[int] = None
     number_start: Optional[int] = None
@@ -161,9 +163,11 @@ async def _settings_doc(studio_id: str, admin: dict) -> dict:
         "state": sp.get("state") or "",
         "phone": sp.get("phone") or admin.get("phone") or "",
         "email": sp.get("booking_email") or admin.get("email") or "",
+        "website": sp.get("website") or "",
         "logo_base64": "",
         "invoice_prefix": "INV-",
         "proforma_prefix": "PRO-",
+        "quotation_prefix": "QUO-",
         "number_format": "prefix_seq",
         "number_padding": 4,
         "number_start": 1,
@@ -202,6 +206,7 @@ def _studio_snapshot(s: dict) -> dict:
         "state": s.get("state"),
         "phone": s.get("phone"),
         "email": s.get("email"),
+        "website": s.get("website") or "",
         "logo_base64": s.get("logo_base64") or "",
     }
 

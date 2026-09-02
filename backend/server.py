@@ -2770,6 +2770,9 @@ app.include_router(push_router)
 from invoice_routes import invoice_router  # noqa: E402
 app.include_router(invoice_router)
 
+from quotation_routes import quotation_router  # noqa: E402
+app.include_router(quotation_router)
+
 
 # ---------------------------------------------------------------------------
 # Notification preferences + broadcast

@@ -100,11 +100,25 @@ export const ADMIN_DRAWER_ITEMS: DrawerItem[] = [
     href: "/admin/invoices",
   },
   {
+    key: "quotations",
+    label: "Quotations",
+    sublabel: "Send premium quotes on your letterhead",
+    icon: "reader-outline",
+    href: "/admin/quotations",
+  },
+  {
     key: "invoice-settings",
     label: "Invoice Settings",
     sublabel: "GSTIN, address & invoice defaults",
     icon: "document-text-outline",
     href: "/admin/invoice-settings",
+  },
+  {
+    key: "notify",
+    label: "Send Announcement",
+    sublabel: "Notify clients about updates",
+    icon: "megaphone-outline",
+    href: "/admin/notify",
   },
   {
     key: "billing",
@@ -115,7 +129,7 @@ export const ADMIN_DRAWER_ITEMS: DrawerItem[] = [
   },
   {
     key: "settings",
-    label: "Studio Settings",
+    label: "Settings",
     sublabel: "WhatsApp, call number & review link",
     icon: "settings-outline",
     href: "/admin/settings",

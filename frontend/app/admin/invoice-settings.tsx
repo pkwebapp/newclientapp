@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { api } from "@/src/api/client";
 import { Button, GlassHeader, TextField, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
+import { gstinError, phoneError, emailError } from "@/src/utils/validators";
 
 const GST_MODES = [
   { key: "cgst_sgst", label: "CGST + SGST", hint: "Intra-state" },
@@ -46,6 +47,9 @@ export default function InvoiceSettingsScreen() {
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
   const set = (k: string, v: any) => setS((prev: any) => ({ ...prev, [k]: v }));
+  const gstinErr = gstinError(s.gstin);
+  const phoneErr = phoneError(s.phone);
+  const emailErr = emailError(s.email);
 
   const pickQr = async () => {
     try {
@@ -69,7 +73,35 @@ export default function InvoiceSettingsScreen() {
     }
   };
 
+  const pickLogo = async () => {
+    try {
+      const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!perm.granted) {
+        toast.show("Photo permission needed to add a logo", "error");
+        return;
+      }
+      const res = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        quality: 0.9,
+        base64: true,
+        allowsEditing: true,
+        aspect: [1, 1],
+      });
+      if (res.canceled || !res.assets?.[0]?.base64) return;
+      const asset = res.assets[0];
+      const mime = asset.mimeType || "image/png";
+      set("logo_base64", `data:${mime};base64,${asset.base64}`);
+      toast.show("Logo added", "success");
+    } catch {
+      toast.show("Could not load image", "error");
+    }
+  };
+
   const save = async () => {
+    if (gstinErr || phoneErr || emailErr) {
+      toast.show(gstinErr || phoneErr || emailErr || "Please fix the errors above", "error");
+      return;
+    }
     setSaving(true);
     try {
       await api.put("/invoice-settings", {
@@ -79,8 +111,11 @@ export default function InvoiceSettingsScreen() {
         state: s.state,
         phone: s.phone,
         email: s.email,
+        website: s.website,
+        logo_base64: s.logo_base64,
         invoice_prefix: s.invoice_prefix,
         proforma_prefix: s.proforma_prefix,
+        quotation_prefix: s.quotation_prefix,
         number_format: s.number_format,
         number_padding: Number(s.number_padding) || 4,
         default_gst_rate: Number(s.default_gst_rate) || 0,
@@ -114,12 +149,32 @@ export default function InvoiceSettingsScreen() {
             <Text style={styles.hint}>Next invoice number: <Text style={{ color: colors.brand, fontWeight: "700" }}>{s.next_number_preview}</Text></Text>
 
             <Text style={styles.section}>Seller (your studio)</Text>
+            <Text style={styles.hint}>These details form your letterhead on invoices &amp; quotations.</Text>
+            <Text style={styles.fieldLabel}>Logo</Text>
+            <View style={styles.qrRow}>
+              {s.logo_base64 ? (
+                <Image source={{ uri: s.logo_base64 }} style={styles.logoPreview} contentFit="contain" />
+              ) : (
+                <View style={[styles.logoPreview, styles.qrPlaceholder]}>
+                  <Text style={styles.qrPlaceholderText}>No logo</Text>
+                </View>
+              )}
+              <View style={{ flex: 1, gap: spacing.sm }}>
+                <Button testID="pick-logo" title={s.logo_base64 ? "Replace logo" : "Upload logo"} icon="image-outline" variant="secondary" onPress={pickLogo} />
+                {s.logo_base64 ? (
+                  <Pressable testID="remove-logo" onPress={() => set("logo_base64", "")} style={styles.removeQr}>
+                    <Text style={styles.removeQrText}>Remove logo</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            </View>
             <TextField label="Legal / studio name" value={s.legal_name || ""} onChangeText={(t) => set("legal_name", t)} placeholder="PK Photography" />
-            <TextField label="GSTIN" value={s.gstin || ""} onChangeText={(t) => set("gstin", t)} placeholder="29ABCDE1234F1Z5" autoCapitalize="characters" />
-            <TextField label="Address" value={s.address || ""} onChangeText={(t) => set("address", t)} placeholder="Street, City, PIN" multiline />
+            <TextField label="GSTIN" value={s.gstin || ""} onChangeText={(t) => set("gstin", t.toUpperCase())} placeholder="29ABCDE1234F1Z5" autoCapitalize="characters" error={gstinErr || undefined} />
+            <TextField label="Registered / office address" value={s.address || ""} onChangeText={(t) => set("address", t)} placeholder="Street, City, PIN" multiline />
             <TextField label="State" value={s.state || ""} onChangeText={(t) => set("state", t)} placeholder="Karnataka" />
-            <TextField label="Phone" value={s.phone || ""} onChangeText={(t) => set("phone", t)} keyboardType="phone-pad" />
-            <TextField label="Email" value={s.email || ""} onChangeText={(t) => set("email", t)} keyboardType="email-address" autoCapitalize="none" />
+            <TextField label="Phone" value={s.phone || ""} onChangeText={(t) => set("phone", t)} keyboardType="phone-pad" error={phoneErr || undefined} />
+            <TextField label="Email" value={s.email || ""} onChangeText={(t) => set("email", t)} keyboardType="email-address" autoCapitalize="none" error={emailErr || undefined} />
+            <TextField label="Website" value={s.website || ""} onChangeText={(t) => set("website", t)} keyboardType="url" autoCapitalize="none" placeholder="www.yourstudio.com" testID="settings-website" />
 
             <Text style={styles.section}>Numbering</Text>
             <Text style={styles.hint}>GST-approved serial formats (Rule 46(b): ≤16 chars, unique per financial year).</Text>
@@ -139,7 +194,10 @@ export default function InvoiceSettingsScreen() {
               <View style={{ flex: 1 }}><TextField label="Invoice prefix" value={s.invoice_prefix || ""} onChangeText={(t) => set("invoice_prefix", t)} placeholder="INV-" /></View>
               <View style={{ flex: 1 }}><TextField label="Proforma prefix" value={s.proforma_prefix || ""} onChangeText={(t) => set("proforma_prefix", t)} placeholder="PRO-" /></View>
             </View>
-            <TextField label="Number padding (digits)" value={String(s.number_padding ?? "")} onChangeText={(t) => set("number_padding", t)} keyboardType="numeric" placeholder="4" />
+            <View style={styles.two}>
+              <View style={{ flex: 1 }}><TextField label="Quotation prefix" value={s.quotation_prefix || ""} onChangeText={(t) => set("quotation_prefix", t)} placeholder="QUO-" /></View>
+              <View style={{ flex: 1 }}><TextField label="Number padding (digits)" value={String(s.number_padding ?? "")} onChangeText={(t) => set("number_padding", t)} keyboardType="numeric" placeholder="4" /></View>
+            </View>
             <Text style={styles.hint}>Tip: for formats with slashes (e.g. INV/25-26/0001), set the prefix without a trailing dash.</Text>
 
             <Text style={styles.section}>Defaults</Text>
@@ -211,6 +269,7 @@ const styles = StyleSheet.create({
   formatLabel: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "700" },
   qrRow: { flexDirection: "row", alignItems: "center", gap: spacing.lg, marginTop: spacing.sm },
   qrPreview: { width: 96, height: 96, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
+  logoPreview: { width: 96, height: 96, borderRadius: radius.md, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border },
   qrPlaceholder: { alignItems: "center", justifyContent: "center" },
   qrPlaceholderText: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm },
   removeQr: { alignItems: "center", paddingVertical: spacing.sm },

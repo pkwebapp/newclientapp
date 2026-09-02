@@ -85,7 +85,7 @@ export function PhoneField({
   }, [value, parsedCountryCode, country.code, parsed.country]);
   const local = parsedCountryCode === country.code ? parsed.local : "";
   const maxLength = Math.max(...country.lengths);
-  const showError = touched && required && local.length > 0 && !isPhoneNumberValid(`+${country.code}${local}`);
+  const showError = touched && local.length > 0 && !isPhoneNumberValid(`+${country.code}${local}`);
   const errorText = isRepeated(local)
     ? "Mobile number cannot repeat the same digit"
     : `Use ${country.lengths.join(" or ")} digits for ${country.name}`;

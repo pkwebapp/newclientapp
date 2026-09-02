@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -57,13 +57,18 @@ export function MobileShell({
   const styles = useThemedStyles(makeStyles);
   const pathname = usePathname();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  // Stable across renders (see the ToastProvider fix in ui.tsx for why this matters): a fresh
+  // { openDrawer } object on every render would give any effect keying off useNav() a reason to
+  // re-fire on every MobileShell re-render, not just when the drawer control actually changes.
+  const openDrawer = useCallback(() => setDrawerOpen(true), []);
+  const navValue = useMemo(() => ({ openDrawer }), [openDrawer]);
 
   const tabs = role === "admin" ? ADMIN_TABS : [];
   const tabRoots = role === "admin" ? ADMIN_TAB_ROOTS : [];
   const showTabBar = tabs.length > 1 && tabRoots.includes(pathname);
 
   return (
-    <NavContext.Provider value={{ openDrawer: () => setDrawerOpen(true) }}>
+    <NavContext.Provider value={navValue}>
       <View style={styles.root}>
         <View style={{ flex: 1 }}>{children}</View>
         {showTabBar ? <TabBar tabs={tabs} pathname={pathname} /> : null}

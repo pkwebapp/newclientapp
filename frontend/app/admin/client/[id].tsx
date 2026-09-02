@@ -20,6 +20,7 @@ import { Button, TextField, Pill, GlassHeader, useToast } from "@/src/components
 import { PhoneField } from "@/src/components/PhoneField";
 import DatePickerField, { todayIso } from "@/src/components/DatePickerField";
 import { formatINR } from "@/src/utils/format";
+import { emailError } from "@/src/utils/validators";
 import { colors, fonts, fontSize, radius, spacing, categoryMeta } from "@/src/theme";
 
 const statusTone = (s: string) => (s === "active" ? "success" : s === "lead" ? "gold" : "neutral");
@@ -411,9 +412,11 @@ function ContactModal({ clientId, contact, onClose, onSaved }: any) {
   const [email, setEmail] = useState(contact?.email || "");
   const [isPrimary, setIsPrimary] = useState(!!contact?.is_primary);
   const [busy, setBusy] = useState(false);
+  const emailErr = emailError(email);
 
   const save = async () => {
     if (!name.trim()) { toast.show("Contact name is required", "error"); return; }
+    if (emailErr) { toast.show(emailErr, "error"); return; }
     setBusy(true);
     const body = { name: name.trim(), role: role.trim(), phone: phone.trim(), email: email.trim(), is_primary: isPrimary };
     try {
@@ -431,7 +434,7 @@ function ContactModal({ clientId, contact, onClose, onSaved }: any) {
       <TextField label="Name" value={name} onChangeText={setName} testID="contact-modal-name" placeholder="Priya Sharma" />
       <TextField label="Role" value={role} onChangeText={setRole} placeholder="Bride / Groom / Father…" />
       <PhoneField label="Phone" value={phone} onChangeText={setPhone} placeholder="Enter mobile number" required={false} />
-      <TextField label="Email" value={email} onChangeText={setEmail} placeholder="name@email.com" autoCapitalize="none" keyboardType="email-address" />
+      <TextField label="Email" value={email} onChangeText={setEmail} placeholder="name@email.com" autoCapitalize="none" keyboardType="email-address" error={emailErr || undefined} />
       <Pressable onPress={() => setIsPrimary((v) => !v)} style={styles.primaryToggle} testID="contact-modal-primary">
         <Ionicons name={isPrimary ? "checkbox" : "square-outline"} size={20} color={isPrimary ? colors.brand : colors.muted} />
         <Text style={styles.primaryText}>Primary contact</Text>

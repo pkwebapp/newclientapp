@@ -7,24 +7,28 @@ import { useAuth } from "@/src/context/AuthContext";
 import { SIDEBAR_WIDTH, CONTENT_MAX_WIDTH } from "@/src/hooks/use-responsive";
 import { Palette, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { usePalette, useThemedStyles } from "@/src/theme-context";
+import {
+  ADMIN_TABS,
+  ADMIN_DRAWER_ITEMS,
+  ADMIN_DRAWER_FOOTER,
+  CLIENT_DRAWER_ITEMS,
+  type TabItem,
+  type DrawerItem,
+} from "@/src/navigation/nav-config";
 
-type NavItem = { label: string; icon: keyof typeof Ionicons.glyphMap; href: string };
-
-const ADMIN_NAV: NavItem[] = [
-  { label: "Home", icon: "home-outline", href: "/admin" },
-  { label: "Bookings", icon: "calendar-outline", href: "/admin/bookings" },
-  { label: "Client Galleries", icon: "images-outline", href: "/admin/galleries" },
-  { label: "Clients", icon: "people-outline", href: "/admin/clients" },
-  { label: "Albums", icon: "book-outline", href: "/admin/albums" },
-  { label: "Revenue", icon: "trending-up-outline", href: "/admin/revenue" },
-  { label: "Invoices", icon: "receipt-outline", href: "/admin/invoices" },
-];
-
-const CLIENT_NAV: NavItem[] = [
-  { label: "Your Memories", icon: "images-outline", href: "/client" },
-  { label: "My Bookings", icon: "calendar-outline", href: "/client/bookings" },
-  { label: "Explore Services", icon: "sparkles-outline", href: "/client/services" },
-];
+// The client side has no bottom tab bar (its mobile nav is drawer-only), so its
+// single "home" tab is defined here rather than in nav-config. Everything else --
+// the admin tabs, both drawers, and the footer actions -- comes from that shared
+// config, so mobile and desktop navigation can no longer drift apart the way the
+// old hardcoded copy here once did.
+const CLIENT_HOME: TabItem = {
+  key: "home",
+  label: "Your Memories",
+  icon: "images-outline",
+  activeIcon: "images",
+  href: "/client",
+  isActive: (p) => p === "/client",
+};
 
 /**
  * Desktop application shell: a persistent left sidebar with brand + navigation,
@@ -44,25 +48,13 @@ export function DesktopShell({
   const pathname = usePathname();
   const { user, signOut } = useAuth();
 
-  const nav = role === "admin" ? ADMIN_NAV : CLIENT_NAV;
-
-  const isActive = (href: string) => {
-    if (href === "/admin") return pathname === "/admin";
-    if (href === "/admin/bookings") return pathname === "/admin/bookings" || pathname.startsWith("/admin/booking");
-    if (href === "/admin/galleries") return pathname.startsWith("/admin/galleries") || pathname.startsWith("/admin/event");
-    if (href === "/admin/clients") return pathname === "/admin/clients" || pathname.startsWith("/admin/client");
-    if (href === "/admin/albums") return pathname.startsWith("/admin/album");
-    if (href === "/admin/revenue") return pathname === "/admin/revenue";
-    if (href === "/admin/invoices") return pathname.startsWith("/admin/invoice");
-    if (href === "/client/bookings") return pathname === "/client/bookings" || pathname.startsWith("/client/booking");
-    if (href === "/client/services") return pathname === "/client/services";
-    if (href === "/client") return pathname === "/client";
-    return pathname === href;
-  };
+  const primaryNav: TabItem[] = role === "admin" ? ADMIN_TABS : [CLIENT_HOME];
+  const secondaryNav: DrawerItem[] = role === "admin" ? ADMIN_DRAWER_ITEMS : CLIENT_DRAWER_ITEMS;
+  const isDrawerActive = (href?: string) => !!href && (pathname === href || pathname.startsWith(`${href}/`));
 
   return (
     <View style={styles.root}>
-      {/* ---------------- Sidebar ---------------- */}
+      {/* ------------------------- Sidebar ------------------------- */}
       <View style={styles.sidebar}>
         <View style={styles.brandRow}>
           <Ionicons name="aperture-outline" size={24} color={colors.brand} />
@@ -71,8 +63,8 @@ export function DesktopShell({
         <Text style={styles.roleTag}>{role === "admin" ? "Studio Console" : "Client Gallery"}</Text>
 
         <View style={styles.nav}>
-          {nav.map((item) => {
-            const active = isActive(item.href);
+          {primaryNav.map((item) => {
+            const active = item.isActive(pathname);
             return (
               <Pressable
                 key={item.href}
@@ -80,34 +72,47 @@ export function DesktopShell({
                 onPress={() => router.push(item.href as any)}
                 style={[styles.navItem, active && styles.navItemActive]}
               >
-                <Ionicons name={item.icon} size={20} color={active ? colors.onBrand : colors.onSurfaceTertiary} />
+                <Ionicons name={active ? item.activeIcon : item.icon} size={20} color={active ? colors.onBrand : colors.onSurfaceTertiary} />
                 <Text style={[styles.navText, active && styles.navTextActive]}>{item.label}</Text>
               </Pressable>
             );
           })}
         </View>
 
+        {secondaryNav.length > 0 ? (
+          <>
+            <Text style={styles.navSectionLabel}>Manage</Text>
+            <View style={styles.nav}>
+              {secondaryNav.map((item) => {
+                const active = isDrawerActive(item.href);
+                return (
+                  <Pressable
+                    key={item.key}
+                    testID={`nav-${item.href}`}
+                    onPress={() => item.href && router.push(item.href as any)}
+                    style={[styles.navItem, active && styles.navItemActive]}
+                  >
+                    <Ionicons name={item.icon} size={20} color={active ? colors.onBrand : colors.onSurfaceTertiary} />
+                    <Text style={[styles.navText, active && styles.navTextActive]}>{item.label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </>
+        ) : null}
+
         <View style={styles.sidebarFooter}>
-          {role === "admin" ? (
-            <Pressable testID="nav-billing" onPress={() => router.push("/admin/billing" as any)} style={[styles.navItem, isActive("/admin/billing") && styles.navItemActive]}>
-              <Ionicons name="card-outline" size={20} color={isActive("/admin/billing") ? colors.onBrand : colors.onSurfaceTertiary} />
-              <Text style={[styles.navText, isActive("/admin/billing") && styles.navTextActive]}>Plan & Billing</Text>
+          {ADMIN_DRAWER_FOOTER.map((item) => (
+            <Pressable
+              key={item.key}
+              testID={`nav-${item.key}`}
+              onPress={() => (item.action === "signout" ? signOut() : router.push("/"))}
+              style={styles.navItem}
+            >
+              <Ionicons name={item.icon} size={20} color={item.tone === "danger" ? colors.error : colors.onSurfaceTertiary} />
+              <Text style={[styles.navText, item.tone === "danger" && { color: colors.error }]}>{item.label}</Text>
             </Pressable>
-          ) : null}
-          {role === "admin" ? (
-            <Pressable testID="nav-settings" onPress={() => router.push("/admin/settings" as any)} style={[styles.navItem, isActive("/admin/settings") && styles.navItemActive]}>
-              <Ionicons name="settings-outline" size={20} color={isActive("/admin/settings") ? colors.onBrand : colors.onSurfaceTertiary} />
-              <Text style={[styles.navText, isActive("/admin/settings") && styles.navTextActive]}>Settings</Text>
-            </Pressable>
-          ) : null}
-          <Pressable testID="nav-home" onPress={() => router.push("/")} style={styles.navItem}>
-            <Ionicons name="home-outline" size={20} color={colors.onSurfaceTertiary} />
-            <Text style={styles.navText}>Home</Text>
-          </Pressable>
-          <Pressable testID="nav-signout" onPress={signOut} style={styles.navItem}>
-            <Ionicons name="log-out-outline" size={20} color={colors.onSurfaceTertiary} />
-            <Text style={styles.navText}>Sign out</Text>
-          </Pressable>
+          ))}
           {user?.email ? (
             <Text style={styles.userLine} numberOfLines={1}>{user.email}</Text>
           ) : user?.name ? (
@@ -116,7 +121,7 @@ export function DesktopShell({
         </View>
       </View>
 
-      {/* ---------------- Content ---------------- */}
+      {/* --------------------------- Content --------------------------- */}
       <View style={styles.contentArea}>
         <View style={styles.contentColumn}>{children}</View>
       </View>
@@ -138,6 +143,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   brand: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, letterSpacing: 3, fontWeight: "700" },
   roleTag: { color: colors.brand, fontFamily: fonts.display, fontSize: fontSize.sm, marginTop: spacing.xs, marginLeft: 34, letterSpacing: 0.5 },
   nav: { marginTop: spacing["2xl"], gap: spacing.xs },
+  navSectionLabel: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.sm, letterSpacing: 1, textTransform: "uppercase", marginTop: spacing.xl, marginBottom: spacing.xs, marginLeft: spacing.md },
   navItem: {
     flexDirection: "row",
     alignItems: "center",
@@ -149,7 +155,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
   navItemActive: { backgroundColor: colors.brand },
   navText: { color: colors.onSurfaceTertiary, fontFamily: fonts.text, fontSize: fontSize.lg },
   navTextActive: { color: colors.onBrand, fontWeight: "600" },
-  sidebarFooter: { marginTop: "auto", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.border, paddingTop: spacing.md, gap: spacing.xs },
+  sidebarFooter: { marginTop: "auto", borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: colors.borderStrong, paddingTop: spacing.md, gap: spacing.xs },
   userLine: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, paddingHorizontal: spacing.md, marginTop: spacing.sm },
   contentArea: { flex: 1, flexDirection: "row", justifyContent: "center", backgroundColor: colors.surface },
   contentColumn: { flex: 1, maxWidth: CONTENT_MAX_WIDTH, width: "100%" },

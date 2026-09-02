@@ -17,6 +17,7 @@ import { api, ApiError } from "@/src/api/client";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { goBackOr } from "@/src/navigation/back";
+import { urlError } from "@/src/utils/validators";
 
 type Audience = "gallery" | "all_clients" | "specific";
 
@@ -50,6 +51,7 @@ export default function NotifyBroadcast() {
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [actionUrl, setActionUrl] = useState("");
+  const urlErr = urlError(actionUrl);
 
   const [galleryCount, setGalleryCount] = useState<number | null>(null);
   const [allClientsCount, setAllClientsCount] = useState<number | null>(null);
@@ -121,6 +123,7 @@ export default function NotifyBroadcast() {
   const canSend =
     title.trim().length > 0 &&
     body.trim().length > 0 &&
+    !urlErr &&
     !sending &&
     ((audience === "gallery" && !!eventId) ||
       audience === "all_clients" ||
@@ -304,6 +307,7 @@ export default function NotifyBroadcast() {
             onChangeText={setActionUrl}
             placeholder="/client/event/… or https://…"
             autoCapitalize="none"
+          error={urlErr || undefined}
           />
 
           {/* Preview card */}
