@@ -10,7 +10,7 @@ import requests
 from PIL import Image, ImageDraw
 
 # Base URL from frontend/.env
-BASE_URL = "https://2ade7a95-2c7d-43fc-a0a5-6bedf6375942.preview.emergentagent.com/api"
+BASE_URL = "https://webapp-client.preview.emergentagent.com/api"
 
 # Test counters
 tests_passed = 0

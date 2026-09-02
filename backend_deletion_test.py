@@ -40,7 +40,7 @@ from io import BytesIO
 from PIL import Image
 
 # Backend URL from frontend/.env
-BACKEND_URL = "https://client-hub-439.preview.emergentagent.com/api"
+BACKEND_URL = "https://webapp-client.preview.emergentagent.com/api"
 
 # Test credentials from /app/memory/test_credentials.md
 ADMIN_EMAIL = "admin@lumiere.studio"
