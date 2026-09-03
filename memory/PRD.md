@@ -355,3 +355,15 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
   2. Supabase → Auth → URL Configuration: add `https://webapp-client.preview.emergentagent.com/**` and `pikconnect://auth/callback`.
   3. Supabase → Auth → Email Templates → Magic Link: uses `{{ .ConfirmationURL }}` by default (fine). For 6-digit OTP the template needs to contain `{{ .Token }}` — Supabase supports both concurrently.
   4. If you want signup to bypass email confirmation for testing, disable "Confirm email" under Auth → Providers → Email.
+
+## Iteration (2026-09) — Expo SDK 54 → 57 upgrade
+- Upgraded Expo SDK 54 → **57** via `npx expo install expo@^57.0.0 --fix`.
+- Key bumps: expo 57.0.21, react-native 0.86.3, react/react-dom 19.2.3, reanimated 4.5.1,
+  worklets 0.10.1, gesture-handler 2.32, screens 4.26, safe-area 5.7, react-native-web 0.21.2,
+  webview 13.16.1, keyboard-controller 1.21.9, typescript 6.0.3. (expo>=57.0.17 avoids the early-57
+  Hermes/reanimated regression.)
+- Removed now-invalid app.json fields for SDK 57: `newArchEnabled` and `android.edgeToEdgeEnabled`
+  (New Arch + edge-to-edge are defaults now). expo-doctor: 20/20 after fix.
+- Verified WEB view (user's current priority): landing, marketing, studio sign-in, and full demo
+  dashboard render with no runtime console errors. Backups at /tmp/package.json.sdk54.bak.
+- Native/Expo Go pipeline not verified (out of scope — web-only focus).
