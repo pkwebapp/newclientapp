@@ -153,8 +153,6 @@ def build_quotation_html(q: dict) -> str:
     valid_line = f"<div><b>Valid Until: </b>{_esc(q.get('valid_until'))}</div>" if q.get("valid_until") else ""
     status = (q.get("status") or "draft").replace("_", " ").upper()
 
-    website = studio.get("website") or "www.pikconnect.com"
-
     html = f"""
     <div class="doc">
       <table class="lh"><tr>
@@ -197,7 +195,7 @@ def build_quotation_html(q: dict) -> str:
       {('<div class="block"><div class="lbl">TERMS &amp; CONDITIONS</div><div class="btext">' + _nl2br(q.get('terms')) + '</div></div>') if q.get('terms') else ''}
       {('<div class="block"><div class="lbl">NOTES</div><div class="btext">' + _nl2br(q.get('notes')) + '</div></div>') if q.get('notes') else ''}
 
-      <div class="footer">Powered by {_esc(website) if website and website != 'www.pikconnect.com' else 'www.pikconnect.com'} &middot; www.pikconnect.com</div>
+      <div class="footer">Powered by www.pikconnect.com</div>
     </div>
     """
     return html

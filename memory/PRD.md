@@ -367,3 +367,14 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
 - Verified WEB view (user's current priority): landing, marketing, studio sign-in, and full demo
   dashboard render with no runtime console errors. Backups at /tmp/package.json.sdk54.bak.
 - Native/Expo Go pipeline not verified (out of scope — web-only focus).
+
+## Feature: Quotations on studio letterhead (June 2026) — COMPLETE & TESTED (15/15 backend + UI)
+- Backend `quotation_routes.py` / `quotation_service.py`: CRUD, FY numbering (QUO- prefix from Invoice Settings),
+  optional pricing table (GST none/CGST+SGST/IGST, discount, amount in words), premium PDF (PyMuPDF Story) with
+  letterhead (logo, name, address, phone, email, website, GSTIN) + "Powered by www.pikconnect.com" footer,
+  share link `/q/{token}`, public view/PDF, client respond (accept | revision + note → admin in-app notification),
+  convert → Tax Invoice or Proforma Invoice (draft). PATCH keeps existing client when payload omits client.
+- Frontend: `/admin/quotations` list (sidebar entry), `/admin/quotation/new` (create/edit), `/admin/quotation/[id]`
+  detail (PDF, share link copy, convert modal Tax/Proforma, delete confirm, client response card),
+  public `/q/[token]` light letterhead page (Accept / Request changes with note, Download PDF).
+- Invoice Settings has Website + Quotation prefix fields. Tests: /app/backend/tests/test_quotations.py.

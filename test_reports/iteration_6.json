@@ -1,0 +1,56 @@
+{
+  "summary": "Quotations feature verified end-to-end (backend + admin UI + public /q). Backend pytest 14/15 pass (15/15 after client bug is fixed). Admin flow at 390x844: /admin-login demo -> /admin/quotations (list, sidebar entry present in nav-config), new-quotation-btn -> /admin/quotation/new (subject, body, toggle-pricing, add-item x2 with rates 30000+10000, gst cgst_sgst) -> save-quotation redirected to /admin/quotation/quo_aee2685d751f as QUO-0007 (Estimated ₹47,200 with CGST/SGST ₹3,600 each). share-quotation created share_url in share-url-box. convert-quotation -> convert-modal -> convert-invoice navigates to /admin/invoice/inv_c60721b1aeec; on return, view-converted-invoice card visible and convert-quotation hidden as spec'd. Public /q/{token} (light letterhead) shows Studio name, contact line, orange rule, 'QUOTATION' title, status badge (SENT -> REVISION REQUESTED), 'PREPARED FOR UI TEST Client', subject 'UI TEST Wedding Package', body, pricing table with GST rows, 'Estimated Total ₹47,200', amount-in-words, TERMS & CONDITIONS, accept-quotation + request-revision buttons, revision-box with revision-note + send-revision, download-quotation-pdf, and 'Powered by www.pikconnect.com' footer. After send-revision, public-response-box appears and accept/revision buttons hide. Admin /notifications receives 'Quotation changes requested' and 'Quotation accepted' entries. Public GET with unknown token returns 404, invalid action returns 400. Admin+public PDF endpoints return application/pdf (%PDF header, >1KB). Convert to proforma also works.",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "PATCH /api/quotations/{id}",
+        "issue": "PATCH without a `client` (or `client_id`) field OVERWRITES the persisted client snapshot with the default placeholder `{name: 'Client'}`. Reproduced: create quote with client.name='REPRO_CLIENT' -> PATCH {\"subject\":\"x\"} -> GET returns client.name='Client'. Root cause: quotation_routes._compute_and_pack() unconditionally calls inv_routes._client_snapshot(studio_id, data.get('client_id'), client_override) even on partial updates. It must fall back to `existing['client']` / `existing['client_id']` when both are absent from the update payload. Same latent risk exists if any admin edits the quotation via the /admin/quotation/new?id= form and the payload omits client_id when a snapshot client (no client_id) was created inline.",
+        "priority": "HIGH"
+      }
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "app/admin/quotation/new.tsx",
+        "issue": "'Client name' TextField (line 209) has no testID. Automation had to fall back to placeholder 'e.g. Sharma Wedding'. Add testID='quote-client-name' for reliable testing.",
+        "testID": "missing: quote-client-name",
+        "priority": "LOW"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_quotations.py",
+    "/app/test_reports/pytest/quotations.xml"
+  ],
+  "action_items": [
+    "FIX HIGH: quotation_routes._compute_and_pack must preserve existing['client_id'] & existing['client'] when the PATCH payload omits both — otherwise every subject/body/terms edit silently resets the client to 'Client'.",
+    "Add testID='quote-client-name' to the Client-name TextField in /app/frontend/app/admin/quotation/new.tsx (line ~209).",
+    "Optionally: after the fix, re-run `pytest backend/tests/test_quotations.py -n 0` — expected 15/15.",
+    "Consider also preserving `event_id` in _compute_and_pack (currently already read from existing, this is OK — verified)."
+  ],
+  "critical_code_review_comments": [
+    "quotation_service.render_quotation_pdf uses a robust fallback (retry after stripping <img>) which is nice, but silently swallows the underlying Exception — log the failure to help future debugging.",
+    "quotation_service.build_quotation_html footer: `Powered by {website} · www.pikconnect.com` prints the studio website twice when a studio has configured a different website; the template already handles the default case, but on a studio with website set the copy reads e.g. 'Powered by www.mystudio.com · www.pikconnect.com'. Consider dropping the leading site when it isn't pikconnect.com or simply always render 'Powered by www.pikconnect.com'.",
+    "quotation_routes.convert_quotation: when converting a no-pricing quotation the seeded invoice line-item has rate=0 which will produce a ₹0 draft invoice. Acceptable as it's a *draft*, but the admin should be warned in the UI convert modal.",
+    "public_quotation_respond does not clamp `note` length — a malicious client could send arbitrarily large notes. Consider max_length on RespondIn.note (Pydantic Field(max_length=2000)).",
+    "quotation_routes list_quotations returns up to 2000 docs and has no pagination — fine for now but note for later."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_quotations.py (new)",
+    "/app/test_reports/pytest/quotations.xml (new)"
+  ],
+  "success_rate": {
+    "backend": "14/15 (93%) — 1 real bug (PATCH wipes client snapshot). All other CRUD, share, PDF, public view, public PDF, invalid-action 400, unknown-token 404, revision+accept respond, notifications, convert-invoice, convert-proforma, delete->404 all pass.",
+    "frontend": "100% of tested flows (list, new, save, detail, share-url-box, convert modal + invoice nav, converted-invoice card, public letterhead, accept/revision, download PDF button, response box)."
+  },
+  "seed_data_creation": "Created quotations QUO-0002..QUO-0007 (test_quotations.py fixtures + one UI-created 'UI TEST Wedding Package'). One associated invoice (inv_c60721b1aeec) and one proforma were created via convert. The UI-created quotation is currently in 'revision_requested' status. Notifications 'Quotation accepted' and 'Quotation changes requested' were emitted for demo_studio_admin. Fixtures delete their own throwaway records; the UI-created ones are intentionally left for the main agent to inspect.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Reliable testIDs on the admin side: admin-quotations-screen, new-quotation-btn, admin-quotation-form-screen, quote-subject, quote-body, toggle-pricing, quote-gst-(none|cgst_sgst|igst), item-desc-N, item-rate-N, add-item, remove-item-N, issue-date-picker, valid-until-picker, save-quotation, pick-client, admin-quotation-detail-screen, download-quotation-pdf, share-quotation, share-url-box, convert-quotation, convert-modal, convert-invoice, convert-proforma, view-converted-invoice, edit-quotation, delete-quotation, delete-modal, confirm-delete-quotation, client-response-card. Public: public-quotation-card, accept-quotation, request-revision, revision-box, revision-note, send-revision, public-response-box, download-quotation-pdf. NOTE: Client-name TextField on the new-quotation form has NO testID — use placeholder='e.g. Sharma Wedding' until testID is added. Backend BASE_URL used: EXPO_PUBLIC_BACKEND_URL from frontend/.env (https://webapp-client.preview.emergentagent.com). Demo admin token via POST /api/auth/dev/mock-login {\"role\":\"admin\"}.",
+  "rca_of_issue": "BUG: PATCH /api/quotations/{id} wipes client. RCA: In /app/backend/quotation_routes.py::_compute_and_pack, the block:\n    client_id, client = await inv_routes._client_snapshot(studio_id, data.get('client_id'), client_override)\nis executed unconditionally on every partial update. When the frontend sends {\"subject\":\"…\"} only, `data.get('client_id')` and `client_override` are both None, so _client_snapshot returns its 'no info' default (name='Client', everything else None), which is then persisted via the $set update. Reproduction (curl): create with client.name='REPRO_CLIENT' -> PATCH {\"subject\":\"patched\"} -> GET returns client.name='Client'. Mitigation: in _compute_and_pack, only recompute the client when the PATCH explicitly provides client_id or client; otherwise reuse existing['client_id']/existing['client']. Pseudocode:\n    if data.get('client') is not None or data.get('client_id') is not None:\n        client_id, client = await inv_routes._client_snapshot(...)\n    else:\n        client_id = (existing or {}).get('client_id')\n        client = (existing or {}).get('client') or {}"
+}

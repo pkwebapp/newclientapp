@@ -206,7 +206,7 @@ export default function QuotationFormScreen() {
             <Text style={styles.pickerText}>{clientId ? clientName : "Choose an existing client"}</Text>
             <Ionicons name="chevron-down" size={16} color={colors.muted} />
           </Pressable>
-          <TextField label="Client name" value={clientName} onChangeText={setClientName} placeholder="e.g. Sharma Wedding" />
+          <TextField label="Client name" value={clientName} onChangeText={setClientName} placeholder="e.g. Sharma Wedding" testID="quote-client-name" />
           <View style={styles.two}>
             <View style={{ flex: 1 }}><TextField label="Phone" value={clientPhone} onChangeText={setClientPhone} keyboardType="phone-pad" placeholder="optional" error={clientPhoneErr || undefined} /></View>
             <View style={{ flex: 1 }}><TextField label="Email" value={clientEmail} onChangeText={setClientEmail} keyboardType="email-address" autoCapitalize="none" placeholder="optional" /></View>

@@ -40,6 +40,7 @@ export type Quotation = {
   notes?: string | null;
   client_response?: { action: string; note?: string; at?: string } | null;
   converted_invoice_id?: string | null;
+  converted_target?: "invoice" | "proforma" | null;
   share_enabled?: boolean;
   share_url?: string;
 };

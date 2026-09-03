@@ -30,6 +30,7 @@ from auth_utils import require_admin
 import invoice_service as svc
 import quotation_service as qsvc
 import invoice_routes as inv_routes
+from notifications_service import notify
 
 quotation_router = APIRouter(prefix="/api")
 
@@ -84,7 +85,7 @@ class ShareIn(BaseModel):
 
 class RespondIn(BaseModel):
     action: str  # accept | revision
-    note: Optional[str] = None
+    note: Optional[str] = Field(default=None, max_length=2000)
 
 
 class ConvertIn(BaseModel):
@@ -118,9 +119,12 @@ async def _compute_and_pack(data: dict, studio_id: str, admin: dict, existing: O
     client_override = data.get("client")
     if client_override is not None and not hasattr(client_override, "model_dump"):
         client_override = inv_routes.PartyIn(**client_override)
-    client_id, client = await inv_routes._client_snapshot(
-        studio_id, data.get("client_id"), client_override
-    )
+    if existing and client_override is None and not data.get("client_id"):
+        client_id, client = existing.get("client_id"), existing.get("client") or {}
+    else:
+        client_id, client = await inv_routes._client_snapshot(
+            studio_id, data.get("client_id"), client_override
+        )
     event_id = data.get("event_id") or (existing or {}).get("event_id")
 
     show_pricing = data.get("show_pricing")
@@ -347,4 +351,20 @@ async def public_quotation_respond(token: str, body: RespondIn):
         {"share_token": token},
         {"$set": {"status": status, "client_response": response, "updated_at": svc.now_iso()}},
     )
+    client_name = (doc.get("client") or {}).get("name") or "A client"
+    number = doc.get("quotation_number") or "quotation"
+    if action == "accept":
+        await notify(
+            user_id=doc["studio_id"], type_key="quotation_accepted",
+            title="Quotation accepted", body=f"{client_name} accepted {number}.",
+            action_url=f"/admin/quotation/{doc['quotation_id']}",
+        )
+    else:
+        note = response["note"]
+        await notify(
+            user_id=doc["studio_id"], type_key="quotation_changes",
+            title="Quotation changes requested",
+            body=f"{client_name} asked for changes to {number}." + (f" “{note}”" if note else ""),
+            action_url=f"/admin/quotation/{doc['quotation_id']}",
+        )
     return {"status": status, "client_response": response}
