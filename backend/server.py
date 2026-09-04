@@ -280,12 +280,31 @@ class CompleteSetupBody(BaseModel):
     password: Optional[str] = Field(default=None, max_length=200)
 
 
+class PhoneCheckBody(BaseModel):
+    phone: str
+
+
 def _needs_client_setup(u: dict) -> bool:
     """A client should be prompted to set their name + password when they have
     no password yet or are still using the auto-generated "User 1234" name."""
     name = (u.get("name") or "").strip()
     auto_name = (name == "") or name.startswith("User ")
     return (not bool(u.get("has_password"))) or auto_name
+
+
+@api_router.post("/auth/phone/check")
+async def phone_check(body: PhoneCheckBody):
+    """Tell the login screen how to proceed for a number: existing users who
+    have a password sign in with it; everyone else (new / no password) uses OTP."""
+    phone = _phone_or_400(body.phone)
+    user = await db.users.find_one(
+        {"phone": {"$in": phone_variants(phone)}},
+        {"_id": 0, "has_password": 1, "name": 1},
+    )
+    return {
+        "exists": bool(user),
+        "has_password": bool(user and user.get("has_password")),
+    }
 
 
 @api_router.post("/auth/phone/send-otp")

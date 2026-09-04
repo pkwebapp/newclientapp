@@ -12,14 +12,21 @@ import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { PhoneField, isPhoneNumberValid } from "@/src/components/PhoneField";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { goBackOr } from "@/src/navigation/back";
-import { sendPhoneOtp, verifyPhoneOtp, loginWithPhonePassword, completePhoneSetup } from "@/src/lib/phone-auth";
+import {
+  sendPhoneOtp,
+  verifyPhoneOtp,
+  loginWithPhonePassword,
+  completePhoneSetup,
+  setPhonePassword,
+  checkPhone,
+} from "@/src/lib/phone-auth";
 import { setAuthToken } from "@/src/api/client";
 
 import { lightColors as colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { ThemeProvider } from "@/src/theme-context";
 import { APP_DOMAIN, getAppSurface } from "@/src/navigation/host-routing";
 
-type LoginTab = "otp" | "password";
+type Step = "phone" | "password" | "verify" | "setup" | "reset";
 
 export default function ClientLogin() {
   const router = useRouter();
@@ -29,38 +36,83 @@ export default function ClientLogin() {
   const { isDesktop } = useResponsive();
   const surface = getAppSurface();
 
-  const [loginTab, setLoginTab] = useState<LoginTab>("otp");
-  const [step, setStep] = useState<"phone" | "verify" | "setup">("phone");
+  const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
-  const [code, setCode] = useState("");
-  const [devCode, setDevCode] = useState<string | null>(null);
-  const [pwPhone, setPwPhone] = useState("");
-  const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // One-time setup step (new users): name asked at sign-in + optional password.
+  // Password sign-in (returning users)
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+
+  // OTP verify
+  const [code, setCode] = useState("");
+  const [devCode, setDevCode] = useState<string | null>(null);
+  // True when the user reached OTP via "Forgot password" — they'll set a new one.
+  const [forgotFlow, setForgotFlow] = useState(false);
+
+  // First-time setup (new users): name + optional password
   const [pendingToken, setPendingToken] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [showNewPassword, setShowNewPassword] = useState(false);
+
+  // Reset password (after forgot → OTP)
+  const [resetPw, setResetPw] = useState("");
+  const [resetPwConfirm, setResetPwConfirm] = useState("");
+  const [showResetPw, setShowResetPw] = useState(false);
 
   // Auto-route once the backend confirms role.
   useEffect(() => {
     if (user?.role === "client") router.replace("/client");
   }, [user, router]);
 
-  // ── OTP flow ──────────────────────────────────────────────────────────────
-  const requestOtp = async () => {
+  const resetToPhone = () => {
+    setAuthToken(null);
+    setPendingToken(null);
+    setForgotFlow(false);
+    setCode("");
+    setDevCode(null);
+    setPassword("");
+    setStep("phone");
+  };
+
+  // ── Step 1: phone → decide password vs OTP ────────────────────────────────
+  const continueFromPhone = async () => {
     if (!isPhoneNumberValid(phone)) {
       toast.show("Enter a valid mobile number", "error");
       return;
     }
     setLoading(true);
     try {
-      const res = await sendPhoneOtp(phone, "client");
-      setDevCode(res.dev_code ?? null);
-      setStep("verify");
-      toast.show("OTP sent to your mobile", "success");
+      const res = await checkPhone(phone);
+      if (res.exists && res.has_password) {
+        setPassword("");
+        setStep("password");
+      } else {
+        // New user, or existing user who never set a password → OTP.
+        setForgotFlow(false);
+        await requestOtp();
+        setStep("verify");
+      }
+    } catch (e: any) {
+      toast.show(e?.message || "Something went wrong. Please try again.", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── OTP helpers ────────────────────────────────────────────────────────────
+  const requestOtp = async () => {
+    const res = await sendPhoneOtp(phone, "client");
+    setDevCode(res.dev_code ?? null);
+    setCode("");
+    toast.show("OTP sent to your mobile", "success");
+  };
+
+  const resendOtp = async () => {
+    setLoading(true);
+    try {
+      await requestOtp();
     } catch (e: any) {
       toast.show(e?.message || "Could not send OTP", "error");
     } finally {
@@ -68,6 +120,39 @@ export default function ClientLogin() {
     }
   };
 
+  // ── Step 2a: password sign-in (returning users) ────────────────────────────
+  const loginPassword = async () => {
+    if (!password) {
+      toast.show("Enter your password", "error");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await loginWithPhonePassword(phone, password);
+      const u = await signInWithLegacyToken(res.token);
+      if (!u) throw new Error("Authentication failed. Please try again.");
+    } catch (e: any) {
+      toast.show(e?.message || "Incorrect password", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const forgotPassword = async () => {
+    setLoading(true);
+    try {
+      setForgotFlow(true);
+      await requestOtp();
+      setStep("verify");
+    } catch (e: any) {
+      setForgotFlow(false);
+      toast.show(e?.message || "Could not send OTP", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── Step 2b: verify OTP ─────────────────────────────────────────────────────
   const verifyOtp = async () => {
     if (code.length < 6) {
       toast.show("Enter the 6-digit OTP", "error");
@@ -77,9 +162,7 @@ export default function ClientLogin() {
     try {
       const res = await verifyPhoneOtp(phone, code, "client");
       if (res.is_new) {
-        // First-time user — collect their name (and an optional password) before
-        // dropping them into the app. Authenticate the setup call with the phone
-        // JWT WITHOUT completing sign-in yet (so we don't redirect prematurely).
+        // Brand-new user (or existing user with no password/name) → setup.
         setPendingToken(res.token);
         setAuthToken(res.token);
         setName("");
@@ -87,7 +170,16 @@ export default function ClientLogin() {
         setStep("setup");
         return;
       }
-      // Returning user — sign in straight away.
+      if (forgotFlow) {
+        // Returning user recovering access → let them set a new password.
+        setPendingToken(res.token);
+        setAuthToken(res.token);
+        setResetPw("");
+        setResetPwConfirm("");
+        setStep("reset");
+        return;
+      }
+      // Fallback: just sign in.
       const u = await signInWithLegacyToken(res.token);
       if (!u) throw new Error("Authentication failed. Please try again.");
     } catch (e: any) {
@@ -97,7 +189,7 @@ export default function ClientLogin() {
     }
   };
 
-  // ── First-time setup: name (required) + password (min 4, optional) ──────────
+  // ── Step 3a: first-time setup (name required, password optional) ────────────
   const finishSetup = async () => {
     if (!name.trim()) {
       toast.show("Please enter your name", "error");
@@ -109,7 +201,7 @@ export default function ClientLogin() {
     }
     if (!pendingToken) {
       toast.show("Session expired. Please sign in again.", "error");
-      setStep("phone");
+      resetToPhone();
       return;
     }
     setLoading(true);
@@ -124,27 +216,47 @@ export default function ClientLogin() {
     }
   };
 
-  // ── Password flow ─────────────────────────────────────────────────────────
-  const loginPassword = async () => {
-    if (!isPhoneNumberValid(pwPhone)) {
-      toast.show("Enter a valid mobile number", "error");
+  // ── Step 3b: reset password (after forgot → OTP) ────────────────────────────
+  const finishReset = async () => {
+    if (resetPw.length < 4) {
+      toast.show("Password must be at least 4 characters", "error");
       return;
     }
-    if (!password) {
-      toast.show("Enter your password", "error");
+    if (resetPw !== resetPwConfirm) {
+      toast.show("Passwords do not match", "error");
+      return;
+    }
+    if (!pendingToken) {
+      toast.show("Session expired. Please sign in again.", "error");
+      resetToPhone();
       return;
     }
     setLoading(true);
     try {
-      const res = await loginWithPhonePassword(pwPhone, password);
-      const u = await signInWithLegacyToken(res.token);
-      if (!u) throw new Error("Authentication failed. Please try again.");
+      await setPhonePassword(resetPw);
+      const u = await signInWithLegacyToken(pendingToken);
+      if (!u) throw new Error("Could not reset your password. Please try again.");
+      toast.show("Password updated", "success");
     } catch (e: any) {
-      toast.show(e?.message || "Sign-in failed", "error");
+      toast.show(e?.message || "Could not reset your password", "error");
     } finally {
       setLoading(false);
     }
   };
+
+  const onBack = () => {
+    if (step === "phone") return goBackOr(router, "/");
+    if (step === "password" || step === "verify") return resetToPhone();
+    // setup / reset → abandon and start over
+    return resetToPhone();
+  };
+
+  const headerTitle =
+    step === "phone" ? "Sign in"
+      : step === "password" ? "Welcome back"
+        : step === "verify" ? "Verify"
+          : step === "setup" ? "Almost there"
+            : "Reset password";
 
   if (surface === "studio" || surface === "superadmin") {
     return (
@@ -167,24 +279,7 @@ export default function ClientLogin() {
   return (
     <ThemeProvider scheme="light">
       <View style={styles.container} testID="client-login-screen">
-        <GlassHeader
-          title={step === "phone" ? "Sign in" : step === "setup" ? "Almost there" : "Verify"}
-          onBack={() => {
-            if (step === "setup") {
-              // Abandon the half-finished setup: drop the pending token and
-              // start over from the phone step.
-              setAuthToken(null);
-              setPendingToken(null);
-              setStep("phone");
-              setCode("");
-            } else if (step === "verify") {
-              setStep("phone");
-            } else {
-              goBackOr(router, "/");
-            }
-          }}
-          topInset={insets.top}
-        />
+        <GlassHeader title={headerTitle} onBack={onBack} topInset={insets.top} />
         <KeyboardAwareScrollView
           contentContainerStyle={[
             styles.body,
@@ -199,125 +294,56 @@ export default function ClientLogin() {
             <Ionicons name="sparkles" size={28} color={colors.brand} />
           </View>
 
-          {/* Login method tabs (hidden during first-time setup) */}
-          {step !== "setup" && (
-          <View style={styles.tabs}>
-            <Pressable
-              testID="tab-otp"
-              style={[styles.tab, loginTab === "otp" && styles.tabActive]}
-              onPress={() => { setLoginTab("otp"); setStep("phone"); setDevCode(null); }}
-            >
-              <Ionicons
-                name="phone-portrait-outline"
-                size={15}
-                color={loginTab === "otp" ? colors.brand : colors.muted}
-              />
-              <Text style={[styles.tabText, loginTab === "otp" && styles.tabTextActive]}>
-                OTP
-              </Text>
-            </Pressable>
-            <Pressable
-              testID="tab-password"
-              style={[styles.tab, loginTab === "password" && styles.tabActive]}
-              onPress={() => setLoginTab("password")}
-            >
-              <Ionicons
-                name="lock-closed-outline"
-                size={15}
-                color={loginTab === "password" ? colors.brand : colors.muted}
-              />
-              <Text style={[styles.tabText, loginTab === "password" && styles.tabTextActive]}>
-                Password
-              </Text>
-            </Pressable>
-          </View>
-          )}
-
-          {/* ── OTP tab ─────────────────────────────────────────────── */}
-          {loginTab === "otp" && step !== "setup" && (
+          {/* ── Step: phone ─────────────────────────────────────────── */}
+          {step === "phone" && (
             <>
-              {step === "phone" ? (
-                <>
-                  <Text style={styles.title}>Find your photos</Text>
-                  <Text style={styles.sub}>
-                    Enter your mobile number — we&apos;ll send a verification code via SMS.
-                  </Text>
-                  <View style={{ marginTop: spacing.xl }}>
-                    <PhoneField
-                      testID="client-phone-input"
-                      label="Mobile number"
-                      value={phone}
-                      onChangeText={setPhone}
-                    />
-                    <Button
-                      testID="request-otp-btn"
-                      title="Send OTP"
-                      loading={loading}
-                      onPress={requestOtp}
-                    />
-                  </View>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.title}>Enter your code</Text>
-                  <Text style={styles.sub}>Sent via SMS to {phone}</Text>
-
-                  {/* Dev mode: show the code automatically */}
-                  {devCode ? (
-                    <View style={styles.devCodeBox}>
-                      <Text style={styles.devCodeLabel}>DEV MODE — OTP Code</Text>
-                      <Text style={styles.devCodeValue}>{devCode}</Text>
-                    </View>
-                  ) : null}
-
-                  <View style={{ marginTop: spacing.xl }}>
-                    <TextField
-                      testID="otp-code-input"
-                      label="6-digit OTP"
-                      value={code}
-                      onChangeText={setCode}
-                      placeholder="000000"
-                      keyboardType="number-pad"
-                      maxLength={6}
-                    />
-                    <Button
-                      testID="verify-otp-btn"
-                      title="Verify & sign in"
-                      loading={loading}
-                      onPress={verifyOtp}
-                    />
-                    <Pressable
-                      testID="resend-otp"
-                      onPress={requestOtp}
-                      style={{ marginTop: spacing.lg, alignItems: "center" }}
-                    >
-                      <Text style={styles.link}>Resend OTP</Text>
-                    </Pressable>
-                  </View>
-                </>
-              )}
+              <Text style={styles.title}>Find your photos</Text>
+              <Text style={styles.sub}>
+                Enter your mobile number to continue. New here? We&apos;ll verify you with an OTP.
+              </Text>
+              <View style={{ marginTop: spacing.xl }}>
+                <PhoneField
+                  testID="client-phone-input"
+                  label="Mobile number"
+                  value={phone}
+                  onChangeText={setPhone}
+                />
+                <Button
+                  testID="continue-btn"
+                  title="Continue"
+                  loading={loading}
+                  onPress={continueFromPhone}
+                />
+              </View>
             </>
           )}
 
-          {/* ── Password tab ─────────────────────────────────────────── */}
-          {loginTab === "password" && (
+          {/* ── Step: password (returning users) ────────────────────── */}
+          {step === "password" && (
             <>
-              <Text style={styles.title}>Sign in with password</Text>
-              <Text style={styles.sub}>Use your mobile number and password.</Text>
+              <Text style={styles.title}>Enter your password</Text>
+              <Text style={styles.sub}>Signing in as {phone}</Text>
               <View style={{ marginTop: spacing.xl }}>
-                <PhoneField
-                  testID="pw-phone-input"
-                  label="Mobile number"
-                  value={pwPhone}
-                  onChangeText={setPwPhone}
-                />
                 <TextField
                   testID="pw-password-input"
                   label="Password"
                   value={password}
                   onChangeText={setPassword}
-                  secureTextEntry
+                  placeholder="Your password"
+                  secureTextEntry={!showPassword}
+                  autoCapitalize="none"
+                  autoFocus
+                  onSubmitEditing={loginPassword}
+                  returnKeyType="go"
                 />
+                <View style={styles.pwMetaRow}>
+                  <Pressable testID="change-number" onPress={resetToPhone} hitSlop={8}>
+                    <Text style={styles.hintLink}>Use a different number</Text>
+                  </Pressable>
+                  <Pressable testID="toggle-password" onPress={() => setShowPassword((v) => !v)} hitSlop={8}>
+                    <Text style={styles.link}>{showPassword ? "Hide" : "Show"}</Text>
+                  </Pressable>
+                </View>
                 <Button
                   testID="pw-login-btn"
                   title="Sign in"
@@ -325,16 +351,57 @@ export default function ClientLogin() {
                   onPress={loginPassword}
                 />
                 <Pressable
-                  onPress={() => setLoginTab("otp")}
+                  testID="forgot-password"
+                  onPress={forgotPassword}
                   style={{ marginTop: spacing.lg, alignItems: "center" }}
                 >
-                  <Text style={styles.link}>Sign in with OTP instead</Text>
+                  <Text style={styles.link}>Forgot password? Sign in with OTP</Text>
                 </Pressable>
               </View>
             </>
           )}
 
-          {/* ── First-time setup (new users after OTP) ─────────────────── */}
+          {/* ── Step: verify OTP ────────────────────────────────────── */}
+          {step === "verify" && (
+            <>
+              <Text style={styles.title}>Enter your code</Text>
+              <Text style={styles.sub}>Sent via SMS to {phone}</Text>
+
+              {devCode ? (
+                <View style={styles.devCodeBox}>
+                  <Text style={styles.devCodeLabel}>DEV MODE — OTP Code</Text>
+                  <Text style={styles.devCodeValue}>{devCode}</Text>
+                </View>
+              ) : null}
+
+              <View style={{ marginTop: spacing.xl }}>
+                <TextField
+                  testID="otp-code-input"
+                  label="6-digit OTP"
+                  value={code}
+                  onChangeText={setCode}
+                  placeholder="000000"
+                  keyboardType="number-pad"
+                  maxLength={6}
+                />
+                <Button
+                  testID="verify-otp-btn"
+                  title="Verify & continue"
+                  loading={loading}
+                  onPress={verifyOtp}
+                />
+                <Pressable
+                  testID="resend-otp"
+                  onPress={resendOtp}
+                  style={{ marginTop: spacing.lg, alignItems: "center" }}
+                >
+                  <Text style={styles.link}>Resend OTP</Text>
+                </Pressable>
+              </View>
+            </>
+          )}
+
+          {/* ── Step: first-time setup ──────────────────────────────── */}
           {step === "setup" && (
             <>
               <Text style={styles.title}>Welcome! 👋</Text>
@@ -376,6 +443,55 @@ export default function ClientLogin() {
                   title="Continue"
                   loading={loading}
                   onPress={finishSetup}
+                  style={{ marginTop: spacing.sm }}
+                />
+              </View>
+            </>
+          )}
+
+          {/* ── Step: reset password (forgot flow) ──────────────────── */}
+          {step === "reset" && (
+            <>
+              <Text style={styles.title}>Set a new password</Text>
+              <Text style={styles.sub}>
+                You&apos;re verified. Choose a new password for {phone}.
+              </Text>
+              <View style={{ marginTop: spacing.xl }}>
+                <TextField
+                  testID="reset-password-input"
+                  label="New password"
+                  value={resetPw}
+                  onChangeText={setResetPw}
+                  placeholder="Min. 4 characters"
+                  secureTextEntry={!showResetPw}
+                  autoCapitalize="none"
+                  autoFocus
+                />
+                <TextField
+                  testID="reset-password-confirm"
+                  label="Confirm password"
+                  value={resetPwConfirm}
+                  onChangeText={setResetPwConfirm}
+                  placeholder="Re-enter password"
+                  secureTextEntry={!showResetPw}
+                  autoCapitalize="none"
+                />
+                <View style={styles.pwMetaRow}>
+                  <Text style={styles.hint}>Keep it simple — even a 4-digit PIN works.</Text>
+                  <Pressable
+                    testID="reset-toggle-password"
+                    onPress={() => setShowResetPw((v) => !v)}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.link}>{showResetPw ? "Hide" : "Show"}</Text>
+                  </Pressable>
+                </View>
+                <Button
+                  testID="reset-continue-btn"
+                  title="Save & sign in"
+                  loading={loading}
+                  disabled={resetPw.length < 4 || resetPw !== resetPwConfirm}
+                  onPress={finishReset}
                   style={{ marginTop: spacing.sm }}
                 />
               </View>
@@ -427,34 +543,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: spacing.lg,
   },
-  // Tabs
-  tabs: {
-    flexDirection: "row",
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.lg,
-    padding: 4,
-    marginBottom: spacing.xl,
-    gap: 4,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    minHeight: 44,
-  },
-  tabActive: { backgroundColor: colors.surface },
-  tabText: {
-    color: colors.muted,
-    fontFamily: fonts.text,
-    fontSize: fontSize.sm,
-    fontWeight: "600",
-  },
-  tabTextActive: { color: colors.brand },
-  // Form
   title: {
     color: colors.onSurface,
     fontFamily: fonts.display,
@@ -467,7 +555,8 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     lineHeight: 22,
   },
-  link: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base },
+  link: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "600" },
+  hintLink: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm },
   pwMetaRow: {
     flexDirection: "row",
     alignItems: "center",

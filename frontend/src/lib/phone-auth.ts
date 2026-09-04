@@ -54,6 +54,17 @@ export async function loginWithPhonePassword(
   return api.post("/auth/phone/login", { phone, password });
 }
 
+export interface PhoneCheckResult {
+  exists: boolean;
+  has_password: boolean;
+}
+
+/** Ask the backend how to proceed for a number: existing users with a password
+ * enter it; new users (or no password yet) use OTP. */
+export async function checkPhone(phone: string): Promise<PhoneCheckResult> {
+  return api.post("/auth/phone/check", { phone });
+}
+
 /** Set a password for the currently signed-in phone user. */
 export async function setPhonePassword(
   password: string
