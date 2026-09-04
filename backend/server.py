@@ -275,9 +275,10 @@ class PhoneLoginBody(BaseModel):
 
 
 class CompleteSetupBody(BaseModel):
-    """Name (asked at sign-in) + optional password for brand-new phone users."""
+    """Name (asked at sign-in) + optional password/email for brand-new phone users."""
     name: str = Field(min_length=1, max_length=120)
     password: Optional[str] = Field(default=None, max_length=200)
+    email: Optional[EmailStr] = None
 
 
 class PhoneCheckBody(BaseModel):
@@ -357,7 +358,7 @@ async def phone_verify_otp(body: PhoneVerifyOtpBody):
         )
 
     token = create_phone_jwt(user["user_id"], user["role"], phone)
-    is_new = role == "client" and _needs_client_setup(user)
+    is_new = _needs_client_setup(user)
     return {"token": token, "user": _public_user(user), "is_new": is_new}
 
 
@@ -383,15 +384,22 @@ async def phone_complete_setup(
     user: dict = Depends(get_current_user),
 ):
     """One-shot onboarding for new phone users: save their real name (asked at
-    sign-in) and, optionally, a password. Keeps rules minimal (4+ chars)."""
+    sign-in) and, optionally, an email + password. Keeps rules minimal (4+ chars)."""
     name = body.name.strip()
     if not name:
         raise HTTPException(status_code=400, detail="Please enter your name")
-    updates: dict = {
-        "name": name,
-        "client_profile.full_name": name,
-        "updated_at": now_iso(),
-    }
+    updates: dict = {"name": name, "updated_at": now_iso()}
+    # Mirror the display name into the client profile so /client/profile shows it.
+    if user.get("role") == "client":
+        updates["client_profile.full_name"] = name
+    if body.email:
+        email = str(body.email).lower()
+        conflict = await db.users.find_one(
+            {"email": email, "user_id": {"$ne": user["user_id"]}}, {"_id": 0, "user_id": 1}
+        )
+        if conflict:
+            raise HTTPException(status_code=409, detail="That email is already linked to another account")
+        updates["email"] = email
     if body.password:
         if len(body.password) < 4:
             raise HTTPException(status_code=400, detail="Password must be at least 4 characters")

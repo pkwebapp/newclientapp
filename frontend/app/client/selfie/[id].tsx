@@ -246,7 +246,7 @@ const styles = StyleSheet.create({
   bulletText: { flex: 1, color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.base, lineHeight: 20 },
   decline: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.base },
   cameraContainer: { flex: 1, backgroundColor: "#000" },
-  overlay: { ...StyleSheet.absoluteFillObject, flexDirection: "column" },
+  overlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, flexDirection: "column" },
   maskTop: { flex: 1, backgroundColor: "rgba(13,13,13,0.72)" },
   maskMiddle: { height: 340, flexDirection: "row" },
   maskSide: { flex: 1, backgroundColor: "rgba(13,13,13,0.72)" },

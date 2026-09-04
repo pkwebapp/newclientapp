@@ -50,7 +50,6 @@ const schema = {
       url: SITE,
       description: "Photo gallery, AI face search, digital albums and client management for photographers.",
       datePublished: "2026-01-15",
-      dateModified: "2026-06-01",
       offers: { "@type": "Offer", price: "499", priceCurrency: "INR" },
       publisher: { "@id": `${STUDIO_SITE}/#org` },
       dateModified: "2026-08-01",

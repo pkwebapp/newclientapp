@@ -522,7 +522,7 @@ const makeStyles = (colors: Palette) => StyleSheet.create({
     borderRadius: radius.pill,
   },
   viewerScoreText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base },
-  imageStateOverlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary, padding: spacing.sm },
+  imageStateOverlay: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceTertiary, padding: spacing.sm },
   imageStateMark: { width: 42, height: 42, borderRadius: radius.pill, alignItems: "center", justifyContent: "center", backgroundColor: colors.brandTertiary, marginBottom: spacing.sm },
   imageStateBrand: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: 10, fontWeight: "800", letterSpacing: 1.4, marginTop: spacing.sm, textAlign: "center" },
   imageStateLabel: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: spacing.xs, textAlign: "center" },

@@ -88,6 +88,6 @@ export default function AlbumViewerRoute() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#0b0b0d" },
   web: { flex: 1, backgroundColor: "#0b0b0d" },
-  loader: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "center", gap: 12, backgroundColor: "#0b0b0d" },
+  loader: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center", gap: 12, backgroundColor: "#0b0b0d" },
   loaderText: { color: "rgba(233,228,216,0.6)", fontSize: 13, letterSpacing: 0.4 },
 });

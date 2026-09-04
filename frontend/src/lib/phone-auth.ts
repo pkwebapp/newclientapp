@@ -73,13 +73,15 @@ export async function setPhonePassword(
 }
 
 /** One-time onboarding for a new phone user: save their name (asked at sign-in)
- * and, optionally, a password. Requires the phone JWT to be set as the auth token. */
+ * and, optionally, a password and/or email. Requires the phone JWT as auth token. */
 export async function completePhoneSetup(
   name: string,
-  password?: string
+  password?: string,
+  email?: string
 ): Promise<{ message: string; user: PhoneAuthUser }> {
   return api.post("/auth/phone/complete-setup", {
     name,
     ...(password ? { password } : {}),
+    ...(email ? { email } : {}),
   });
 }
