@@ -15,6 +15,9 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 
 import { api } from "@/src/api/client";
+import RichHtml from "@/src/components/RichHtml";
+import { paperPalette } from "@/src/components/paper-theme";
+import { plainToHtml } from "@/src/utils/richtext";
 import { formatINR } from "@/src/utils/format";
 
 const BASE = `${process.env.EXPO_PUBLIC_BACKEND_URL}/api`;
@@ -145,7 +148,11 @@ export default function PublicQuotation() {
 
           {/* Content */}
           {!!q.subject && <Text style={styles.subject}>{q.subject}</Text>}
-          {!!q.body && <Text style={styles.body}>{q.body}</Text>}
+          {!!q.body && (
+            <View style={{ marginTop: 10 }}>
+              <RichHtml html={q.body_html || plainToHtml(q.body)} palette={paperPalette} fontSize={14} lineHeight={22} testID="public-quotation-body" />
+            </View>
+          )}
 
           {/* Pricing */}
           {showPricing && (
@@ -281,7 +288,6 @@ const styles = StyleSheet.create({
   label: { color: c.sub, fontSize: 11, fontWeight: "800", letterSpacing: 1 },
   clientName: { color: c.ink, fontSize: 18, fontWeight: "700", marginTop: 4 },
   subject: { color: c.ink, fontSize: 18, fontWeight: "800", marginTop: 20 },
-  body: { color: "#374151", fontSize: 14, lineHeight: 22, marginTop: 8 },
   itemsHead: { flexDirection: "row", backgroundColor: c.brand, borderRadius: 8, paddingVertical: 8, paddingHorizontal: 10 },
   ih: { color: "#fff", fontSize: 12, fontWeight: "700" },
   right: { textAlign: "right" },

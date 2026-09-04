@@ -76,7 +76,92 @@ def compute_quote_totals(items: list[dict], gst_mode: str = "none",
 
 def public_quotation(doc: dict) -> dict:
     out = {k: v for k, v in doc.items() if k != "_id"}
+    out["body_html"] = render_body_html(doc)
     return out
+
+
+# --------------------------------------------------------------------------
+# Rich-text body (HTML) — sanitize on save, render with merge fields
+# --------------------------------------------------------------------------
+_HTML_TAG_RE = re.compile(r"<\s*/?\s*[a-zA-Z][^>]*>")
+_TEXT_ALIGN_RE = re.compile(r"text-align\s*:\s*(left|center|right|justify)", re.I)
+_MERGE_RE = re.compile(r"\{\{\s*([a-zA-Z_]+)\s*\}\}")
+
+_ALLOWED_TAGS = {
+    "p", "br", "b", "strong", "i", "em", "u", "s", "strike", "del", "mark", "sup", "sub",
+    "h1", "h2", "h3", "h4", "ul", "ol", "li", "blockquote", "hr", "a", "span", "div",
+    "table", "thead", "tbody", "tfoot", "tr", "th", "td", "colgroup", "col",
+}
+_ALLOWED_ATTRS = {
+    "a": {"href"},
+    "td": {"colspan", "rowspan"},
+    "th": {"colspan", "rowspan"},
+    "ol": {"start"},
+    "*": {"style"},
+}
+
+
+def _style_filter(_tag: str, attr: str, value: str):
+    if attr != "style":
+        return value
+    m = _TEXT_ALIGN_RE.search(value or "")
+    return f"text-align: {m.group(1).lower()}" if m else None
+
+
+def is_html(text: str | None) -> bool:
+    return bool(text) and bool(_HTML_TAG_RE.search(text))
+
+
+def sanitize_html(html: str) -> str:
+    import nh3  # type: ignore
+
+    return nh3.clean(
+        html or "",
+        tags=_ALLOWED_TAGS,
+        attributes=_ALLOWED_ATTRS,
+        attribute_filter=_style_filter,
+        strip_comments=True,
+        link_rel="noopener noreferrer",
+    ).strip()
+
+
+def clean_body(text: str | None) -> str:
+    """Normalise a body coming from the client: HTML is sanitised, plain text is kept as-is."""
+    if not text:
+        return ""
+    return sanitize_html(text) if is_html(text) else text
+
+
+def plain_to_html(text: str) -> str:
+    paras = re.split(r"\n\s*\n", (text or "").replace("\r\n", "\n").strip())
+    return "".join(f"<p>{_esc(p).replace(chr(10), '<br/>')}</p>" for p in paras if p.strip())
+
+
+def merge_fields(q: dict) -> dict:
+    client = q.get("client") or {}
+    studio = q.get("studio") or {}
+    total = q.get("total") or 0
+    return {
+        "client_name": client.get("name") or "",
+        "client_phone": client.get("phone") or "",
+        "client_email": client.get("email") or "",
+        "studio_name": studio.get("name") or "",
+        "quotation_number": q.get("quotation_number") or "",
+        "issue_date": q.get("issue_date") or "",
+        "valid_until": q.get("valid_until") or "",
+        "subject": q.get("subject") or "",
+        "total": f"Rs {money(total)}" if q.get("show_pricing") and total else "",
+        "total_in_words": q.get("amount_in_words") or "",
+    }
+
+
+def render_body_html(q: dict) -> str:
+    body = q.get("body") or ""
+    if not body:
+        return ""
+    html = sanitize_html(body) if is_html(body) else plain_to_html(body)
+    fields = merge_fields(q)
+    return _MERGE_RE.sub(lambda m: _esc(fields[m.group(1)]) if m.group(1) in fields else m.group(0), html)
 
 
 # --------------------------------------------------------------------------
@@ -188,7 +273,7 @@ def build_quotation_html(q: dict) -> str:
       </tr></table>
 
       {('<div class="subject">' + _esc(q.get('subject')) + '</div>') if q.get('subject') else ''}
-      {('<div class="body">' + _nl2br(q.get('body')) + '</div>') if q.get('body') else ''}
+      {('<div class="body">' + render_body_html(q) + '</div>') if q.get('body') else ''}
 
       {pricing_html}
 
@@ -221,7 +306,23 @@ table.parties td { vertical-align: top; padding: 10px 4px; }
 .cname { font-weight: bold; font-size: 12pt; margin-top: 2px; }
 .sl { color: #374151; margin-top: 1px; }
 .subject { font-size: 13pt; font-weight: bold; color: #0f172a; margin: 14px 0 6px 0; }
-.body { color: #374151; line-height: 1.55; margin-bottom: 8px; white-space: pre-wrap; }
+.body { color: #374151; line-height: 1.55; margin-bottom: 8px; }
+.body p { margin: 0 0 6px 0; }
+.body h1, .body h2, .body h3, .body h4 { color: #0f172a; font-weight: bold; line-height: 1.3; margin: 12px 0 4px 0; }
+.body h1 { font-size: 15pt; }
+.body h2 { font-size: 13pt; }
+.body h3 { font-size: 11.5pt; }
+.body h4 { font-size: 10.5pt; }
+.body ul, .body ol { margin: 4px 0 8px 18px; padding: 0; }
+.body li { margin: 2px 0; }
+.body li p { margin: 0; }
+.body table { width: 100%; border-collapse: collapse; margin: 8px 0 10px 0; }
+.body th { background: #F6E5DC; color: #0f172a; font-weight: bold; text-align: left; padding: 5px 6px; border: 1px solid #e5e7eb; }
+.body td { padding: 5px 6px; border: 1px solid #e5e7eb; vertical-align: top; }
+.body td p, .body th p { margin: 0; }
+.body blockquote { border-left: 3px solid #E2623C; margin: 6px 0; padding: 2px 10px; color: #4b5563; }
+.body hr { border: none; border-top: 1px solid #e5e7eb; margin: 10px 0; }
+.body a { color: #C8532F; }
 table.items { margin-top: 12px; }
 table.items th { background: #E2623C; color: #ffffff; padding: 6px 5px; text-align: left; font-size: 8.5pt; }
 table.items td { border-bottom: 1px solid #eee; padding: 6px 5px; vertical-align: top; }

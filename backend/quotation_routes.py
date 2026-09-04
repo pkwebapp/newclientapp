@@ -184,7 +184,7 @@ async def _compute_and_pack(data: dict, studio_id: str, admin: dict, existing: O
         "event_id": event_id,
         "studio": inv_routes._studio_snapshot(settings),
         "subject": (data.get("subject") if data.get("subject") is not None else (existing or {}).get("subject")) or "",
-        "body": (data.get("body") if data.get("body") is not None else (existing or {}).get("body")) or "",
+        "body": qsvc.clean_body(data.get("body") if data.get("body") is not None else (existing or {}).get("body")),
         "show_pricing": bool(show_pricing),
         "gst_mode": gst_mode,
         "issue_date": inv_routes._clean_date(data.get("issue_date"), "issue_date") or (existing or {}).get("issue_date") or inv_routes._today(),
@@ -435,7 +435,7 @@ async def _create_template(data: TemplateIn, studio_id: str) -> dict:
         "name": name,
         "name_lower": name.lower(),
         "subject": data.subject or "",
-        "body": data.body or "",
+        "body": qsvc.clean_body(data.body),
         "show_pricing": bool(data.show_pricing),
         "gst_mode": data.gst_mode or "none",
         "discount_amount": float(data.discount_amount or 0),
@@ -483,7 +483,7 @@ async def update_template(template_id: str, body: TemplateUpdate, admin: dict = 
         updates["name_lower"] = data["name"].strip().lower()
     for key in ("subject", "body", "gst_mode", "terms", "notes"):
         if key in data:
-            updates[key] = data[key] or ""
+            updates[key] = qsvc.clean_body(data[key]) if key == "body" else (data[key] or "")
     if "show_pricing" in data:
         updates["show_pricing"] = bool(data["show_pricing"])
     if "discount_amount" in data:

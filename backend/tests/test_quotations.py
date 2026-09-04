@@ -385,3 +385,59 @@ class TestDeleteQuotation:
         # subsequent GET should 404
         g = api.get(f"{BASE_URL}/api/quotations/{qid}", timeout=15)
         assert g.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# rich-text body (HTML) — sanitisation, legacy plain text, merge fields
+# ---------------------------------------------------------------------------
+def test_rich_body_is_sanitised_and_rendered(api):
+    body = (
+        '<h2 style="color:red;text-align:center" class="MsoNormal">Event <b>Details</b></h2>'
+        '<script>alert(1)</script>'
+        '<p onclick="x()">Day 1 – <strong>Mehendi</strong></p>'
+        '<table><tr><th>Service</th><th>Amount</th></tr><tr><td>Candid</td><td>₹7,500</td></tr></table>'
+        '<ul><li>Highlight video</li></ul>'
+        '<p>Dear {{client_name}}, total {{total}} · {{unknown_field}}</p>'
+    )
+    payload = {
+        "client": {"name": "TEST_QUO Rich Client"},
+        "subject": "Rich body (TEST_QUO)",
+        "body": body,
+        "show_pricing": True,
+        "gst_mode": "none",
+        "line_items": [{"description": "Package", "qty": 1, "rate": 90000, "gst_rate": 0}],
+    }
+    r = api.post(f"{BASE_URL}/api/quotations", json=payload, timeout=30)
+    assert r.status_code == 200, r.text
+    q = r.json()
+    stored = q["body"]
+    assert "<script" not in stored and "onclick" not in stored and "class=" not in stored
+    assert 'style="text-align: center"' in stored          # alignment kept, other css dropped
+    assert "<table>" in stored and "<th>Service</th>" in stored and "<li>Highlight video</li>" in stored
+    assert "<strong>Mehendi</strong>" in stored
+    html = q["body_html"]
+    assert "Dear TEST_QUO Rich Client" in html
+    assert "total Rs 90,000" in html
+    assert "{{unknown_field}}" in html                    # unknown fields left as typed
+    # PDF still renders with rich HTML inside
+    pdf = api.get(f"{BASE_URL}/api/quotations/{q['quotation_id']}/pdf", timeout=60)
+    assert pdf.status_code == 200 and pdf.content[:4] == b"%PDF"
+    api.delete(f"{BASE_URL}/api/quotations/{q['quotation_id']}", timeout=30)
+
+
+def test_legacy_plain_body_becomes_paragraphs(api, created):
+    q = api.get(f"{BASE_URL}/api/quotations/{created['quotation_id']}", timeout=30).json()
+    assert q["body"].startswith("Thanks for reaching out.")           # plain text untouched
+    assert q["body_html"] == "<p>Thanks for reaching out.<br/>Here is our proposal for your wedding coverage.</p>"
+
+
+def test_template_body_is_sanitised(api):
+    r = api.post(
+        f"{BASE_URL}/api/quotation-templates",
+        json={"name": "TEST_QUO rich tpl", "body": '<p><img src=x onerror=alert(1)>Hi <em>there</em></p><iframe src="x"></iframe>'},
+        timeout=30,
+    )
+    assert r.status_code == 200, r.text
+    t = r.json()
+    assert "<img" not in t["body"] and "<iframe" not in t["body"] and "<em>there</em>" in t["body"]
+    api.delete(f"{BASE_URL}/api/quotation-templates/{t['template_id']}", timeout=30)

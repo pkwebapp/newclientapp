@@ -388,3 +388,27 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
   - Quotation doc gained `revision_number` (default 1), `revision_of`, `root_id` (=quotation_id at create), `revision_note`.
   - Backend: POST `/api/quotations/{id}/revise` clones the source into a new **draft**, keeps the same quotation_number, increments revision_number, carries the client's change-note into `revision_note`, resets share/response/converted. Migrates legacy docs (sets root_id) on first revise. GET detail returns `revisions` thread when >1.
   - Frontend: "Create revision draft" CTA appears on `revision_requested` quotations → opens the new draft in the editor showing a "Client asked: …" banner; detail screen shows a "REVISION HISTORY" thread and header "QUO-xxxx · Rev N". List row shows the Rev tag.
+
+## Feature: Rich-text (WYSIWYG) Quotation Body (June 2026 fork) — COMPLETE & TESTED (23/23 backend)
+- Problem: pasted body text lost all formatting (one wall of text). Body is now stored as **sanitised HTML**.
+- Backend (`quotation_service.py`): `clean_body()` (nh3 allow-list: p/br/b/strong/i/em/u/s/h1-h4/ul/ol/li/table/tr/th/td/
+  blockquote/hr/a/span/div; only `text-align` style, `colspan/rowspan`, `href` kept; scripts/handlers/classes stripped)
+  applied on quotation create/update and template create/update. `render_body_html()` = sanitised HTML + merge fields
+  (`{{client_name}}`, `{{client_phone}}`, `{{client_email}}`, `{{quotation_number}}`, `{{issue_date}}`, `{{valid_until}}`,
+  `{{subject}}`, `{{total}}`, `{{total_in_words}}`, `{{studio_name}}`) → returned as `body_html` on every quotation payload
+  (admin + public) and embedded in the PDF (PyMuPDF Story renders headings/lists/tables with matching CSS).
+  Legacy plain-text bodies are auto-converted to `<p>`/`<br/>` at render time (not rewritten in DB).
+- Frontend:
+  - `src/components/RichTextEditor.web.tsx` — TipTap v3 (StarterKit + TableKit + TextAlign + Placeholder). Exports
+    `useRichEditor`, `RichToolbar` (undo/redo, H1-H3, B/I/U/S, align, bullet/numbered, quote, divider, table tools,
+    clear formatting, "Insert field" merge-field menu), `RichEditorContent`. Toolbar buttons are DOM `<button>`s with
+    `onMouseDown.preventDefault()` so formatting never steals the caret. Paste from Word/Google Docs keeps formatting.
+  - `src/components/RichTextEditor.tsx` — native fallback (plain-text TextInput → `<p>` paragraphs; keeps original HTML if untouched).
+  - `src/components/RichHtml(.web).tsx` — renders `body_html` with document typography (CSS injected once, theme via CSS vars).
+  - `src/components/QuoteBodyEditorModal.tsx` — FULL-PAGE editor on white "paper": letterhead (studio from Invoice
+    Settings), QUOTATION + number/date, PREPARED FOR client, subject, sticky toolbar, editable body. Opened from the
+    "Body" card on `/admin/quotation/new` (card shows a live rich preview of the body).
+  - `src/components/paper-theme.ts` — shared paper palette; `src/utils/richtext.ts` — isHtml/plainToHtml/htmlToPlain/QUOTE_FIELDS.
+  - Admin detail `[id].tsx` and public `/q/[token]` render the body via `RichHtml` (headings, lists, tables, alignment).
+- Verified on web (desktop + 390px): typing/formatting, HTML paste (h1/h2/h3, bold, ul/ol, table, centred italic),
+  save → detail → share page → PDF all preserve formatting.

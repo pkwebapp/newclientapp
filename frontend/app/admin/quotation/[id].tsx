@@ -17,6 +17,8 @@ import * as Clipboard from "expo-clipboard";
 import { api } from "@/src/api/client";
 import { Button, GlassHeader, Pill, useToast } from "@/src/components/ui";
 import { QUOTE_STATUS_META, Quotation, openQuotationPdf } from "@/src/api/quotations";
+import RichHtml from "@/src/components/RichHtml";
+import { plainToHtml } from "@/src/utils/richtext";
 import { formatINR } from "@/src/utils/format";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
@@ -251,7 +253,15 @@ export default function QuotationDetailScreen() {
         {!!q.body && (
           <View style={styles.card}>
             <Text style={styles.cardLabel}>CONTENT</Text>
-            <Text style={styles.bodyText}>{q.body}</Text>
+            <View style={{ marginTop: spacing.sm }}>
+              <RichHtml
+                html={q.body_html || plainToHtml(q.body)}
+                palette={{ text: colors.onSurfaceSecondary, ink: colors.onSurface, accent: colors.brand, accentSoft: colors.brandTertiary, line: colors.borderStrong, sub: colors.muted }}
+                fontSize={fontSize.base}
+                lineHeight={22}
+                testID="quotation-body"
+              />
+            </View>
           </View>
         )}
 

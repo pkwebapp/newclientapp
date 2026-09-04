@@ -17,6 +17,10 @@ import { Ionicons } from "@expo/vector-icons";
 import { api } from "@/src/api/client";
 import { Button, GlassHeader, TextField, useToast } from "@/src/components/ui";
 import { computeQuoteTotals, QuoteMode, QuoteTemplate } from "@/src/api/quotations";
+import RichHtml from "@/src/components/RichHtml";
+import QuoteBodyEditorModal, { StudioLetterhead } from "@/src/components/QuoteBodyEditorModal";
+import { paper, paperPalette } from "@/src/components/paper-theme";
+import { isHtml, plainToHtml } from "@/src/utils/richtext";
 import { formatINR } from "@/src/utils/format";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { gstinError, phoneError } from "@/src/utils/validators";
@@ -60,6 +64,9 @@ export default function QuotationFormScreen() {
 
   const [subject, setSubject] = useState("");
   const [body, setBody] = useState("");
+  const [bodyEditor, setBodyEditor] = useState(false);
+  const [studio, setStudio] = useState<StudioLetterhead>({});
+  const [quotationNumber, setQuotationNumber] = useState("");
   const [showPricing, setShowPricing] = useState(false);
   const [gstMode, setGstMode] = useState<QuoteMode>("none");
   const [defaultGst, setDefaultGst] = useState("18");
@@ -81,6 +88,15 @@ export default function QuotationFormScreen() {
         setClients(Array.isArray(cl) ? cl : []);
         setTemplates(Array.isArray(tpl?.items) ? tpl.items : []);
         setDefaultGst(String(settings.default_gst_rate ?? "18"));
+        setStudio({
+          name: settings.legal_name,
+          address: settings.address,
+          phone: settings.phone,
+          email: settings.email,
+          website: settings.website,
+          gstin: settings.gstin,
+          logo_base64: settings.logo_base64,
+        });
         if (!isEdit) {
           setTerms(settings.default_terms || "");
           setRows([{ description: "", qty: "1", rate: "", gst_rate: String(settings.default_gst_rate ?? "18") }]);
@@ -105,6 +121,7 @@ export default function QuotationFormScreen() {
           setNotes(q.notes || "");
           setRevisionNote(q.revision_note || "");
           setRevisionNumber(Number(q.revision_number) || 1);
+          setQuotationNumber(q.quotation_number || "");
           if ((q.line_items || []).length) {
             setRows((q.line_items || []).map((li: any) => ({
               description: li.description || "",
@@ -279,7 +296,24 @@ export default function QuotationFormScreen() {
           {/* Content */}
           <Text style={styles.section}>Content</Text>
           <TextField label="Subject / title" value={subject} onChangeText={setSubject} placeholder="Wedding Photography Package — Dec 2026" testID="quote-subject" />
-          <TextField label="Body" value={body} onChangeText={setBody} multiline placeholder={"Write your quotation here…\n\nDear …,\n\nThank you for the opportunity."} testID="quote-body" inputStyle={styles.bodyInput} />
+          <Text style={styles.fieldLabel}>Body</Text>
+          <Pressable testID="open-body-editor" onPress={() => setBodyEditor(true)} style={styles.bodyCard}>
+            {body.trim() ? (
+              <View style={styles.bodyPreview}>
+                <RichHtml html={isHtml(body) ? body : plainToHtml(body)} palette={paperPalette} fontSize={13} lineHeight={20} testID="body-preview" />
+              </View>
+            ) : (
+              <View style={styles.bodyEmpty}>
+                <Ionicons name="document-text-outline" size={26} color={paperPalette.sub} />
+                <Text style={styles.bodyEmptyTitle}>Write the quotation body</Text>
+                <Text style={styles.bodyEmptySub}>Full-page editor with headings, bold, lists and tables. Paste from Word or Google Docs — formatting is kept.</Text>
+              </View>
+            )}
+            <View style={styles.bodyFoot}>
+              <Ionicons name="create-outline" size={16} color={colors.brand} />
+              <Text style={styles.bodyFootText}>{body.trim() ? "Open full-page editor" : "Open editor"}</Text>
+            </View>
+          </Pressable>
 
           {/* Pricing (optional) */}
           <View style={styles.toggleRow}>
@@ -351,6 +385,18 @@ export default function QuotationFormScreen() {
           <Button testID="save-quotation" title={isEdit ? "Update quotation" : "Create quotation"} icon="checkmark-circle-outline" loading={saving} onPress={save} style={{ marginTop: spacing.md }} />
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <QuoteBodyEditorModal
+        visible={bodyEditor}
+        onClose={() => setBodyEditor(false)}
+        value={body}
+        onChange={setBody}
+        studio={studio}
+        clientName={clientName}
+        subject={subject}
+        numberLabel={quotationNumber ? (revisionNumber > 1 ? `${quotationNumber} · Rev ${revisionNumber}` : quotationNumber) : "Number assigned on save"}
+        issueDate={issueDate}
+      />
 
       <Modal visible={clientPicker} transparent animationType="slide" onRequestClose={() => setClientPicker(false)}>
         <Pressable style={styles.modalBackdrop} onPress={() => setClientPicker(false)}>
@@ -433,7 +479,13 @@ const styles = StyleSheet.create({
   helper: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginBottom: spacing.md, lineHeight: 18 },
   fieldLabel: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600", marginBottom: spacing.sm },
   two: { flexDirection: "row", gap: spacing.sm },
-  bodyInput: { minHeight: 140, textAlignVertical: "top" },
+  bodyCard: { backgroundColor: paper.card, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.lg, overflow: "hidden" },
+  bodyPreview: { padding: spacing.lg, maxHeight: 260, overflow: "hidden" },
+  bodyEmpty: { alignItems: "center", padding: spacing.xl, gap: spacing.xs },
+  bodyEmptyTitle: { color: paperPalette.ink, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700", marginTop: spacing.xs },
+  bodyEmptySub: { color: paperPalette.sub, fontFamily: fonts.text, fontSize: fontSize.sm, textAlign: "center", lineHeight: 18, maxWidth: 360 },
+  bodyFoot: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: spacing.sm, paddingVertical: spacing.md, borderTopWidth: 1, borderTopColor: paperPalette.line, backgroundColor: paperPalette.accentSoft },
+  bodyFootText: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "800" },
   pickerBtn: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.lg, borderWidth: 1, borderColor: colors.border, marginBottom: spacing.lg },
   pickerText: { flex: 1, color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base },
   toggleRow: { flexDirection: "row", alignItems: "center", gap: spacing.md },

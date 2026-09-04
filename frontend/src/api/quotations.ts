@@ -22,6 +22,7 @@ export type Quotation = {
   event_id?: string | null;
   subject?: string;
   body?: string;
+  body_html?: string;
   show_pricing?: boolean;
   gst_mode: QuoteMode;
   line_items: QuoteItem[];
