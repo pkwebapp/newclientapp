@@ -103,11 +103,89 @@
 #====================================================================================================
 
 user_problem_statement: |
-  Continuation of PIK Connect (Lumiere Gallery) — photographer client gallery app
-  (Expo + FastAPI + MongoDB, AWS Rekognition face search).
-  Reported bug: After uploading 6 photos, refreshing the browser makes photos "go missing"
-  and shows "Not authenticated" error.
-  Feature request: Add a Home button on the Studio Console (admin dashboard) header.
+  PIK Connect — Phone number OTP authentication for both client and admin login using MSG91 (Indian SMS provider, DLT registered via Airtel).
+  - Client login: replace email OTP with phone number + MSG91 SMS OTP flow.
+  - Admin login: keep email/password + add Phone OTP tab.
+  - Later: allow users to set a password for phone+password login.
+  - MSG91 authkey: 567571AZb56yOG6a9aa404P1, template_id: 6a9aa25b943af70f1b0da943, var1=OTP.
+  - Custom HS256 JWT issued after OTP verify (independent of Supabase).
+
+backend:
+  - task: "Phone OTP auth via MSG91 + custom HS256 JWT"
+    implemented: true
+    working: true
+    file: "backend/phone_auth_service.py, backend/auth_utils.py, backend/server.py, backend/.env"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: false
+    status_history:
+        - working: true
+          agent: "main"
+          comment: |
+            Implemented full phone OTP auth system:
+            1. phone_auth_service.py: MSG91 Flow API integration, OTP hash/salt storage in phone_otps collection,
+               HS256 JWT issuance (iss=pik-connect, sub=user_id, 30 day expiry).
+            2. auth_utils.py: _user_from_token now tri-path: phone JWT → Supabase JWT → legacy opaque.
+               is_phone_jwt() checks iss without full verification before deciding which path to use.
+            3. server.py: 4 new endpoints:
+               - POST /api/auth/phone/send-otp (MSG91 dispatch + OTP hash store)
+               - POST /api/auth/phone/verify-otp (verify, find/create user, issue JWT)
+               - POST /api/auth/phone/set-password (requires auth, store bcrypt hash)
+               - POST /api/auth/phone/login (phone + password → phone JWT)
+            4. backend/.env: MSG91_AUTHKEY, MSG91_TEMPLATE_ID, JWT_SECRET added.
+            Manually tested: send-otp dev_code visible, verify-otp returns JWT,
+            /auth/me with phone JWT returns correct user, set-password works, password-login works.
+
+frontend:
+  - task: "Phone OTP client-login + Phone OTP tab on admin-login"
+    implemented: true
+    working: true
+    file: "frontend/app/client-login.tsx, frontend/app/admin-login.tsx, frontend/src/lib/phone-auth.ts"
+    stuck_count: 0
+    priority: "high"
+    needs_retesting: true
+    status_history:
+        - working: "NA"
+          agent: "main"
+          comment: |
+            1. src/lib/phone-auth.ts: sendPhoneOtp, verifyPhoneOtp, loginWithPhonePassword, setPhonePassword API wrappers.
+            2. client-login.tsx: Replaced email/Supabase OTP with PhoneField + MSG91 OTP. Two tabs: OTP (default) and Password.
+               After verify calls signInWithLegacyToken(token) which stores JWT and calls /auth/me.
+               Shows dev_code in a yellow highlight box when OTP_DEV_MODE=true.
+            3. admin-login.tsx: Added loginTab state with "Email" and "Phone OTP" tabs. Email tab keeps all existing
+               email/password + magic link + Google flows. Phone OTP tab uses PhoneField → OTP verify flow.
+               Both use signInWithLegacyToken(token) to store the phone JWT.
+            Screenshots verified: client-login shows phone field with +91 country code; admin-login shows tab switcher.
+
+metadata:
+  created_by: "main_agent"
+  version: "1.0"
+  test_sequence: 8
+  run_ui: true
+
+test_plan:
+  current_focus:
+    - "Phone OTP client-login — enter phone, get OTP (dev_code), verify, land on /client"
+    - "Phone OTP admin-login — Phone OTP tab, enter phone, get OTP, verify, land on /admin"
+    - "Password login — client sets password via /api/auth/phone/set-password, then logs in"
+    - "Regression — existing demo mode button still works"
+  stuck_tasks: []
+  test_all: false
+  test_priority: "high_first"
+
+agent_communication:
+    - agent: "main"
+      message: |
+        New feature: Phone OTP authentication via MSG91 Flow API.
+        Backend fully tested manually. Frontend needs E2E browser testing.
+        Key test flows:
+        1. Go to /client-login → enter valid Indian phone (e.g. +919876543210 or similar non-repeated)
+           → click Send OTP → see dev_code in yellow box → enter it → verify → lands on /client
+        2. Go to /admin-login → click "Phone OTP" tab → enter phone → Send OTP → verify → lands on /admin (studio onboarding)
+        3. Demo mode button still works on both screens.
+        OTP_DEV_MODE=true so dev_code is shown in response and in the UI yellow box.
+        JWT_SECRET is set in backend/.env.
+        MSG91 keys configured but OTP_DEV_MODE=true means no real SMS sent during testing.
 
 backend:
   - task: "Fix backend completely down (missing deps + missing .env) after fresh repo clone"

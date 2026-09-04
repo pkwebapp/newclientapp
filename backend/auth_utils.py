@@ -1,8 +1,9 @@
 """Auth utilities: password hashing, session tokens, current-user dependency.
 
-Dual-path authentication:
-- Supabase JWT (RS256/ES256) — used by studio admins & clients (Q3a fresh start).
-- Legacy opaque session token — used by the super admin only (internal login).
+Tri-path authentication:
+- Phone JWT (HS256, iss=pik-connect) — phone OTP / password login (no Supabase).
+- Supabase JWT (RS256/ES256)         — studio admins & clients via Supabase.
+- Legacy opaque session token        — super admin only (internal login).
 
 All existing `Depends(...)` signatures are preserved so the ~200 protected
 routes in server.py did not need to change.
@@ -66,16 +67,32 @@ async def _user_from_legacy_token(token: str | None):
 
 
 async def _user_from_token(token: str | None):
-    """Resolve either a Supabase JWT or a legacy opaque session token."""
+    """Resolve a phone JWT, a Supabase JWT, or a legacy opaque session token."""
     if not token:
         return None
     if looks_like_jwt(token):
+        # 1. Phone-auth JWT (iss=pik-connect, HS256) — works without Supabase
+        from phone_auth_service import is_phone_jwt, verify_phone_jwt
+        if is_phone_jwt(token):
+            claims = verify_phone_jwt(token)
+            if not claims:
+                return None
+            user = await db.users.find_one(
+                {"user_id": claims["sub"]}, {"_id": 0, "password_hash": 0}
+            )
+            if user:
+                await db.users.update_one(
+                    {"user_id": user["user_id"]},
+                    {"$set": {"last_seen_at": datetime.now(timezone.utc).isoformat()}},
+                )
+            return user
+        # 2. Supabase JWT (RS256/ES256) — studio admin / client via Supabase
         user = await user_from_supabase_bearer(token)
         if user:
             return user
-        # If the token *looks* like a JWT but fails verification, do NOT fall
-        # through to the legacy lookup — that would be pointless.
+        # JWT that fails both checks is rejected — do NOT fall through to legacy
         return None
+    # 3. Legacy opaque session — super admin only
     return await _user_from_legacy_token(token)
 
 

@@ -249,6 +249,120 @@ async def _deprecated_verify_otp():
     raise HTTPException(status_code=410, detail="Deprecated: use Supabase email OTP")
 
 
+# ---------------------------------------------------------------------------
+# Phone OTP authentication (MSG91 Flow API + custom HS256 JWT)
+# These endpoints work independently of Supabase.
+# ---------------------------------------------------------------------------
+
+class PhoneSendOtpBody(BaseModel):
+    phone: str
+    role: str = "client"   # "admin" | "client" — used when creating new user
+
+
+class PhoneVerifyOtpBody(BaseModel):
+    phone: str
+    code: str
+    role: str = "client"   # used when new user record is created
+
+
+class PhonePasswordBody(BaseModel):
+    password: str
+
+
+class PhoneLoginBody(BaseModel):
+    phone: str
+    password: str
+
+
+@api_router.post("/auth/phone/send-otp")
+async def phone_send_otp(body: PhoneSendOtpBody):
+    """Send a 6-digit OTP to the given mobile number via MSG91."""
+    from phone_auth_service import store_and_send_otp
+    phone = _phone_or_400(body.phone)
+    try:
+        result = await store_and_send_otp(phone)
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return result
+
+
+@api_router.post("/auth/phone/verify-otp")
+async def phone_verify_otp(body: PhoneVerifyOtpBody):
+    """Verify the OTP, then find-or-create the user and issue a phone JWT."""
+    from phone_auth_service import verify_otp_and_consume, create_phone_jwt
+    phone = _phone_or_400(body.phone)
+    try:
+        await verify_otp_and_consume(phone, body.code.strip())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    role = body.role if body.role in ("admin", "client") else "client"
+    ts = now_iso()
+
+    # Find or create user
+    user = await db.users.find_one({"phone": phone}, {"_id": 0, "password_hash": 0})
+    if not user:
+        uid = new_user_id()
+        user = {
+            "user_id": uid,
+            "role": role,
+            "phone": phone,
+            "name": f"User {phone[-4:]}",
+            "auth_provider": "phone_otp",
+            "verified_phone": True,
+            "created_at": ts,
+            "last_seen_at": ts,
+        }
+        if role == "admin":
+            user.update(plans.new_studio_plan_fields())
+            user["profile_complete"] = False
+        await db.users.insert_one(user)
+    else:
+        await db.users.update_one(
+            {"user_id": user["user_id"]},
+            {"$set": {"last_seen_at": ts, "verified_phone": True}},
+        )
+
+    token = create_phone_jwt(user["user_id"], user["role"], phone)
+    return {"token": token, "user": _public_user(user)}
+
+
+@api_router.post("/auth/phone/set-password")
+async def phone_set_password(
+    body: PhonePasswordBody,
+    user: dict = Depends(get_current_user),
+):
+    """Let a phone-authenticated user set a password for password-based sign-in."""
+    if len(body.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    hashed = hash_password(body.password)
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"password_hash": hashed, "has_password": True, "updated_at": now_iso()}},
+    )
+    return {"message": "Password set successfully"}
+
+
+@api_router.post("/auth/phone/login")
+async def phone_login(body: PhoneLoginBody):
+    """Sign in with phone number + password (requires prior set-password call)."""
+    from phone_auth_service import create_phone_jwt
+    phone = _phone_or_400(body.phone)
+    user = await db.users.find_one({"phone": phone}, {"_id": 0})
+    if not user or not user.get("password_hash"):
+        raise HTTPException(status_code=401, detail="Invalid phone number or password")
+    if not verify_password(body.password, user["password_hash"]):
+        raise HTTPException(status_code=401, detail="Invalid phone number or password")
+
+    await db.users.update_one(
+        {"user_id": user["user_id"]},
+        {"$set": {"last_seen_at": now_iso()}},
+    )
+    clean = {k: v for k, v in user.items() if k != "password_hash"}
+    token = create_phone_jwt(user["user_id"], user["role"], phone)
+    return {"token": token, "user": _public_user(clean)}
+
+
 @api_router.get("/auth/me")
 async def auth_me(user: dict = Depends(get_current_user)):
     return {"user": _public_user(user)}
