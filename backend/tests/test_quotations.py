@@ -13,7 +13,7 @@ import requests
 
 BASE_URL = os.environ.get("EXPO_PUBLIC_BACKEND_URL") or os.environ.get(
     "EXPO_BACKEND_URL"
-) or "https://webapp-client.preview.emergentagent.com"
+) or "https://pkweb-app.preview.emergentagent.com"
 BASE_URL = BASE_URL.rstrip("/")
 
 

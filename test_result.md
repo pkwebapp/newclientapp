@@ -5135,7 +5135,7 @@ frontend:
           
           SUPER ADMIN LOGIN VERIFICATION (Tests 1-5):
           1. ✅ Direct /superadmin-login route accessible on desktop (1440x900)
-             • URL: https://webapp-client.preview.emergentagent.com/superadmin-login
+             • URL: https://pkweb-app.preview.emergentagent.com/superadmin-login
              • Page renders correctly with PIK CONNECT branding
              • "Platform control" heading visible
              • "Sign in to manage photographers, galleries and platform usage" subtitle
@@ -5150,7 +5150,7 @@ frontend:
              • Filled password (credentials from /app/memory/test_credentials.md)
              • Clicked "Sign in as Super Admin" button
              • Successfully navigated to /superadmin dashboard
-             • URL after login: https://webapp-client.preview.emergentagent.com/superadmin ✓
+             • URL after login: https://pkweb-app.preview.emergentagent.com/superadmin ✓
           
           4. ✅ Super Admin Dashboard visible:
              • "Dashboard" heading: "A quick view of platform health"
@@ -5217,14 +5217,14 @@ frontend:
           ✅ No navigation errors
           
           EXACT URLs VERIFIED:
-          • Login page: https://webapp-client.preview.emergentagent.com/superadmin-login
-          • Dashboard: https://webapp-client.preview.emergentagent.com/superadmin
-          • Photographers: https://webapp-client.preview.emergentagent.com/superadmin/photographers
-          • Memberships: https://webapp-client.preview.emergentagent.com/superadmin/memberships
-          • Galleries: https://webapp-client.preview.emergentagent.com/superadmin/galleries
-          • Storage: https://webapp-client.preview.emergentagent.com/superadmin/storage
-          • Activity: https://webapp-client.preview.emergentagent.com/superadmin/activity
-          • Settings: https://webapp-client.preview.emergentagent.com/superadmin/settings
+          • Login page: https://pkweb-app.preview.emergentagent.com/superadmin-login
+          • Dashboard: https://pkweb-app.preview.emergentagent.com/superadmin
+          • Photographers: https://pkweb-app.preview.emergentagent.com/superadmin/photographers
+          • Memberships: https://pkweb-app.preview.emergentagent.com/superadmin/memberships
+          • Galleries: https://pkweb-app.preview.emergentagent.com/superadmin/galleries
+          • Storage: https://pkweb-app.preview.emergentagent.com/superadmin/storage
+          • Activity: https://pkweb-app.preview.emergentagent.com/superadmin/activity
+          • Settings: https://pkweb-app.preview.emergentagent.com/superadmin/settings
           
           RESPONSIVE BEHAVIOR:
           ✅ Desktop (1440x900): Light SaaS shell with left sidebar, centered content, all nav links visible
@@ -5495,7 +5495,7 @@ frontend:
           ⚠️ TESTING INCOMPLETE - SYSTEM LIMITATIONS ENCOUNTERED
           
           Attempted comprehensive verification of gallery identity bug fix on:
-          • URL: https://webapp-client.preview.emergentagent.com/g/evt_a5ee4937b376
+          • URL: https://pkweb-app.preview.emergentagent.com/g/evt_a5ee4937b376
           • Event: Test Naman 2 (evt_a5ee4937b376) with 9 photos
           • Viewport: 1440x1080 (desktop)
           
@@ -5550,7 +5550,7 @@ frontend:
           STATUS: Cannot confirm if bug is fixed or still exists due to testing limitations.
           Marking as needs_retesting=true for manual verification.
           
-          Tested on https://webapp-client.preview.emergentagent.com/g/evt_a5ee4937b376
+          Tested on https://pkweb-app.preview.emergentagent.com/g/evt_a5ee4937b376
           Event: "Test Naman 2" (evt_a5ee4937b376) with 9 photos
           
           TEST RESULTS (3 photos tested):
@@ -5612,7 +5612,7 @@ agent_communication:
       ⚠️ TESTING INCOMPLETE - REACT NATIVE WEB + PLAYWRIGHT INCOMPATIBILITY
       
       Attempted comprehensive verification of the gallery identity bug fix on the specified URL
-      (https://webapp-client.preview.emergentagent.com/g/evt_a5ee4937b376)
+      (https://pkweb-app.preview.emergentagent.com/g/evt_a5ee4937b376)
       but encountered system limitations that prevent completing the test.
       
       ISSUE:
@@ -5649,7 +5649,7 @@ agent_communication:
       STATUS: Marking as needs_retesting=true for manual verification. Cannot claim bug is fixed
       or still exists without completing the identity verification tests.
       
-      Tested on Expo web preview (https://webapp-client.preview.emergentagent.com)
+      Tested on Expo web preview (https://pkweb-app.preview.emergentagent.com)
       using public gallery access for event "Test Naman 2" (evt_a5ee4937b376, 9 photos).
       
       REPRODUCTION RESULTS:
@@ -6291,8 +6291,8 @@ frontend:
           Attempted to test gallery identity mismatch fix on public Expo preview but encountered critical blocker:
           
           ISSUE: Frontend .env has wrong backend URL
-          • Configured: EXPO_PUBLIC_BACKEND_URL=https://webapp-client.preview.emergentagent.com
-          • Should be: https://webapp-client.preview.emergentagent.com
+          • Configured: EXPO_PUBLIC_BACKEND_URL=https://pkweb-app.preview.emergentagent.com
+          • Should be: https://pkweb-app.preview.emergentagent.com
           
           IMPACT: All API calls fail (net::ERR_ABORTED), visitor gate form does not work, gallery never loads.
           
@@ -6382,13 +6382,13 @@ agent_communication:
       ❌ CRITICAL BLOCKER - CANNOT TEST DUE TO BACKEND CONFIGURATION ISSUE
       
       Attempted comprehensive re-test of gallery identity mismatch bug on public Expo preview
-      (https://webapp-client.preview.emergentagent.com/g/evt_a5ee4937b376)
+      (https://pkweb-app.preview.emergentagent.com/g/evt_a5ee4937b376)
       but encountered a critical blocker that prevents ANY gallery testing.
       
       ROOT CAUSE:
       The frontend/.env file has EXPO_PUBLIC_BACKEND_URL pointing to the WRONG backend:
-      • Configured: https://webapp-client.preview.emergentagent.com
-      • Correct URL: https://webapp-client.preview.emergentagent.com
+      • Configured: https://pkweb-app.preview.emergentagent.com
+      • Correct URL: https://pkweb-app.preview.emergentagent.com
       
       IMPACT:
       • All API calls fail with net::ERR_ABORTED
@@ -6397,7 +6397,7 @@ agent_communication:
       • Cannot test photo grid, fullscreen viewer, or any gallery functionality
       
       EVIDENCE:
-      Console logs show: "REQUEST FAILED: https://webapp-client.preview.emergentagent.com/api/public/events/evt_a5ee4937b376 - net::ERR_ABORTED"
+      Console logs show: "REQUEST FAILED: https://pkweb-app.preview.emergentagent.com/api/public/events/evt_a5ee4937b376 - net::ERR_ABORTED"
       
       REQUIRED FIX:
       Main agent must update /app/frontend/.env:
@@ -6584,7 +6584,7 @@ agent_communication:
         NETWORK MONITORING:
         • All successful login requests return 200 OK
         • Failed login correctly returns 401 Unauthorized
-        • Backend API URL correctly resolved: https://webapp-client.preview.emergentagent.com/api
+        • Backend API URL correctly resolved: https://pkweb-app.preview.emergentagent.com/api
         • No undefined/api/* requests detected
         
         ORIGINAL ISSUE STATUS: ✅ RESOLVED
@@ -8880,7 +8880,7 @@ agent_communication:
            • Superadmin credentials: prabhakar@pkphotography.in / SuperAdmin@3214
         
         ✅ Frontend .env present:
-           • EXPO_PUBLIC_BACKEND_URL=https://webapp-client.preview.emergentagent.com
+           • EXPO_PUBLIC_BACKEND_URL=https://pkweb-app.preview.emergentagent.com
         
         MONGODB STATUS:
         ✅ MongoDB accessible at mongodb://localhost:27017
@@ -8950,7 +8950,7 @@ agent_communication:
            • No critical console errors detected ✓
            • Only minor warnings: shadow* style props deprecation, useNativeDriver fallback ✓
            • Non-critical failures: cdn-cgi/rum (Cloudflare beacon), Ionicons.ttf font loading ✓
-           • Backend URL correctly configured: https://webapp-client.preview.emergentagent.com ✓
+           • Backend URL correctly configured: https://pkweb-app.preview.emergentagent.com ✓
            • No 401 auth failures on /api/ endpoints ✓
            • Admin login API calls returning 200 OK ✓
         
@@ -11039,7 +11039,7 @@ agent_communication:
 
 user_problem_statement: |
   Test the new notification system on this backend. Base URL from EXPO_PUBLIC_BACKEND_URL env var 
-  (frontend/.env) → https://webapp-client.preview.emergentagent.com
+  (frontend/.env) → https://pkweb-app.preview.emergentagent.com
   
   Auth (admin): POST /api/auth/admin/login body={"email":"admin@lumiere.studio","password":"Admin@12345"} 
   → returns session_token; use as Bearer.

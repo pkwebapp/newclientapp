@@ -8,7 +8,7 @@ import requests
 import json
 
 # Configuration - Use public URL from frontend/.env
-BASE_URL = "https://webapp-client.preview.emergentagent.com/api"
+BASE_URL = "https://pkweb-app.preview.emergentagent.com/api"
 
 # Super Admin credentials from /app/memory/test_credentials.md
 SUPERADMIN_EMAIL = "prabhakar@pkphotography.in"
