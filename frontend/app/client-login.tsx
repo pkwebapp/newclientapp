@@ -12,7 +12,8 @@ import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { PhoneField, isPhoneNumberValid } from "@/src/components/PhoneField";
 import { useResponsive } from "@/src/hooks/use-responsive";
 import { goBackOr } from "@/src/navigation/back";
-import { sendPhoneOtp, verifyPhoneOtp, loginWithPhonePassword } from "@/src/lib/phone-auth";
+import { sendPhoneOtp, verifyPhoneOtp, loginWithPhonePassword, completePhoneSetup } from "@/src/lib/phone-auth";
+import { setAuthToken } from "@/src/api/client";
 
 import { lightColors as colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { ThemeProvider } from "@/src/theme-context";
@@ -29,13 +30,19 @@ export default function ClientLogin() {
   const surface = getAppSurface();
 
   const [loginTab, setLoginTab] = useState<LoginTab>("otp");
-  const [step, setStep] = useState<"phone" | "verify">("phone");
+  const [step, setStep] = useState<"phone" | "verify" | "setup">("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [devCode, setDevCode] = useState<string | null>(null);
   const [pwPhone, setPwPhone] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+
+  // One-time setup step (new users): name asked at sign-in + optional password.
+  const [pendingToken, setPendingToken] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [showNewPassword, setShowNewPassword] = useState(false);
 
   // Auto-route once the backend confirms role.
   useEffect(() => {
@@ -69,12 +76,49 @@ export default function ClientLogin() {
     setLoading(true);
     try {
       const res = await verifyPhoneOtp(phone, code, "client");
-      // Store the phone JWT exactly as if it were a legacy/superadmin token —
-      // signInWithLegacyToken stores it in SecureStore and calls /auth/me.
+      if (res.is_new) {
+        // First-time user — collect their name (and an optional password) before
+        // dropping them into the app. Authenticate the setup call with the phone
+        // JWT WITHOUT completing sign-in yet (so we don't redirect prematurely).
+        setPendingToken(res.token);
+        setAuthToken(res.token);
+        setName("");
+        setNewPassword("");
+        setStep("setup");
+        return;
+      }
+      // Returning user — sign in straight away.
       const u = await signInWithLegacyToken(res.token);
       if (!u) throw new Error("Authentication failed. Please try again.");
     } catch (e: any) {
       toast.show(e?.message || "Verification failed", "error");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── First-time setup: name (required) + password (min 4, optional) ──────────
+  const finishSetup = async () => {
+    if (!name.trim()) {
+      toast.show("Please enter your name", "error");
+      return;
+    }
+    if (newPassword && newPassword.length < 4) {
+      toast.show("Password must be at least 4 characters", "error");
+      return;
+    }
+    if (!pendingToken) {
+      toast.show("Session expired. Please sign in again.", "error");
+      setStep("phone");
+      return;
+    }
+    setLoading(true);
+    try {
+      await completePhoneSetup(name.trim(), newPassword || undefined);
+      const u = await signInWithLegacyToken(pendingToken);
+      if (!u) throw new Error("Could not finish setup. Please try again.");
+    } catch (e: any) {
+      toast.show(e?.message || "Could not save your details", "error");
     } finally {
       setLoading(false);
     }
@@ -124,10 +168,21 @@ export default function ClientLogin() {
     <ThemeProvider scheme="light">
       <View style={styles.container} testID="client-login-screen">
         <GlassHeader
-          title={step === "phone" ? "Sign in" : "Verify"}
-          onBack={() =>
-            step === "verify" ? setStep("phone") : goBackOr(router, "/")
-          }
+          title={step === "phone" ? "Sign in" : step === "setup" ? "Almost there" : "Verify"}
+          onBack={() => {
+            if (step === "setup") {
+              // Abandon the half-finished setup: drop the pending token and
+              // start over from the phone step.
+              setAuthToken(null);
+              setPendingToken(null);
+              setStep("phone");
+              setCode("");
+            } else if (step === "verify") {
+              setStep("phone");
+            } else {
+              goBackOr(router, "/");
+            }
+          }}
           topInset={insets.top}
         />
         <KeyboardAwareScrollView
@@ -144,7 +199,8 @@ export default function ClientLogin() {
             <Ionicons name="sparkles" size={28} color={colors.brand} />
           </View>
 
-          {/* Login method tabs */}
+          {/* Login method tabs (hidden during first-time setup) */}
+          {step !== "setup" && (
           <View style={styles.tabs}>
             <Pressable
               testID="tab-otp"
@@ -175,9 +231,10 @@ export default function ClientLogin() {
               </Text>
             </Pressable>
           </View>
+          )}
 
           {/* ── OTP tab ─────────────────────────────────────────────── */}
-          {loginTab === "otp" && (
+          {loginTab === "otp" && step !== "setup" && (
             <>
               {step === "phone" ? (
                 <>
@@ -276,6 +333,54 @@ export default function ClientLogin() {
               </View>
             </>
           )}
+
+          {/* ── First-time setup (new users after OTP) ─────────────────── */}
+          {step === "setup" && (
+            <>
+              <Text style={styles.title}>Welcome! 👋</Text>
+              <Text style={styles.sub}>
+                Tell us your name and set a password so you can sign in faster next time.
+              </Text>
+              <View style={{ marginTop: spacing.xl }}>
+                <TextField
+                  testID="setup-name-input"
+                  label="Your name"
+                  value={name}
+                  onChangeText={setName}
+                  placeholder="e.g. Riya Sharma"
+                  autoCapitalize="words"
+                  autoFocus
+                  returnKeyType="next"
+                />
+                <TextField
+                  testID="setup-password-input"
+                  label="Create a password"
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  placeholder="Min. 4 characters"
+                  secureTextEntry={!showNewPassword}
+                  autoCapitalize="none"
+                />
+                <View style={styles.pwMetaRow}>
+                  <Text style={styles.hint}>Optional — you can always add it later.</Text>
+                  <Pressable
+                    testID="setup-toggle-password"
+                    onPress={() => setShowNewPassword((v) => !v)}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.link}>{showNewPassword ? "Hide" : "Show"}</Text>
+                  </Pressable>
+                </View>
+                <Button
+                  testID="setup-continue-btn"
+                  title="Continue"
+                  loading={loading}
+                  onPress={finishSetup}
+                  style={{ marginTop: spacing.sm }}
+                />
+              </View>
+            </>
+          )}
         </KeyboardAwareScrollView>
       </View>
     </ThemeProvider>
@@ -363,6 +468,14 @@ const styles = StyleSheet.create({
     lineHeight: 22,
   },
   link: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base },
+  pwMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: -spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  hint: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, flex: 1 },
   // Dev code hint
   devCodeBox: {
     marginTop: spacing.lg,

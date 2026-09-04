@@ -24,6 +24,9 @@ export interface PhoneAuthUser {
 export interface PhoneVerifyResult {
   token: string;
   user: PhoneAuthUser;
+  /** True on a user's first sign-in (or before they've set a name/password) —
+   * the client login screen uses this to show the one-time setup step. */
+  is_new?: boolean;
 }
 
 /** Send a 6-digit SMS OTP to ``phone`` via MSG91. */
@@ -56,4 +59,16 @@ export async function setPhonePassword(
   password: string
 ): Promise<{ message: string }> {
   return api.post("/auth/phone/set-password", { password });
+}
+
+/** One-time onboarding for a new phone user: save their name (asked at sign-in)
+ * and, optionally, a password. Requires the phone JWT to be set as the auth token. */
+export async function completePhoneSetup(
+  name: string,
+  password?: string
+): Promise<{ message: string; user: PhoneAuthUser }> {
+  return api.post("/auth/phone/complete-setup", {
+    name,
+    ...(password ? { password } : {}),
+  });
 }

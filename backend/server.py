@@ -274,6 +274,20 @@ class PhoneLoginBody(BaseModel):
     password: str
 
 
+class CompleteSetupBody(BaseModel):
+    """Name (asked at sign-in) + optional password for brand-new phone users."""
+    name: str = Field(min_length=1, max_length=120)
+    password: Optional[str] = Field(default=None, max_length=200)
+
+
+def _needs_client_setup(u: dict) -> bool:
+    """A client should be prompted to set their name + password when they have
+    no password yet or are still using the auto-generated "User 1234" name."""
+    name = (u.get("name") or "").strip()
+    auto_name = (name == "") or name.startswith("User ")
+    return (not bool(u.get("has_password"))) or auto_name
+
+
 @api_router.post("/auth/phone/send-otp")
 async def phone_send_otp(body: PhoneSendOtpBody):
     """Send a 6-digit OTP to the given mobile number via MSG91."""
@@ -324,7 +338,8 @@ async def phone_verify_otp(body: PhoneVerifyOtpBody):
         )
 
     token = create_phone_jwt(user["user_id"], user["role"], phone)
-    return {"token": token, "user": _public_user(user)}
+    is_new = role == "client" and _needs_client_setup(user)
+    return {"token": token, "user": _public_user(user), "is_new": is_new}
 
 
 @api_router.post("/auth/phone/set-password")
@@ -333,14 +348,39 @@ async def phone_set_password(
     user: dict = Depends(get_current_user),
 ):
     """Let a phone-authenticated user set a password for password-based sign-in."""
-    if len(body.password) < 8:
-        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if len(body.password) < 4:
+        raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
     hashed = hash_password(body.password)
     await db.users.update_one(
         {"user_id": user["user_id"]},
         {"$set": {"password_hash": hashed, "has_password": True, "updated_at": now_iso()}},
     )
     return {"message": "Password set successfully"}
+
+
+@api_router.post("/auth/phone/complete-setup")
+async def phone_complete_setup(
+    body: CompleteSetupBody,
+    user: dict = Depends(get_current_user),
+):
+    """One-shot onboarding for new phone users: save their real name (asked at
+    sign-in) and, optionally, a password. Keeps rules minimal (4+ chars)."""
+    name = body.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Please enter your name")
+    updates: dict = {
+        "name": name,
+        "client_profile.full_name": name,
+        "updated_at": now_iso(),
+    }
+    if body.password:
+        if len(body.password) < 4:
+            raise HTTPException(status_code=400, detail="Password must be at least 4 characters")
+        updates["password_hash"] = hash_password(body.password)
+        updates["has_password"] = True
+    await db.users.update_one({"user_id": user["user_id"]}, {"$set": updates})
+    fresh = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
+    return {"message": "Setup complete", "user": _public_user(fresh or user)}
 
 
 @api_router.post("/auth/phone/login")
@@ -2067,6 +2107,7 @@ def _client_profile_public(user: dict) -> dict:
         "phone": user.get("phone"),
         "verified_email": bool(user.get("email") and user.get("verified_email", True)),
         "verified_phone": bool(user.get("phone") and user.get("verified_phone", True)),
+        "has_password": bool(user.get("has_password")),
     })
     return profile
 

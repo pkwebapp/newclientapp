@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 
 import { api, ApiError } from "@/src/api/client";
+import { setPhonePassword } from "@/src/lib/phone-auth";
 import { Button, GlassHeader, TextField, useToast } from "@/src/components/ui";
 import DatePickerField, { isValidIsoDate } from "@/src/components/DatePickerField";
 import { PhoneField, isPhoneNumberValid } from "@/src/components/PhoneField";
@@ -41,6 +42,13 @@ export default function ClientProfileScreen() {
   const [phoneCodeSent, setPhoneCodeSent] = useState(false);
   const [verifying, setVerifying] = useState<"email" | "phone" | null>(null);
 
+  // Security — set / change password (minimal rules: 4+ chars)
+  const [hasPassword, setHasPassword] = useState(false);
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [showPw, setShowPw] = useState(false);
+  const [savingPw, setSavingPw] = useState(false);
+
   const load = useCallback(async () => {
     try {
       const data = await api.get("/client/profile");
@@ -58,6 +66,7 @@ export default function ClientProfileScreen() {
       setWebsite(data.website || "");
       setVerifiedPhone(!!data.verified_phone);
       setVerifiedEmail(!!data.verified_email);
+      setHasPassword(!!data.has_password);
     } catch (error) {
       toast.show(error instanceof ApiError ? error.message : "Could not load your profile", "error");
     } finally {
@@ -173,6 +182,30 @@ export default function ClientProfileScreen() {
     }
   };
 
+  const savePassword = async () => {
+    if (pwNew.length < 4) {
+      toast.show("Password must be at least 4 characters", "error");
+      return;
+    }
+    if (pwNew !== pwConfirm) {
+      toast.show("Passwords do not match", "error");
+      return;
+    }
+    setSavingPw(true);
+    try {
+      await setPhonePassword(pwNew);
+      setHasPassword(true);
+      setPwNew("");
+      setPwConfirm("");
+      setShowPw(false);
+      toast.show(hasPassword ? "Password updated" : "Password set", "success");
+    } catch (error) {
+      toast.show(error instanceof ApiError ? error.message : "Could not update password", "error");
+    } finally {
+      setSavingPw(false);
+    }
+  };
+
   if (loading) {
     return (
       <View style={styles.center} testID="client-profile-loading">
@@ -276,6 +309,53 @@ export default function ClientProfileScreen() {
         <TextField testID="profile-instagram" label="Instagram" value={instagram} onChangeText={setInstagram} placeholder="@yourhandle" autoCapitalize="none" />
         <TextField testID="profile-website" label="Website" value={website} onChangeText={setWebsite} placeholder="www.example.com" autoCapitalize="none" keyboardType="url" />
 
+        <Text style={styles.sectionLabel}>Security</Text>
+        <View style={styles.securityStatus}>
+          <Ionicons
+            name={hasPassword ? "lock-closed" : "lock-open-outline"}
+            size={17}
+            color={hasPassword ? colors.success : colors.muted}
+          />
+          <Text style={styles.securityStatusText}>
+            {hasPassword
+              ? "Password enabled — sign in with your mobile number + password."
+              : "No password yet. Set one to sign in without an OTP each time."}
+          </Text>
+        </View>
+        <TextField
+          testID="profile-new-password"
+          label={hasPassword ? "New password" : "Create password"}
+          value={pwNew}
+          onChangeText={setPwNew}
+          placeholder="Min. 4 characters"
+          secureTextEntry={!showPw}
+          autoCapitalize="none"
+        />
+        <TextField
+          testID="profile-confirm-password"
+          label="Confirm password"
+          value={pwConfirm}
+          onChangeText={setPwConfirm}
+          placeholder="Re-enter password"
+          secureTextEntry={!showPw}
+          autoCapitalize="none"
+        />
+        <View style={styles.pwMetaRow}>
+          <Text style={styles.pwHint}>Keep it simple — even a 4-digit PIN works.</Text>
+          <Pressable testID="profile-toggle-password" onPress={() => setShowPw((v) => !v)} hitSlop={8}>
+            <Text style={styles.pwToggle}>{showPw ? "Hide" : "Show"}</Text>
+          </Pressable>
+        </View>
+        <Button
+          testID="profile-save-password"
+          title={hasPassword ? "Update password" : "Set password"}
+          variant="secondary"
+          icon="key-outline"
+          loading={savingPw}
+          disabled={pwNew.length < 4 || pwNew !== pwConfirm}
+          onPress={savePassword}
+        />
+
         <Button testID="profile-save" title="Save profile" icon="checkmark" loading={saving} disabled={!canSave} onPress={save} style={styles.saveButton} />
         {!canSave ? <Text style={styles.saveHint}>Verify your mobile and email, then complete the required fields.</Text> : null}
       </KeyboardAwareScrollView>
@@ -354,6 +434,11 @@ const styles = StyleSheet.create({
   aboutInput: { minHeight: 112, backgroundColor: colors.surfaceSecondary, borderWidth: 1, borderColor: colors.border, borderRadius: radius.md, color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, padding: spacing.lg, textAlignVertical: "top", marginBottom: spacing.lg },
   saveButton: { marginTop: spacing.lg },
   saveHint: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 18, textAlign: "center", marginTop: spacing.md },
+  securityStatus: { flexDirection: "row", alignItems: "flex-start", gap: spacing.sm, marginBottom: spacing.lg },
+  securityStatusText: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm, lineHeight: 19, flex: 1 },
+  pwMetaRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: -spacing.sm, marginBottom: spacing.lg },
+  pwHint: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, flex: 1 },
+  pwToggle: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "600" },
   notifTile: {
     flexDirection: "row",
     alignItems: "center",
