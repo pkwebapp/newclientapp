@@ -99,7 +99,7 @@ export default function QuotationsScreen() {
                   <View style={styles.rowIcon}><Ionicons name="reader-outline" size={20} color={colors.brand} /></View>
                   <View style={{ flex: 1 }}>
                     <Text style={styles.rowTitle} numberOfLines={1}>{q.subject || q.client?.name || "Quotation"}</Text>
-                    <Text style={styles.rowSub} numberOfLines={1}>{q.quotation_number} · {q.client?.name || "—"} · {q.issue_date}</Text>
+                    <Text style={styles.rowSub} numberOfLines={1}>{q.quotation_number}{q.revision_number > 1 ? ` · Rev ${q.revision_number}` : ""} · {q.client?.name || "—"} · {q.issue_date}</Text>
                   </View>
                   <View style={{ alignItems: "flex-end", gap: 4 }}>
                     {q.show_pricing ? <Text style={styles.rowAmount}>{formatINR(q.total)}</Text> : null}

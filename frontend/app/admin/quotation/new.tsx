@@ -16,7 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { api } from "@/src/api/client";
 import { Button, GlassHeader, TextField, useToast } from "@/src/components/ui";
-import { computeQuoteTotals, QuoteMode } from "@/src/api/quotations";
+import { computeQuoteTotals, QuoteMode, QuoteTemplate } from "@/src/api/quotations";
 import { formatINR } from "@/src/utils/format";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { gstinError, phoneError } from "@/src/utils/validators";
@@ -43,6 +43,10 @@ export default function QuotationFormScreen() {
   const [saving, setSaving] = useState(false);
   const [clients, setClients] = useState<any[]>([]);
   const [clientPicker, setClientPicker] = useState(false);
+  const [templates, setTemplates] = useState<QuoteTemplate[]>([]);
+  const [templatePicker, setTemplatePicker] = useState(false);
+  const [revisionNote, setRevisionNote] = useState("");
+  const [revisionNumber, setRevisionNumber] = useState(1);
 
   const [clientId, setClientId] = useState<string | null>(null);
   const [clientName, setClientName] = useState("");
@@ -69,11 +73,13 @@ export default function QuotationFormScreen() {
   useEffect(() => {
     (async () => {
       try {
-        const [settings, cl] = await Promise.all([
+        const [settings, cl, tpl] = await Promise.all([
           api.get("/invoice-settings"),
           api.get("/clients").catch(() => []),
+          api.get("/quotation-templates").catch(() => ({ items: [] })),
         ]);
         setClients(Array.isArray(cl) ? cl : []);
+        setTemplates(Array.isArray(tpl?.items) ? tpl.items : []);
         setDefaultGst(String(settings.default_gst_rate ?? "18"));
         if (!isEdit) {
           setTerms(settings.default_terms || "");
@@ -97,6 +103,8 @@ export default function QuotationFormScreen() {
           setValidUntil(q.valid_until || "");
           setTerms(q.terms || "");
           setNotes(q.notes || "");
+          setRevisionNote(q.revision_note || "");
+          setRevisionNumber(Number(q.revision_number) || 1);
           if ((q.line_items || []).length) {
             setRows((q.line_items || []).map((li: any) => ({
               description: li.description || "",
@@ -135,6 +143,36 @@ export default function QuotationFormScreen() {
     if (c.gstin) setClientGstin(c.gstin);
     if (c.address) setClientAddress(c.address);
     setClientPicker(false);
+  };
+
+  const applyTemplate = (t: QuoteTemplate) => {
+    setSubject(t.subject || "");
+    setBody(t.body || "");
+    setShowPricing(!!t.show_pricing);
+    setGstMode(t.gst_mode || "none");
+    setDiscount(t.discount_amount ? String(t.discount_amount) : "");
+    setTerms(t.terms || "");
+    setNotes(t.notes || "");
+    if ((t.line_items || []).length) {
+      setRows(t.line_items.map((li) => ({
+        description: li.description || "",
+        qty: String(li.qty ?? 1),
+        rate: String(li.rate ?? 0),
+        gst_rate: String(li.gst_rate ?? defaultGst),
+      })));
+    }
+    setTemplatePicker(false);
+    toast.show(`Template “${t.name}” applied`, "success");
+  };
+
+  const deleteTemplate = async (t: QuoteTemplate) => {
+    try {
+      await api.del(`/quotation-templates/${t.template_id}`);
+      setTemplates((prev) => prev.filter((x) => x.template_id !== t.template_id));
+      toast.show("Template deleted", "success");
+    } catch {
+      toast.show("Could not delete template", "error");
+    }
   };
 
   const save = async () => {
@@ -198,6 +236,28 @@ export default function QuotationFormScreen() {
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: insets.bottom + 160 }} keyboardShouldPersistTaps="handled">
           <Text style={styles.helper}>Your studio letterhead (logo, name, address, GSTIN, website) is added automatically. Set it in Invoice Settings.</Text>
+
+          {!isEdit && (
+            <Pressable testID="start-from-template" onPress={() => setTemplatePicker(true)} style={styles.templateBtn}>
+              <Ionicons name="documents-outline" size={18} color={colors.brand} />
+              <Text style={styles.templateBtnText}>Start from a template</Text>
+              <Ionicons name="chevron-forward" size={16} color={colors.muted} />
+            </Pressable>
+          )}
+
+          {isEdit && revisionNumber > 1 && (
+            <View style={styles.revisionBanner} testID="revision-banner">
+              <View style={styles.rowStart}>
+                <Ionicons name="git-branch-outline" size={16} color={colors.brand} />
+                <Text style={styles.revisionBannerTitle}>Revision {revisionNumber} draft</Text>
+              </View>
+              {!!revisionNote ? (
+                <Text style={styles.revisionBannerNote}>Client asked: “{revisionNote}”</Text>
+              ) : (
+                <Text style={styles.revisionBannerNote}>Edit and send this updated quotation.</Text>
+              )}
+            </View>
+          )}
 
           {/* Client */}
           <Text style={styles.section}>Prepared for</Text>
@@ -314,6 +374,36 @@ export default function QuotationFormScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      <Modal visible={templatePicker} transparent animationType="slide" onRequestClose={() => setTemplatePicker(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setTemplatePicker(false)}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <View style={styles.modalHead}>
+              <Text style={styles.modalTitle}>Start from a template</Text>
+              <Pressable hitSlop={8} onPress={() => setTemplatePicker(false)}><Ionicons name="close" size={22} color={colors.muted} /></Pressable>
+            </View>
+            <ScrollView style={{ maxHeight: 420 }}>
+              {templates.length === 0 ? (
+                <Text style={styles.modalEmpty}>No templates yet. Open any quotation and tap “Save as template” to reuse it later.</Text>
+              ) : (
+                templates.map((t) => (
+                  <View key={t.template_id} style={styles.templateRow}>
+                    <Pressable style={{ flex: 1 }} testID={`apply-template-${t.template_id}`} onPress={() => applyTemplate(t)}>
+                      <Text style={styles.modalRowText} numberOfLines={1}>{t.name}</Text>
+                      <Text style={styles.templateMeta} numberOfLines={1}>
+                        {t.subject || "No subject"}{t.show_pricing ? ` · ${(t.line_items || []).length} item(s)` : " · free-form"}
+                      </Text>
+                    </Pressable>
+                    <Pressable hitSlop={8} testID={`delete-template-${t.template_id}`} onPress={() => deleteTemplate(t)} style={styles.templateDelete}>
+                      <Ionicons name="trash-outline" size={18} color={colors.onError} />
+                    </Pressable>
+                  </View>
+                ))
+              )}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -330,6 +420,15 @@ function TotalRow({ label, value }: { label: string; value: number }) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.surface },
   center: { flex: 1, alignItems: "center", justifyContent: "center" },
+  rowStart: { flexDirection: "row", alignItems: "center", gap: spacing.sm },
+  templateBtn: { flexDirection: "row", alignItems: "center", gap: spacing.md, backgroundColor: colors.brandTertiary, borderRadius: radius.md, padding: spacing.lg, borderWidth: 1, borderColor: colors.brand, marginBottom: spacing.md },
+  templateBtnText: { flex: 1, color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700" },
+  revisionBanner: { backgroundColor: colors.brandTertiary, borderRadius: radius.md, padding: spacing.lg, borderWidth: 1, borderColor: colors.brand, marginBottom: spacing.md },
+  revisionBannerTitle: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "800" },
+  revisionBannerNote: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: spacing.xs, fontStyle: "italic", lineHeight: 18 },
+  templateRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  templateMeta: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: 2 },
+  templateDelete: { padding: spacing.sm },
   section: { color: colors.onSurface, fontFamily: fonts.display, fontSize: fontSize.xl, marginTop: spacing.lg, marginBottom: spacing.md },
   helper: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginBottom: spacing.md, lineHeight: 18 },
   fieldLabel: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600", marginBottom: spacing.sm },

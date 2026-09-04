@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -29,6 +30,8 @@ export default function QuotationDetailScreen() {
   const [busy, setBusy] = useState(false);
   const [convertModal, setConvertModal] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
+  const [templateModal, setTemplateModal] = useState(false);
+  const [templateName, setTemplateName] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -41,7 +44,7 @@ export default function QuotationDetailScreen() {
     }
   }, [id, toast]);
 
-  useFocusEffect(useCallback(() => { load(); }, [load]));
+  useFocusEffect(useCallback(() => { setLoading(true); load(); }, [load]));
 
   const downloadPdf = async () => {
     try {
@@ -95,6 +98,38 @@ export default function QuotationDetailScreen() {
     }
   };
 
+  const createRevision = async () => {
+    setBusy(true);
+    try {
+      const res = await api.post(`/quotations/${id}/revise`, {});
+      toast.show(`Revision ${res.revision_number} draft created`, "success");
+      router.push(`/admin/quotation/new?id=${res.quotation_id}`);
+    } catch {
+      toast.show("Could not create revision", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveAsTemplate = async () => {
+    const name = templateName.trim();
+    if (!name) {
+      toast.show("Give the template a name", "error");
+      return;
+    }
+    setBusy(true);
+    try {
+      await api.post(`/quotations/${id}/save-as-template`, { name });
+      toast.show(`Saved as template “${name}”`, "success");
+      setTemplateModal(false);
+      setTemplateName("");
+    } catch {
+      toast.show("Could not save template", "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (loading || !q) {
     return (
       <View style={styles.container}>
@@ -107,11 +142,14 @@ export default function QuotationDetailScreen() {
   const meta = QUOTE_STATUS_META[q.status] || QUOTE_STATUS_META.sent;
   const gm = q.gst_mode;
   const resp = q.client_response;
+  const revN = q.revision_number || 1;
+  const numberLabel = revN > 1 ? `${q.quotation_number} · Rev ${revN}` : q.quotation_number;
+  const revisions = q.revisions || [];
 
   return (
     <View style={styles.container} testID="admin-quotation-detail-screen">
       <GlassHeader
-        title={q.quotation_number}
+        title={numberLabel}
         topInset={insets.top}
         onBack={() => router.back()}
         right={
@@ -135,6 +173,17 @@ export default function QuotationDetailScreen() {
           )}
         </View>
 
+        {/* revision context (this is a revision draft) */}
+        {!!q.revision_note && (
+          <View style={[styles.card, styles.revisionNoteCard]} testID="revision-context">
+            <View style={styles.rowStart}>
+              <Ionicons name="git-branch-outline" size={16} color={colors.brand} />
+              <Text style={styles.respTitle}>Revision {revN} · client's change request</Text>
+            </View>
+            <Text style={styles.respNote}>“{q.revision_note}”</Text>
+          </View>
+        )}
+
         {/* client response */}
         {!!resp && (
           <View style={[styles.card, resp.action === "accept" ? styles.respAccepted : styles.respRevision]} testID="client-response-card">
@@ -146,6 +195,36 @@ export default function QuotationDetailScreen() {
             </View>
             {!!resp.note && <Text style={styles.respNote}>“{resp.note}”</Text>}
             {!!resp.at && <Text style={styles.respAt}>{new Date(resp.at).toLocaleString()}</Text>}
+          </View>
+        )}
+
+        {/* revision auto-draft CTA */}
+        {q.status === "revision_requested" && !q.converted_invoice_id && (
+          <Button testID="create-revision" title="Create revision draft" icon="git-branch-outline" loading={busy} onPress={createRevision} style={{ marginBottom: spacing.lg }} />
+        )}
+
+        {/* revision history thread */}
+        {revisions.length > 1 && (
+          <View style={styles.card} testID="revision-history">
+            <Text style={styles.cardLabel}>REVISION HISTORY</Text>
+            {revisions.map((r) => {
+              const active = r.quotation_id === id;
+              const rMeta = QUOTE_STATUS_META[r.status] || QUOTE_STATUS_META.sent;
+              return (
+                <Pressable
+                  key={r.quotation_id}
+                  testID={`revision-row-${r.revision_number || 1}`}
+                  disabled={active}
+                  onPress={() => router.push(`/admin/quotation/${r.quotation_id}`)}
+                  style={[styles.revRow, active && styles.revRowActive]}
+                >
+                  <Ionicons name={active ? "ellipse" : "ellipse-outline"} size={12} color={colors.brand} />
+                  <Text style={styles.revRowText}>Rev {r.revision_number || 1}{active ? " · viewing" : ""}</Text>
+                  <Pill label={rMeta.label} tone={rMeta.tone} />
+                  {!active && <Ionicons name="chevron-forward" size={14} color={colors.muted} />}
+                </Pressable>
+              );
+            })}
           </View>
         )}
 
@@ -213,6 +292,7 @@ export default function QuotationDetailScreen() {
         <View style={styles.actions}>
           <Button testID="download-quotation-pdf" title="Download PDF" icon="download-outline" variant="secondary" onPress={downloadPdf} />
           <Button testID="share-quotation" title={q.share_enabled ? "Copy share link" : "Create share link"} icon="link-outline" variant="secondary" loading={busy} onPress={share} />
+          <Button testID="save-as-template" title="Save as template" icon="documents-outline" variant="secondary" onPress={() => { setTemplateName(q.subject || ""); setTemplateModal(true); }} />
           {!q.converted_invoice_id && (
             <Button testID="convert-quotation" title="Convert to invoice" icon="receipt-outline" onPress={() => setConvertModal(true)} />
           )}
@@ -267,6 +347,28 @@ export default function QuotationDetailScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* save as template modal */}
+      <Modal visible={templateModal} transparent animationType="fade" onRequestClose={() => setTemplateModal(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setTemplateModal(false)}>
+          <Pressable style={styles.modalCard} onPress={() => {}} testID="template-modal">
+            <Text style={styles.modalTitle}>Save as template</Text>
+            <Text style={styles.modalSub}>Reuse this content (subject, body, pricing, terms & notes) for future quotes. Client and dates are not saved.</Text>
+            <TextInput
+              testID="template-name-input"
+              value={templateName}
+              onChangeText={setTemplateName}
+              placeholder="e.g. Wedding — Premium package"
+              placeholderTextColor={colors.muted}
+              style={styles.templateInput}
+            />
+            <View style={{ flexDirection: "row", gap: spacing.sm, marginTop: spacing.md }}>
+              <Button title="Cancel" variant="secondary" onPress={() => setTemplateModal(false)} style={{ flex: 1 }} />
+              <Button testID="confirm-save-template" title="Save template" loading={busy} onPress={saveAsTemplate} style={{ flex: 1 }} />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </View>
   );
 }
@@ -296,6 +398,11 @@ const styles = StyleSheet.create({
   respTitle: { color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "700", flex: 1 },
   respNote: { color: colors.onSurfaceSecondary, fontFamily: fonts.text, fontSize: fontSize.base, marginTop: spacing.sm, fontStyle: "italic", lineHeight: 20 },
   respAt: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, marginTop: spacing.xs },
+  revisionNoteCard: { borderColor: colors.brand, backgroundColor: colors.brandTertiary },
+  revRow: { flexDirection: "row", alignItems: "center", gap: spacing.sm, paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border },
+  revRowActive: { opacity: 0.9 },
+  revRowText: { flex: 1, color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "600" },
+  templateInput: { backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: spacing.md, color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.base, minHeight: 48 },
   convertedBox: { flexDirection: "row", alignItems: "center", gap: spacing.sm, backgroundColor: colors.surfaceSecondary, borderRadius: radius.md, padding: spacing.md, borderWidth: 1, borderColor: colors.brand, marginBottom: spacing.lg },
   convertedText: { flex: 1, color: colors.onSurface, fontFamily: fonts.text, fontSize: fontSize.sm, fontWeight: "600" },
   cardLabel: { color: colors.muted, fontFamily: fonts.text, fontSize: 11, fontWeight: "800", letterSpacing: 1 },

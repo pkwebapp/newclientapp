@@ -19,6 +19,7 @@ the shared invoice-settings profile so studios configure it in one place.
 from __future__ import annotations
 
 import io
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -90,6 +91,34 @@ class RespondIn(BaseModel):
 
 class ConvertIn(BaseModel):
     target: str = "invoice"  # invoice | proforma
+
+
+class TemplateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    show_pricing: bool = False
+    gst_mode: str = "none"
+    discount_amount: float = 0.0
+    line_items: list[QuoteItemIn] = Field(default_factory=list)
+    terms: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class TemplateUpdate(BaseModel):
+    name: Optional[str] = None
+    subject: Optional[str] = None
+    body: Optional[str] = None
+    show_pricing: Optional[bool] = None
+    gst_mode: Optional[str] = None
+    discount_amount: Optional[float] = None
+    line_items: Optional[list[QuoteItemIn]] = None
+    terms: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class SaveTemplateIn(BaseModel):
+    name: str = Field(min_length=1, max_length=120)
 
 
 # ---------------------------------------------------------------------------
@@ -185,8 +214,9 @@ async def create_quotation(body: QuotationIn, admin: dict = Depends(require_admi
     number = svc.build_invoice_number(fmt_key, prefix, fy, seq, padding)
 
     now = svc.now_iso()
+    qid = qsvc.new_quotation_id()
     doc = {
-        "quotation_id": qsvc.new_quotation_id(),
+        "quotation_id": qid,
         "quotation_number": number,
         "seq": seq,
         "fy": fy,
@@ -195,6 +225,10 @@ async def create_quotation(body: QuotationIn, admin: dict = Depends(require_admi
         "converted_invoice_id": None,
         "share_enabled": False,
         "share_token": None,
+        "revision_number": 1,
+        "revision_of": None,
+        "root_id": qid,
+        "revision_note": None,
         "created_at": now,
         "updated_at": now,
         **payload,
@@ -210,9 +244,25 @@ async def list_quotations(admin: dict = Depends(require_admin)):
     return {"items": [_out(d) for d in docs], "count": len(docs)}
 
 
+async def _thread_docs(root_id: str, studio_id: str) -> list[dict]:
+    docs = await db.quotations.find(
+        {"studio_id": studio_id, "$or": [{"root_id": root_id}, {"quotation_id": root_id}]},
+        {"_id": 0, "quotation_id": 1, "quotation_number": 1, "revision_number": 1, "status": 1, "created_at": 1, "total": 1, "show_pricing": 1},
+    ).to_list(500)
+    docs.sort(key=lambda d: int(d.get("revision_number") or 1))
+    return docs
+
+
 @quotation_router.get("/quotations/{quotation_id}")
 async def get_quotation(quotation_id: str, admin: dict = Depends(require_admin)):
-    return _out(await _quotation_or_404(quotation_id, admin["user_id"]))
+    studio_id = admin["user_id"]
+    doc = await _quotation_or_404(quotation_id, studio_id)
+    out = _out(doc)
+    root_id = doc.get("root_id") or doc["quotation_id"]
+    thread = await _thread_docs(root_id, studio_id)
+    if len(thread) > 1:
+        out["revisions"] = thread
+    return out
 
 
 @quotation_router.patch("/quotations/{quotation_id}")
@@ -309,6 +359,179 @@ async def convert_quotation(quotation_id: str, body: ConvertIn, admin: dict = De
         {"$set": {"converted_invoice_id": invoice.get("invoice_id"), "converted_target": target, "updated_at": svc.now_iso()}},
     )
     return {"status": "converted", "target": target, "invoice": invoice}
+
+
+# ---------------------------------------------------------------------------
+# revision auto-draft
+# ---------------------------------------------------------------------------
+@quotation_router.post("/quotations/{quotation_id}/revise")
+async def revise_quotation(quotation_id: str, admin: dict = Depends(require_admin)):
+    studio_id = admin["user_id"]
+    src = await _quotation_or_404(quotation_id, studio_id)
+    root_id = src.get("root_id") or src["quotation_id"]
+
+    thread = await db.quotations.find(
+        {"studio_id": studio_id, "$or": [{"root_id": root_id}, {"quotation_id": root_id}]},
+        {"_id": 0, "revision_number": 1},
+    ).to_list(500)
+    max_rev = max([int(d.get("revision_number") or 1) for d in thread] + [1])
+    new_rev = max_rev + 1
+
+    note = ""
+    if src.get("status") == "revision_requested":
+        note = ((src.get("client_response") or {}).get("note") or "").strip()
+
+    # migrate older source docs so the thread stays connected
+    if not src.get("root_id"):
+        await db.quotations.update_one(
+            {"quotation_id": src["quotation_id"], "studio_id": studio_id},
+            {"$set": {"root_id": root_id, "revision_number": int(src.get("revision_number") or 1)}},
+        )
+
+    now = svc.now_iso()
+    new_id = qsvc.new_quotation_id()
+    doc = {k: v for k, v in src.items() if k != "_id"}
+    doc.update({
+        "quotation_id": new_id,
+        "status": "draft",
+        "revision_number": new_rev,
+        "revision_of": src["quotation_id"],
+        "root_id": root_id,
+        "revision_note": note or None,
+        "client_response": None,
+        "converted_invoice_id": None,
+        "converted_target": None,
+        "share_enabled": False,
+        "share_token": None,
+        "created_at": now,
+        "updated_at": now,
+    })
+    await db.quotations.insert_one({**doc})
+    return _out(doc)
+
+
+# ---------------------------------------------------------------------------
+# reusable templates
+# ---------------------------------------------------------------------------
+def _new_template_id() -> str:
+    return f"qtpl_{uuid.uuid4().hex[:12]}"
+
+
+def _template_out(doc: dict) -> dict:
+    return {k: v for k, v in doc.items() if k not in ("_id", "name_lower")}
+
+
+async def _create_template(data: TemplateIn, studio_id: str) -> dict:
+    now = svc.now_iso()
+    name = data.name.strip()
+    items = [
+        {"description": it.description, "qty": it.qty, "rate": it.rate, "gst_rate": it.gst_rate}
+        for it in data.line_items if (it.description or "").strip()
+    ]
+    existing = await db.quotation_templates.find_one({"studio_id": studio_id, "name_lower": name.lower()})
+    doc = {
+        "template_id": existing["template_id"] if existing else _new_template_id(),
+        "studio_id": studio_id,
+        "name": name,
+        "name_lower": name.lower(),
+        "subject": data.subject or "",
+        "body": data.body or "",
+        "show_pricing": bool(data.show_pricing),
+        "gst_mode": data.gst_mode or "none",
+        "discount_amount": float(data.discount_amount or 0),
+        "line_items": items,
+        "terms": data.terms or "",
+        "notes": data.notes or "",
+        "created_at": existing["created_at"] if existing else now,
+        "updated_at": now,
+    }
+    await db.quotation_templates.update_one(
+        {"template_id": doc["template_id"], "studio_id": studio_id}, {"$set": doc}, upsert=True
+    )
+    return _template_out(doc)
+
+
+@quotation_router.post("/quotation-templates")
+async def create_template(body: TemplateIn, admin: dict = Depends(require_admin)):
+    return await _create_template(body, admin["user_id"])
+
+
+@quotation_router.get("/quotation-templates")
+async def list_templates(admin: dict = Depends(require_admin)):
+    docs = await db.quotation_templates.find({"studio_id": admin["user_id"]}, {"_id": 0}).sort("updated_at", -1).to_list(500)
+    return {"items": [_template_out(d) for d in docs], "count": len(docs)}
+
+
+@quotation_router.get("/quotation-templates/{template_id}")
+async def get_template(template_id: str, admin: dict = Depends(require_admin)):
+    doc = await db.quotation_templates.find_one({"template_id": template_id, "studio_id": admin["user_id"]}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return _template_out(doc)
+
+
+@quotation_router.patch("/quotation-templates/{template_id}")
+async def update_template(template_id: str, body: TemplateUpdate, admin: dict = Depends(require_admin)):
+    studio_id = admin["user_id"]
+    doc = await db.quotation_templates.find_one({"template_id": template_id, "studio_id": studio_id}, {"_id": 0})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Template not found")
+    data = body.model_dump(exclude_unset=True)
+    updates: dict = {"updated_at": svc.now_iso()}
+    if "name" in data and data["name"]:
+        updates["name"] = data["name"].strip()
+        updates["name_lower"] = data["name"].strip().lower()
+    for key in ("subject", "body", "gst_mode", "terms", "notes"):
+        if key in data:
+            updates[key] = data[key] or ""
+    if "show_pricing" in data:
+        updates["show_pricing"] = bool(data["show_pricing"])
+    if "discount_amount" in data:
+        updates["discount_amount"] = float(data["discount_amount"] or 0)
+    if "line_items" in data and data["line_items"] is not None:
+        updates["line_items"] = [
+            {"description": it.get("description"), "qty": it.get("qty"), "rate": it.get("rate"), "gst_rate": it.get("gst_rate")}
+            for it in data["line_items"] if (it.get("description") or "").strip()
+        ]
+    await db.quotation_templates.update_one({"template_id": template_id, "studio_id": studio_id}, {"$set": updates})
+    fresh = await db.quotation_templates.find_one({"template_id": template_id, "studio_id": studio_id}, {"_id": 0})
+    return _template_out(fresh)
+
+
+@quotation_router.delete("/quotation-templates/{template_id}")
+async def delete_template(template_id: str, admin: dict = Depends(require_admin)):
+    studio_id = admin["user_id"]
+    res = await db.quotation_templates.delete_one({"template_id": template_id, "studio_id": studio_id})
+    if res.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Template not found")
+    return {"status": "deleted"}
+
+
+@quotation_router.post("/quotations/{quotation_id}/save-as-template")
+async def save_quotation_as_template(quotation_id: str, body: SaveTemplateIn, admin: dict = Depends(require_admin)):
+    studio_id = admin["user_id"]
+    src = await _quotation_or_404(quotation_id, studio_id)
+    items = [
+        QuoteItemIn(
+            description=(it.get("description") or "Item"),
+            qty=float(it.get("qty") or 1),
+            rate=float(it.get("rate") or 0),
+            gst_rate=float(it.get("gst_rate") or 0),
+        )
+        for it in (src.get("line_items") or []) if (it.get("description") or "").strip()
+    ]
+    tin = TemplateIn(
+        name=body.name,
+        subject=src.get("subject") or None,
+        body=src.get("body") or None,
+        show_pricing=bool(src.get("show_pricing")),
+        gst_mode=src.get("gst_mode") or "none",
+        discount_amount=float(src.get("discount_amount") or 0),
+        line_items=items,
+        terms=src.get("terms") or None,
+        notes=src.get("notes") or None,
+    )
+    return await _create_template(tin, studio_id)
 
 
 # ---------------------------------------------------------------------------

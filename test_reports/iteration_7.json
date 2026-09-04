@@ -1,0 +1,33 @@
+{
+  "summary": "Frontend-only validation of two new Quotations features (Quote Templates + Revision Auto-Draft) at 390x844 (mobile Expo web). Login via /admin-login demo button OK. Test 1 — SAVE AS TEMPLATE: On /admin/quotation/quo_aee2685d751f (QUO-0007) tapped [save-as-template], template-modal opened with subject prefilled, filled 'PIK TEST Wedding Premium' in [template-name-input], tapped [confirm-save-template] → success toast 'Saved as template PIK TEST Wedding Premium' visible. Test 2 — REVISION AUTO-DRAFT: seeded fresh QUO-0016 via API (POST /api/quotations + POST /api/quotations/{id}/share + POST /api/public/quotations/{token}/respond with action='revision'), then opened admin detail — [client-response-card] shows 'Client requested a revision' + note, and the new [create-revision] button is visible (correctly hidden on the previously-converted QUO-0007). Tapping [create-revision] navigated to /admin/quotation/new?id=<new_rev_id> and shows [revision-banner] with 'Revision 2 draft — Client asked: Please add drone coverage and reduce price'. Client-name/subject/body/pricing were pre-filled from parent. Test 3 — START FROM TEMPLATE: on /admin/quotation/new tapped [start-from-template], modal listed 'PIK TEST Wedding Premium', tapped [apply-template-<id>] → quote-subject and quote-body pre-filled, modal closed with success toast. Test 4 — DELETE TEMPLATE: reopened picker, tapped [delete-template-<id>], template disappeared from list, success toast. Test 5 — REVISION HISTORY: on original QUO-0016 [revision-history] card lists 'Rev 1 · viewing (Revision requested)' and 'Rev 2 (Draft)'; header shows 'QUO-0016'. Tapping [revision-row-2] navigated to the revision draft where the header renders as 'QUO-0016 · Rev 2', [revision-context] card ('Revision 2 · client's change request — Please add drone coverage and reduce price') appears, and [revision-history] again lists both rows with Rev 2 marked · viewing (verified in screenshot). Test 6 — REGRESSION: created a normal quotation via [quote-client-name] + [quote-subject] + [quote-body] + [save-quotation] → redirected to /admin/quotation/quo_c94cf974f25e; [share-quotation] created [share-url-box]; [convert-quotation] → [convert-modal] → [convert-invoice] navigated to /admin/invoice/inv_7e58f1419d9c. No JS errors in console (only harmless RN-web warnings: supabase config missing, shadow*, useNativeDriver, pointerEvents). All acceptance criteria PASS.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [],
+    "react_native_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_quotations.py",
+    "/app/test_reports/pytest/quotations.xml"
+  ],
+  "action_items": [
+    "Nothing to fix for the requested features — all 6 acceptance flows pass end-to-end in the web preview.",
+    "(Carry-over, HIGH, from iteration_6) PATCH /api/quotations/{id} still overwrites persisted client snapshot when payload omits client/client_id. Not exercised by the new UI (edit form always submits a client block), but the latent bug is unchanged.",
+    "(Cosmetic/minor) On Rev-2 detail, [revision-history] briefly renders 'Rev 1 · viewing' during the first paint after navigation from ORIGINAL (before the refetch resolves). Final render is correct ('Rev 2 · viewing'). Could be improved by clearing local `q` state on `id` change (e.g. useEffect(() => setQ(null), [id]))."
+  ],
+  "critical_code_review_comments": [
+    "quotation/new.tsx applyTemplate: does not reset issueDate / validUntil (kept from form) and does not clear defaultGst on rows when template.line_items is empty — acceptable but worth a comment.",
+    "quotation/[id].tsx createRevision: uses router.push(`/admin/quotation/new?id=<new>`); consider router.replace so pressing Back from the revision draft doesn't return the user to the parent's stale detail screen.",
+    "quotation/[id].tsx revision-history 'active' check uses `r.quotation_id === id` from useLocalSearchParams; because the local `q` state persists across id changes on some navigation paths, the initial paint can mark the wrong row · viewing. Reset `q` to null in a useEffect on id change to eliminate the flash.",
+    "Save-as-template modal has no client-side max_length on template name; backend should enforce Field(max_length=120) on QuoteTemplateIn.name to avoid runaway names.",
+    "quotations.ts QuoteTemplate type marks gst_mode required but backend allows omitting it (defaults to 'none') — safe but consider making it optional for symmetry."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "not tested this iteration (already 20/20 per main-agent)", "frontend": "6/6 acceptance flows pass (Save-as-Template, Start-from-Template, Delete-Template, Create-Revision-Draft with banner, Revision-History thread + 'QUO-xxxx · Rev 2' header, and Regression create/share/convert)"},
+  "seed_data_creation": "Created QUO-0016 (quo_108d168422cb) via API and marked it revision_requested via public respond; then created its Rev 2 draft (quo_95962ffdf0df) via the [create-revision] UI. Additionally created a regression quotation quo_c94cf974f25e which was share-linked and converted to invoice inv_7e58f1419d9c. Template 'PIK TEST Wedding Premium' was saved and then deleted through the UI (so no residual template rows remain).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "New reliable testIDs for these features: [save-as-template], [template-modal], [template-name-input], [confirm-save-template], [start-from-template], [apply-template-<template_id>], [delete-template-<template_id>], [create-revision], [revision-banner] (on new-quotation editor when opening a revision draft), [revision-context] (on detail screen for a revision draft), [revision-history], [revision-row-<N>]. Header title on a revision detail is rendered as literal string 'QUO-xxxx · Rev N' (unicode middle dot). The [create-revision] button is only visible when status==='revision_requested' AND !converted_invoice_id — so to reproduce, seed a fresh (non-converted) quotation with revision_requested via POST /api/public/quotations/{token}/respond with body {\"action\":\"revision\",\"note\":\"...\"} (note: action value is 'revision', NOT 'revise'). Demo admin token via POST /api/auth/dev/mock-login {\"role\":\"admin\"}.",
+  "rca_of_issue": "No new bugs. Carry-over PATCH-wipes-client bug from iteration_6 remains open but is not triggered by these new features (Save-as-Template uses POST /save-as-template; Create-Revision uses POST /revise which duplicates the source doc)."
+}

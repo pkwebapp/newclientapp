@@ -273,6 +273,101 @@ class TestConvert:
 
 
 # ---------------------------------------------------------------------------
+# reusable templates
+# ---------------------------------------------------------------------------
+class TestTemplates:
+    def test_save_as_template_and_list(self, api, created):
+        r = api.post(
+            f"{BASE_URL}/api/quotations/{created['quotation_id']}/save-as-template",
+            json={"name": "TEST_QUO Wedding Premium"},
+            timeout=15,
+        )
+        assert r.status_code == 200, r.text
+        t = r.json()
+        assert t.get("template_id", "").startswith("qtpl_")
+        assert t["name"] == "TEST_QUO Wedding Premium"
+        assert t.get("show_pricing") is True
+        assert len(t.get("line_items") or []) == 2
+        # appears in list
+        lst = api.get(f"{BASE_URL}/api/quotation-templates", timeout=15).json()
+        assert any(x["template_id"] == t["template_id"] for x in lst["items"])
+        created["_template_id"] = t["template_id"]
+
+    def test_save_same_name_upserts_not_duplicates(self, api, created):
+        before = api.get(f"{BASE_URL}/api/quotation-templates", timeout=15).json()["count"]
+        r = api.post(
+            f"{BASE_URL}/api/quotations/{created['quotation_id']}/save-as-template",
+            json={"name": "TEST_QUO Wedding Premium"},
+            timeout=15,
+        )
+        assert r.status_code == 200
+        after = api.get(f"{BASE_URL}/api/quotation-templates", timeout=15).json()["count"]
+        assert after == before, "same-name template should upsert, not duplicate"
+
+    def test_create_template_directly_and_delete(self, api):
+        r = api.post(
+            f"{BASE_URL}/api/quotation-templates",
+            json={"name": "TEST_QUO Corporate", "subject": "Corporate shoot",
+                  "show_pricing": True, "gst_mode": "igst",
+                  "line_items": [{"description": "Half day", "qty": 1, "rate": 20000, "gst_rate": 18}]},
+            timeout=15,
+        )
+        assert r.status_code == 200
+        tid = r.json()["template_id"]
+        d = api.delete(f"{BASE_URL}/api/quotation-templates/{tid}", timeout=15)
+        assert d.status_code == 200
+        g = api.get(f"{BASE_URL}/api/quotation-templates/{tid}", timeout=15)
+        assert g.status_code == 404
+
+    def test_cleanup_saved_template(self, api, created):
+        tid = created.get("_template_id")
+        if tid:
+            api.delete(f"{BASE_URL}/api/quotation-templates/{tid}", timeout=15)
+
+
+# ---------------------------------------------------------------------------
+# revision auto-draft
+# ---------------------------------------------------------------------------
+class TestRevision:
+    def test_revise_clones_as_draft_keeps_number_and_note(self, api):
+        # fresh quotation
+        payload = {
+            "client": {"name": "TEST_QUO Revise"},
+            "subject": "Revise me",
+            "show_pricing": True, "gst_mode": "none",
+            "line_items": [{"description": "Coverage", "qty": 1, "rate": 30000, "gst_rate": 0}],
+        }
+        base = api.post(f"{BASE_URL}/api/quotations", json=payload, timeout=20).json()
+        qid = base["quotation_id"]
+        assert base["revision_number"] == 1
+        assert base["root_id"] == qid
+        # client requests a change
+        sh = api.post(f"{BASE_URL}/api/quotations/{qid}/share", json={"enabled": True}, timeout=15).json()
+        requests.post(f"{BASE_URL}/api/public/quotations/{sh['share_token']}/respond",
+                      json={"action": "revision", "note": "Add drone shots (TEST_QUO)"}, timeout=15)
+        # revise
+        r = api.post(f"{BASE_URL}/api/quotations/{qid}/revise", json={}, timeout=20)
+        assert r.status_code == 200, r.text
+        rev = r.json()
+        assert rev["quotation_id"] != qid
+        assert rev["revision_number"] == 2
+        assert rev["root_id"] == qid
+        assert rev["quotation_number"] == base["quotation_number"]  # same base number
+        assert rev["status"] == "draft"
+        assert rev["revision_note"] == "Add drone shots (TEST_QUO)"
+        assert rev.get("share_enabled") in (False, None)
+        assert rev.get("client_response") is None
+        # detail carries the thread
+        det = api.get(f"{BASE_URL}/api/quotations/{rev['quotation_id']}", timeout=15).json()
+        assert len(det.get("revisions") or []) == 2
+        revnums = sorted(x["revision_number"] for x in det["revisions"])
+        assert revnums == [1, 2]
+        # cleanup
+        api.delete(f"{BASE_URL}/api/quotations/{qid}", timeout=15)
+        api.delete(f"{BASE_URL}/api/quotations/{rev['quotation_id']}", timeout=15)
+
+
+# ---------------------------------------------------------------------------
 # delete
 # ---------------------------------------------------------------------------
 class TestDeleteQuotation:

@@ -378,3 +378,13 @@ Known non-blocking nits: OTP demo-code banner can overlay "Your Albums" header o
   detail (PDF, share link copy, convert modal Tax/Proforma, delete confirm, client response card),
   public `/q/[token]` light letterhead page (Accept / Request changes with note, Download PDF).
 - Invoice Settings has Website + Quotation prefix fields. Tests: /app/backend/tests/test_quotations.py.
+
+## Feature: Quote Templates + Revision Auto-Draft (June 2026 fork) — COMPLETE & TESTED (20/20 backend)
+- **Quote Templates** (single-account, `quotation_templates` collection):
+  - Backend: POST/GET/PATCH/DELETE `/api/quotation-templates`; POST `/api/quotations/{id}/save-as-template {name}`.
+  - Templates store reusable content only (name, subject, body, show_pricing, gst_mode, discount, line_items, terms, notes) — no client/date. Same-name save UPSERTS (no duplicates).
+  - Frontend: "Save as template" action on quotation detail (name modal); "Start from a template" picker on new-quotation form (apply one-tap pre-fill + delete per row).
+- **Revision Auto-Draft** (chained revisions keep the SAME base number, per user choice):
+  - Quotation doc gained `revision_number` (default 1), `revision_of`, `root_id` (=quotation_id at create), `revision_note`.
+  - Backend: POST `/api/quotations/{id}/revise` clones the source into a new **draft**, keeps the same quotation_number, increments revision_number, carries the client's change-note into `revision_note`, resets share/response/converted. Migrates legacy docs (sets root_id) on first revise. GET detail returns `revisions` thread when >1.
+  - Frontend: "Create revision draft" CTA appears on `revision_requested` quotations → opens the new draft in the editor showing a "Client asked: …" banner; detail screen shows a "REVISION HISTORY" thread and header "QUO-xxxx · Rev N". List row shows the Rev tag.

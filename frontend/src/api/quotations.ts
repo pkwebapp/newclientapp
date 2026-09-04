@@ -43,6 +43,34 @@ export type Quotation = {
   converted_target?: "invoice" | "proforma" | null;
   share_enabled?: boolean;
   share_url?: string;
+  revision_number?: number;
+  revision_of?: string | null;
+  root_id?: string | null;
+  revision_note?: string | null;
+  revisions?: {
+    quotation_id: string;
+    quotation_number: string;
+    revision_number?: number;
+    status: string;
+    created_at?: string;
+    total?: number;
+    show_pricing?: boolean;
+  }[];
+};
+
+export type QuoteTemplate = {
+  template_id: string;
+  name: string;
+  subject?: string;
+  body?: string;
+  show_pricing?: boolean;
+  gst_mode: QuoteMode;
+  discount_amount?: number;
+  line_items: QuoteItem[];
+  terms?: string;
+  notes?: string;
+  created_at?: string;
+  updated_at?: string;
 };
 
 export const QUOTE_STATUS_META: Record<string, { label: string; tone: "neutral" | "gold" | "success" | "warning" }> = {
