@@ -1,9 +1,9 @@
 """Auth utilities: password hashing, session tokens, current-user dependency.
 
-Tri-path authentication:
-- Phone JWT (HS256, iss=pik-connect) — phone OTP / password login (no Supabase).
-- Supabase JWT (RS256/ES256)         — studio admins & clients via Supabase.
-- Legacy opaque session token        — super admin only (internal login).
+Two-path authentication:
+- Phone JWT (HS256, iss=pik-connect) — phone OTP / password login.
+- Opaque session token (user_sessions) — Google sign-in (Emergent Auth) and the
+  platform super admin login.
 
 All existing `Depends(...)` signatures are preserved so the ~200 protected
 routes in server.py did not need to change.
@@ -15,9 +15,16 @@ from datetime import datetime, timezone, timedelta
 from fastapi import Header, HTTPException, Query
 
 from config import db
-from supabase_auth import user_from_supabase_bearer, looks_like_jwt
 
 SESSION_TTL_DAYS = 7
+
+
+def looks_like_jwt(token: str) -> bool:
+    """Quick shape check — real JWTs are three dot-separated base64 segments."""
+    if not token:
+        return False
+    parts = token.split(".")
+    return len(parts) == 3 and all(parts)
 
 
 def hash_password(password: str) -> str:
@@ -36,7 +43,7 @@ def new_user_id() -> str:
 
 
 async def create_session(user_id: str) -> str:
-    """Legacy opaque session — retained ONLY for the platform super admin."""
+    """Opaque session token — used by Google sign-in and the super admin login."""
     token = f"st_{uuid.uuid4().hex}{uuid.uuid4().hex}"
     now = datetime.now(timezone.utc)
     await db.user_sessions.insert_one({
@@ -67,32 +74,27 @@ async def _user_from_legacy_token(token: str | None):
 
 
 async def _user_from_token(token: str | None):
-    """Resolve a phone JWT, a Supabase JWT, or a legacy opaque session token."""
+    """Resolve a phone JWT or an opaque session token."""
     if not token:
         return None
     if looks_like_jwt(token):
-        # 1. Phone-auth JWT (iss=pik-connect, HS256) — works without Supabase
+        # Phone-auth JWT (iss=pik-connect, HS256)
         from phone_auth_service import is_phone_jwt, verify_phone_jwt
-        if is_phone_jwt(token):
-            claims = verify_phone_jwt(token)
-            if not claims:
-                return None
-            user = await db.users.find_one(
-                {"user_id": claims["sub"]}, {"_id": 0, "password_hash": 0}
-            )
-            if user:
-                await db.users.update_one(
-                    {"user_id": user["user_id"]},
-                    {"$set": {"last_seen_at": datetime.now(timezone.utc).isoformat()}},
-                )
-            return user
-        # 2. Supabase JWT (RS256/ES256) — studio admin / client via Supabase
-        user = await user_from_supabase_bearer(token)
+        if not is_phone_jwt(token):
+            return None
+        claims = verify_phone_jwt(token)
+        if not claims:
+            return None
+        user = await db.users.find_one(
+            {"user_id": claims["sub"]}, {"_id": 0, "password_hash": 0}
+        )
         if user:
-            return user
-        # JWT that fails both checks is rejected — do NOT fall through to legacy
-        return None
-    # 3. Legacy opaque session — super admin only
+            await db.users.update_one(
+                {"user_id": user["user_id"]},
+                {"$set": {"last_seen_at": datetime.now(timezone.utc).isoformat()}},
+            )
+        return user
+    # Opaque session — Google sign-in / super admin
     return await _user_from_legacy_token(token)
 
 

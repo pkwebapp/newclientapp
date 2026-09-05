@@ -1,6 +1,6 @@
 /**
  * Phone OTP authentication helpers — talk to the PIK Connect backend.
- * Works independently of Supabase (custom HS256 JWT).
+ * Backend issues a custom HS256 JWT.
  */
 import { api } from "@/src/api/client";
 

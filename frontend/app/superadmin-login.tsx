@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useRouter } from "expo-router";
-import { KeyboardAvoidingView, Linking, Platform, StyleSheet, Text, View } from "react-native";
+import { KeyboardAvoidingView, Platform, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { api, ApiError } from "@/src/api/client";
@@ -8,13 +8,11 @@ import { useAuth } from "@/src/context/AuthContext";
 import { Button, TextField, LuxeLoader, useToast } from "@/src/components/ui";
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 
-import { APP_DOMAIN, getAppSurface } from "@/src/navigation/host-routing";
 export default function SuperAdminLogin() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { signInWithLegacyToken } = useAuth();
+  const { signInWithToken } = useAuth();
   const toast = useToast();
-  const surface = getAppSurface();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
@@ -23,28 +21,15 @@ export default function SuperAdminLogin() {
     setLoading(true);
     try {
       const result = await api.post("/superadmin/login", { email: email.trim(), password });
-      await signInWithLegacyToken(result.session_token);
+      const u = await signInWithToken(result.session_token);
+      if (!u) throw new Error("Could not sign in. Please try again.");
       router.replace("/superadmin");
     } catch (error: any) {
-      toast.show(error instanceof ApiError ? error.message : "Could not sign in", "error");
+      toast.show(error instanceof ApiError ? error.message : error?.message || "Could not sign in", "error");
     } finally {
       setLoading(false);
     }
   };
-
-  if (surface === "client" || surface === "studio") {
-    return (
-      <View style={styles.restrictedContainer}>
-        <View style={styles.card}>
-          <View style={styles.logo}><Text style={styles.logoText}>P</Text></View>
-          <Text style={styles.eyebrow}>PIK CONNECT</Text>
-          <Text style={styles.title}>Platform control is restricted</Text>
-          <Text style={styles.subtitle}>Super Admin access is available only from the secure platform workspace.</Text>
-          <Button title="Open Super Admin workspace" onPress={() => Linking.openURL(`${APP_DOMAIN.superadmin}/superadmin-login`)} icon="shield-checkmark-outline" />
-        </View>
-      </View>
-    );
-  }
 
   if (loading) return <LuxeLoader title="Signing in" subtitle="Opening platform controls…" />;
 
@@ -68,7 +53,6 @@ export default function SuperAdminLogin() {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#F7F8FA", alignItems: "center", justifyContent: "center" },
-  restrictedContainer: { flex: 1, backgroundColor: "#F7F8FA", alignItems: "center", justifyContent: "center", padding: spacing.xl },
   card: { width: "100%", maxWidth: 460, padding: spacing.xl },
   logo: { width: 52, height: 52, borderRadius: radius.lg, backgroundColor: colors.brand, alignItems: "center", justifyContent: "center", marginBottom: spacing.lg },
   logoText: { color: colors.onBrand, fontFamily: fonts.display, fontSize: 30, fontWeight: "700" },

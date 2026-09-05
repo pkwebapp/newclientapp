@@ -18,6 +18,44 @@ export class ApiError extends Error {
   }
 }
 
+/** Requests that get no response within this window fail loudly instead of
+ * leaving a spinner running forever. */
+const REQUEST_TIMEOUT_MS = 25_000;
+
+/** FastAPI returns `detail` as a string, or as a list of validation errors
+ * (422). Always hand callers a readable string. */
+function errorMessage(data: any, fallback = "Something went wrong"): string {
+  const detail = data?.detail;
+  if (typeof detail === "string" && detail) return detail;
+  if (Array.isArray(detail)) {
+    const msgs = detail
+      .map((d: any) => {
+        const field = Array.isArray(d?.loc) ? d.loc.filter((p: any) => p !== "body").join(".") : "";
+        const msg = typeof d?.msg === "string" ? d.msg.replace(/^Value error, /, "") : "";
+        return field && msg ? `${field}: ${msg}` : msg || field;
+      })
+      .filter(Boolean);
+    if (msgs.length) return msgs.join("; ");
+  }
+  if (typeof data === "string" && data.trim()) return data.slice(0, 200);
+  return fallback;
+}
+
+async function fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (e: any) {
+    if (e?.name === "AbortError") {
+      throw new ApiError(0, "The server took too long to respond. Please check your connection and try again.");
+    }
+    throw new ApiError(0, "Could not reach the server. Please check your connection.");
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Auth-aware URL for serving an image (works on web <img> and native). */
 export function fileUrl(path?: string | null): string | undefined {
   if (!path) return undefined;
@@ -74,15 +112,14 @@ async function request(path: string, opts: any = {}) {
     headers["Content-Type"] = "application/json";
     body = JSON.stringify(opts.json);
   }
-  const res = await fetch(BASE + path, { method: opts.method || "GET", headers, body });
+  const res = await fetchWithTimeout(BASE + path, { method: opts.method || "GET", headers, body });
   const text = await res.text();
   let data: any = text;
   try {
     data = JSON.parse(text);
   } catch {}
   if (!res.ok) {
-    const msg = (data && data.detail) || (typeof data === "string" ? data : "Something went wrong");
-    throw new ApiError(res.status, msg);
+    throw new ApiError(res.status, errorMessage(data));
   }
   return data;
 }
@@ -105,8 +142,7 @@ async function upload(path: string, uri: string, name: string, type: string) {
     data = JSON.parse(text);
   } catch {}
   if (!res.ok) {
-    const msg = (data && data.detail) || "Upload failed";
-    throw new ApiError(res.status, msg);
+    throw new ApiError(res.status, errorMessage(data, "Upload failed"));
   }
   return data;
 }
@@ -143,8 +179,7 @@ async function uploadBulk(path: string, items: UploadItem[]) {
     data = JSON.parse(text);
   } catch {}
   if (!res.ok) {
-    const msg = (data && data.detail) || "Upload failed";
-    throw new ApiError(res.status, msg);
+    throw new ApiError(res.status, errorMessage(data, "Upload failed"));
   }
   return data;
 }
@@ -164,8 +199,7 @@ async function publicRequest(path: string, opts: any = {}) {
     data = JSON.parse(text);
   } catch {}
   if (!res.ok) {
-    const msg = (data && data.detail) || (typeof data === "string" ? data : "Something went wrong");
-    throw new ApiError(res.status, msg);
+    throw new ApiError(res.status, errorMessage(data));
   }
   return data;
 }

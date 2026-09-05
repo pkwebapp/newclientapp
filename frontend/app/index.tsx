@@ -11,7 +11,6 @@ import { Reveal, RevealScroll } from "@/src/components/Reveal";
 import { HERO_PALETTE as PAL } from "@/src/config/hero";
 import { useAuth } from "@/src/context/AuthContext";
 import { fonts, fontSize, radius, spacing } from "@/src/theme";
-import { getAppSurface } from "@/src/navigation/host-routing";
 
 // Lazy-loaded so the heavy animated hero art doesn't block first paint /
 // hydration on mobile — audit called out FCP / LCP / TBT as the biggest wins.
@@ -139,7 +138,6 @@ export default function Home() {
   const insets = useSafeAreaInsets();
   const isWide = width >= 900;
   const isWebWide = Platform.OS === "web" && isWide;
-  const surface = getAppSurface();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const openPage = (route: string) => {
@@ -147,21 +145,10 @@ export default function Home() {
     router.push(route as any);
   };
 
+  // Signed-in users skip the marketing page; anonymous visitors see it.
   useEffect(() => {
-    if (surface === "client") {
-      router.replace(user?.role === "client" ? "/client" : "/client-login");
-      return;
-    }
-    if (surface === "studio") {
-      router.replace(user?.role === "admin" ? "/admin" : "/admin-login");
-      return;
-    }
-    if (surface === "superadmin") {
-      router.replace(user?.role === "superadmin" ? "/superadmin" : "/superadmin-login");
-      return;
-    }
     if (user) router.replace(user.role === "superadmin" ? "/superadmin" : user.role === "admin" ? "/admin" : "/client");
-  }, [surface, user, router]);
+  }, [user, router]);
 
   const artWidth = isWide ? Math.min(620, Math.max(460, width * 0.44)) : Math.min(width - spacing.xl * 2, 340);
 

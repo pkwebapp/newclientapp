@@ -16,7 +16,7 @@ from urllib.parse import urljoin, urlparse
 
 import qrcode
 import httpx
-from fastapi import FastAPI, APIRouter, UploadFile, File, Form, Depends, HTTPException, Response
+from fastapi import FastAPI, APIRouter, UploadFile, File, Form, Depends, HTTPException, Response, Header
 from starlette.middleware.cors import CORSMiddleware
 from starlette.concurrency import run_in_threadpool
 from pydantic import BaseModel, EmailStr, Field
@@ -33,7 +33,7 @@ import gdrive_service
 from gdrive_service import DriveError
 from email_service import send_otp_email
 from auth_utils import (
-    hash_password, verify_password, new_user_id, create_session,
+    hash_password, verify_password, new_user_id, create_session, looks_like_jwt,
     get_current_user, require_admin, require_admin_uploads, require_client, user_from_token_or_header,
 )  # noqa: F401  (some imports retained for tests / superadmin flow)
 import plans
@@ -198,55 +198,33 @@ def _phone_or_400(value: str) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Auth — routes replaced by Supabase (admin & client)
+# Auth
 # ---------------------------------------------------------------------------
-# All login/signup/password-reset/OTP/Google-exchange for admins and clients now
-# happens directly on the frontend via `@supabase/supabase-js` against the
-# Supabase project. The backend simply verifies the Supabase JWT on every
-# protected request (see `auth_utils.py` -> `_user_from_token`) and lazily
-# creates a matching local `users` row on first sight (see `supabase_auth.py`).
-#
-# The only auth-adjacent endpoints kept here are:
-#   - GET  /auth/me              — return the current local user profile
-#   - POST /auth/logout          — no-op (Supabase SDK clears its own session)
-#   - POST /auth/admin/profile   — the studio-onboarding form
-#
-# The super-admin login (legacy opaque session) lives in `superadmin_routes.py`.
+# Two sign-in paths, both independent of any third-party auth SDK:
+#   - Phone OTP / password  → custom HS256 JWT       (see /auth/phone/* below)
+#   - Google (Emergent Auth) → opaque session token  (see /auth/session below)
+# The super-admin login (opaque session) lives in `superadmin_routes.py`.
+
+auth_logger = logging.getLogger("pik.auth")
 
 
-@api_router.post("/auth/admin/register")
-async def _deprecated_admin_register():
-    raise HTTPException(status_code=410, detail="Deprecated: sign up via Supabase")
-
-
-@api_router.post("/auth/admin/login")
-async def _deprecated_admin_login():
-    raise HTTPException(status_code=410, detail="Deprecated: sign in via Supabase")
-
-
-@api_router.post("/auth/admin/forgot-password")
-async def _deprecated_admin_forgot():
-    raise HTTPException(status_code=410, detail="Deprecated: use Supabase password reset")
-
-
-@api_router.post("/auth/admin/reset-password")
-async def _deprecated_admin_reset():
-    raise HTTPException(status_code=410, detail="Deprecated: use Supabase password reset")
+class GoogleSessionBody(BaseModel):
+    session_id: str = Field(min_length=8, max_length=512)
+    role: str = "client"   # "admin" | "client" — applied only when creating a new user
 
 
 @api_router.post("/auth/session")
-async def _deprecated_google_session():
-    raise HTTPException(status_code=410, detail="Deprecated: use Supabase Google OAuth")
-
-
-@api_router.post("/auth/client/request-otp")
-async def _deprecated_request_otp():
-    raise HTTPException(status_code=410, detail="Deprecated: use Supabase email OTP")
-
-
-@api_router.post("/auth/client/verify-otp")
-async def _deprecated_verify_otp():
-    raise HTTPException(status_code=410, detail="Deprecated: use Supabase email OTP")
+async def google_session(body: GoogleSessionBody):
+    """Exchange the one-time Emergent ``session_id`` for our own bearer token."""
+    from google_auth import fetch_google_identity, upsert_google_user, GoogleAuthError
+    try:
+        identity = await fetch_google_identity(body.session_id.strip())
+    except GoogleAuthError as exc:
+        raise HTTPException(status_code=401, detail=str(exc)) from exc
+    user = await upsert_google_user(identity, body.role)
+    token = await create_session(user["user_id"])
+    auth_logger.info("google sign-in ok user=%s role=%s", user["user_id"], user["role"])
+    return {"session_token": token, "user": _public_user(user)}
 
 
 # ---------------------------------------------------------------------------
@@ -316,6 +294,7 @@ async def phone_send_otp(body: PhoneSendOtpBody):
     try:
         result = await store_and_send_otp(phone)
     except ValueError as exc:
+        auth_logger.warning("send-otp failed phone=%s: %s", phone[-4:], exc)
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return result
 
@@ -333,8 +312,11 @@ async def phone_verify_otp(body: PhoneVerifyOtpBody):
     role = body.role if body.role in ("admin", "client") else "client"
     ts = now_iso()
 
-    # Find or create user
-    user = await db.users.find_one({"phone": phone}, {"_id": 0, "password_hash": 0})
+    # Find or create user — match legacy (non-E.164) phone formats too so an
+    # existing account is never duplicated.
+    user = await db.users.find_one(
+        {"phone": {"$in": phone_variants(phone)}}, {"_id": 0, "password_hash": 0}
+    )
     if not user:
         uid = new_user_id()
         user = {
@@ -351,14 +333,17 @@ async def phone_verify_otp(body: PhoneVerifyOtpBody):
             user.update(plans.new_studio_plan_fields())
             user["profile_complete"] = False
         await db.users.insert_one(user)
+        user.pop("_id", None)
+        auth_logger.info("verify-otp: created %s user=%s", role, uid)
     else:
         await db.users.update_one(
             {"user_id": user["user_id"]},
-            {"$set": {"last_seen_at": ts, "verified_phone": True}},
+            {"$set": {"last_seen_at": ts, "verified_phone": True, "phone": phone}},
         )
 
     token = create_phone_jwt(user["user_id"], user["role"], phone)
     is_new = _needs_client_setup(user)
+    auth_logger.info("verify-otp ok user=%s role=%s is_new=%s", user["user_id"], user["role"], is_new)
     return {"token": token, "user": _public_user(user), "is_new": is_new}
 
 
@@ -398,7 +383,12 @@ async def phone_complete_setup(
             {"email": email, "user_id": {"$ne": user["user_id"]}}, {"_id": 0, "user_id": 1}
         )
         if conflict:
-            raise HTTPException(status_code=409, detail="That email is already linked to another account")
+            auth_logger.info("complete-setup: email conflict user=%s", user["user_id"])
+            raise HTTPException(
+                status_code=409,
+                detail="That email is already used by another PIK Connect account. "
+                       "Enter a different email, or sign in with Google using that email instead.",
+            )
         updates["email"] = email
     if body.password:
         if len(body.password) < 4:
@@ -407,6 +397,10 @@ async def phone_complete_setup(
         updates["has_password"] = True
     await db.users.update_one({"user_id": user["user_id"]}, {"$set": updates})
     fresh = await db.users.find_one({"user_id": user["user_id"]}, {"_id": 0, "password_hash": 0})
+    auth_logger.info(
+        "complete-setup ok user=%s role=%s email=%s password=%s",
+        user["user_id"], user.get("role"), bool(body.email), bool(body.password),
+    )
     return {"message": "Setup complete", "user": _public_user(fresh or user)}
 
 
@@ -415,10 +409,11 @@ async def phone_login(body: PhoneLoginBody):
     """Sign in with phone number + password (requires prior set-password call)."""
     from phone_auth_service import create_phone_jwt
     phone = _phone_or_400(body.phone)
-    user = await db.users.find_one({"phone": phone}, {"_id": 0})
+    user = await db.users.find_one({"phone": {"$in": phone_variants(phone)}}, {"_id": 0})
     if not user or not user.get("password_hash"):
         raise HTTPException(status_code=401, detail="Invalid phone number or password")
     if not verify_password(body.password, user["password_hash"]):
+        auth_logger.info("phone login: bad password user=%s", user["user_id"])
         raise HTTPException(status_code=401, detail="Invalid phone number or password")
 
     await db.users.update_one(
@@ -436,8 +431,12 @@ async def auth_me(user: dict = Depends(get_current_user)):
 
 
 @api_router.post("/auth/logout")
-async def logout():
-    """No-op — Supabase SDK on the client clears its own session."""
+async def logout(authorization: Optional[str] = Header(default=None)):
+    """Revoke an opaque session token (Google / super admin). Phone JWTs are
+    stateless — the client simply drops them."""
+    token = authorization[7:].strip() if authorization and authorization.lower().startswith("bearer ") else None
+    if token and not looks_like_jwt(token):
+        await db.user_sessions.delete_one({"session_token": token})
     return {"status": "ok"}
 
 
@@ -3070,7 +3069,6 @@ async def on_startup():
     try:
         await db.users.create_index("user_id", unique=True)
         await db.users.create_index("email", sparse=True)
-        await db.users.create_index("supabase_id", unique=True, sparse=True)
         await db.user_sessions.create_index("session_token", unique=True)
         await db.user_sessions.create_index("expires_at", expireAfterSeconds=0)
         await db.events.create_index("event_id", unique=True)
@@ -3100,10 +3098,6 @@ async def on_startup():
     except Exception as e:
         logger.error(f"Storage init failed: {e}")
 
-    # Seed admin (removed — new studios now sign up via Supabase, then the
-    # first authenticated request creates their local `users` row via
-    # `supabase_auth.upsert_user_from_claims`).
-    pass
 
 
     # Recover any photos left mid-indexing by a previous restart, then start the worker.

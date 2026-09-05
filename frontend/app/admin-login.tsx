@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { Pressable, StyleSheet, Text, View, Platform, Linking } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,13 +9,8 @@ import { useAuth } from "@/src/context/AuthContext";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { PhoneField, isPhoneNumberValid } from "@/src/components/PhoneField";
 import { useResponsive } from "@/src/hooks/use-responsive";
+import { useGoogleSignIn } from "@/src/hooks/use-google-signin";
 import { goBackOr } from "@/src/navigation/back";
-import {
-  signInWithPassword,
-  signUpWithPassword,
-  sendMagicLink,
-  signInWithGoogle,
-} from "@/src/lib/auth-actions";
 import {
   sendPhoneOtp,
   verifyPhoneOtp,
@@ -27,33 +22,21 @@ import {
 import { setAuthToken } from "@/src/api/client";
 
 import { colors, fonts, fontSize, radius, spacing } from "@/src/theme";
-import { APP_DOMAIN, getAppSurface } from "@/src/navigation/host-routing";
 
-type LoginTab = "email" | "phone";
+type PhoneStep = "phone" | "password" | "verify" | "setup" | "reset";
 
 export default function AdminLogin() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ mode?: string }>();
-  const { user, signInWithLegacyToken } = useAuth();
+  const isRegister = params.mode === "register";
+  const { user, signInWithToken } = useAuth();
   const toast = useToast();
   const { isDesktop } = useResponsive();
-  const surface = getAppSurface();
+  const google = useGoogleSignIn("admin");
 
-  // Email/password mode
-  const [mode, setMode] = useState<"login" | "register">(
-    params.mode === "register" ? "register" : "login"
-  );
-  const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [magicLoading, setMagicLoading] = useState(false);
-  const [googleLoading, setGoogleLoading] = useState(false);
-
-  // Phone OTP mode (smart flow: password for returning studios, OTP+setup for new)
-  const [loginTab, setLoginTab] = useState<LoginTab>("email");
-  const [phoneStep, setPhoneStep] = useState<"phone" | "password" | "verify" | "setup" | "reset">("phone");
+  // Phone smart flow: password for returning studios, OTP + setup for new ones
+  const [phoneStep, setPhoneStep] = useState<PhoneStep>("phone");
   const [phone, setPhone] = useState("");
   const [otp, setOtp] = useState("");
   const [devCode, setDevCode] = useState<string | null>(null);
@@ -73,71 +56,17 @@ export default function AdminLogin() {
   const [resetPwConfirm, setResetPwConfirm] = useState("");
   const [showResetPw, setShowResetPw] = useState(false);
 
-  // Auto-redirect once confirmed as admin
+  // Auto-redirect once signed in (a client account that signs in here goes to
+  // its own area instead of dead-ending on this screen).
   useEffect(() => {
     if (user?.role === "admin") router.replace("/admin");
+    else if (user?.role === "client") router.replace("/client");
+    else if (user?.role === "superadmin") router.replace("/superadmin");
   }, [user, router]);
 
-  // ── Email / password handlers ─────────────────────────────────────────────
-  const submit = async () => {
-    if (!email.trim() || !password) {
-      toast.show("Enter your email and password", "error");
-      return;
-    }
-    setLoading(true);
-    try {
-      if (mode === "login") {
-        const { error } = await signInWithPassword(email, password);
-        if (error) throw error;
-      } else {
-        const { data, error } = await signUpWithPassword({
-          email,
-          password,
-          role: "admin",
-          name: name.trim() || undefined,
-        });
-        if (error) throw error;
-        if (!data.session) {
-          toast.show(
-            "Check your inbox to confirm your email before signing in.",
-            "info"
-          );
-        }
-      }
-    } catch (e: any) {
-      toast.show(e?.message || "Login failed", "error");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const magic = async () => {
-    if (!email.trim()) {
-      toast.show("Enter your email first", "error");
-      return;
-    }
-    setMagicLoading(true);
-    try {
-      const { error } = await sendMagicLink(email, "admin");
-      if (error) throw error;
-      toast.show("Magic link sent — open it on this device.", "success");
-    } catch (e: any) {
-      toast.show(e?.message || "Could not send magic link", "error");
-    } finally {
-      setMagicLoading(false);
-    }
-  };
-
-  const google = async () => {
-    setGoogleLoading(true);
-    try {
-      await signInWithGoogle("admin");
-      if (Platform.OS !== "web") router.replace("/");
-    } catch (e: any) {
-      toast.show(e?.message || "Google sign-in failed", "error");
-    } finally {
-      setGoogleLoading(false);
-    }
+  const fail = (where: string, e: any, fallback: string) => {
+    console.error(`[admin-login] ${where} failed`, e);
+    toast.show(e?.message || fallback, "error");
   };
 
   // ── Phone OTP handlers (smart flow) ───────────────────────────────────────
@@ -176,7 +105,7 @@ export default function AdminLogin() {
         setPhoneStep("verify");
       }
     } catch (e: any) {
-      toast.show(e?.message || "Something went wrong. Please try again.", "error");
+      fail("check-phone", e, "Something went wrong. Please try again.");
     } finally {
       setPhoneLoading(false);
     }
@@ -191,10 +120,10 @@ export default function AdminLogin() {
     setPhoneLoading(true);
     try {
       const res = await loginWithPhonePassword(phone, phonePw);
-      const u = await signInWithLegacyToken(res.token);
+      const u = await signInWithToken(res.token);
       if (!u) throw new Error("Authentication failed. Please try again.");
     } catch (e: any) {
-      toast.show(e?.message || "Incorrect password", "error");
+      fail("password-login", e, "Incorrect password");
     } finally {
       setPhoneLoading(false);
     }
@@ -208,7 +137,7 @@ export default function AdminLogin() {
       setPhoneStep("verify");
     } catch (e: any) {
       setForgotFlow(false);
-      toast.show(e?.message || "Could not send OTP", "error");
+      fail("forgot-password", e, "Could not send OTP");
     } finally {
       setPhoneLoading(false);
     }
@@ -219,7 +148,7 @@ export default function AdminLogin() {
     try {
       await sendOtp();
     } catch (e: any) {
-      toast.show(e?.message || "Could not send OTP", "error");
+      fail("resend-otp", e, "Could not send OTP");
     } finally {
       setPhoneLoading(false);
     }
@@ -251,10 +180,10 @@ export default function AdminLogin() {
         setPhoneStep("reset");
         return;
       }
-      const u = await signInWithLegacyToken(res.token);
+      const u = await signInWithToken(res.token);
       if (!u) throw new Error("Authentication failed. Please try again.");
     } catch (e: any) {
-      toast.show(e?.message || "Verification failed", "error");
+      fail("verify-otp", e, "Verification failed");
     } finally {
       setPhoneLoading(false);
     }
@@ -282,10 +211,10 @@ export default function AdminLogin() {
     setPhoneLoading(true);
     try {
       await completePhoneSetup(setupName.trim(), setupPw, setupEmail.trim());
-      const u = await signInWithLegacyToken(pendingToken);
-      if (!u) throw new Error("Could not finish setup. Please try again.");
+      const u = await signInWithToken(pendingToken);
+      if (!u) throw new Error("Your session expired. Please sign in again.");
     } catch (e: any) {
-      toast.show(e?.message || "Could not save your details", "error");
+      fail("complete-setup", e, "Could not save your details");
     } finally {
       setPhoneLoading(false);
     }
@@ -309,42 +238,34 @@ export default function AdminLogin() {
     setPhoneLoading(true);
     try {
       await setPhonePassword(resetPw);
-      const u = await signInWithLegacyToken(pendingToken);
-      if (!u) throw new Error("Could not reset your password. Please try again.");
+      const u = await signInWithToken(pendingToken);
+      if (!u) throw new Error("Your session expired. Please sign in again.");
       toast.show("Password updated", "success");
     } catch (e: any) {
-      toast.show(e?.message || "Could not reset your password", "error");
+      fail("reset-password", e, "Could not reset your password");
     } finally {
       setPhoneLoading(false);
     }
   };
 
-  if (surface === "client" || surface === "superadmin") {
-    return (
-      <View style={styles.restrictedContainer} testID="admin-login-restricted">
-        <Text style={styles.restrictedTitle}>Studio sign-in is on its own workspace</Text>
-        <Text style={styles.restrictedText}>
-          Use the dedicated studio domain to keep client and platform access separate.
-        </Text>
-        <Button
-          title="Open studio workspace"
-          onPress={() => Linking.openURL(`${APP_DOMAIN.studio}/admin-login`)}
-          icon="briefcase-outline"
-        />
-      </View>
-    );
-  }
+  const titles: Record<PhoneStep, [string, string]> = {
+    phone: isRegister
+      ? ["Start your studio, free", "Create your studio workspace in under a minute — no card required."]
+      : ["Welcome back", "Sign in with your mobile number or Google to manage galleries, uploads and clients."],
+    password: ["Welcome back", `Signing in as ${phone}`],
+    verify: ["Verify your number", `A 6-digit code was sent to ${phone}`],
+    setup: ["Set up your studio", "Add your details and a password to finish."],
+    reset: ["Reset password", `Choose a new password for ${phone}`],
+  };
+  const [title, subtitle] = titles[phoneStep];
 
   return (
     <View style={styles.container} testID="admin-login-screen">
       <GlassHeader
-        title={loginTab === "phone" && phoneStep !== "phone" ? "Studio Sign In" : "Studio Sign In"}
+        title="Studio Sign In"
         onBack={() => {
-          if (loginTab === "phone" && phoneStep !== "phone") {
-            resetPhoneToStart();
-          } else {
-            goBackOr(router, "/");
-          }
+          if (phoneStep !== "phone") resetPhoneToStart();
+          else goBackOr(router, "/");
         }}
         topInset={insets.top}
       />
@@ -369,153 +290,11 @@ export default function AdminLogin() {
               <Text style={styles.brandBadgeText}>STUDIO</Text>
             </View>
           </View>
-          <Text style={styles.title}>
-            {loginTab === "phone"
-              ? phoneStep === "phone"
-                ? "Sign in with your number"
-                : phoneStep === "password"
-                ? "Welcome back"
-                : phoneStep === "verify"
-                ? "Verify your number"
-                : phoneStep === "setup"
-                ? "Set up your studio"
-                : "Reset password"
-              : mode === "login"
-              ? "Welcome back"
-              : "Start your studio, free"}
-          </Text>
-          <Text style={styles.sub}>
-            {loginTab === "phone"
-              ? phoneStep === "phone"
-                ? "Enter your mobile number to continue."
-                : phoneStep === "password"
-                ? `Signing in as ${phone}`
-                : phoneStep === "verify"
-                ? `A 6-digit code was sent to ${phone}`
-                : phoneStep === "setup"
-                ? "Add your details and a password to finish."
-                : `Choose a new password for ${phone}`
-              : mode === "login"
-              ? "Sign in to manage galleries, uploads and client access."
-              : "Create your studio workspace in under a minute — no card required."}
-          </Text>
+          <Text style={styles.title}>{title}</Text>
+          <Text style={styles.sub}>{subtitle}</Text>
         </View>
 
         <View style={{ marginTop: spacing.xl }}>
-          {/* Login method tabs */}
-          <View style={styles.tabs}>
-            <Pressable
-              testID="admin-tab-email"
-              style={[styles.tab, loginTab === "email" && styles.tabActive]}
-              onPress={() => setLoginTab("email")}
-            >
-              <Ionicons
-                name="mail-outline"
-                size={15}
-                color={loginTab === "email" ? colors.brand : colors.muted}
-              />
-              <Text style={[styles.tabText, loginTab === "email" && styles.tabTextActive]}>
-                Email
-              </Text>
-            </Pressable>
-            <Pressable
-              testID="admin-tab-phone"
-              style={[styles.tab, loginTab === "phone" && styles.tabActive]}
-              onPress={() => { setLoginTab("phone"); setPhoneStep("phone"); setDevCode(null); }}
-            >
-              <Ionicons
-                name="phone-portrait-outline"
-                size={15}
-                color={loginTab === "phone" ? colors.brand : colors.muted}
-              />
-              <Text style={[styles.tabText, loginTab === "phone" && styles.tabTextActive]}>
-                Phone OTP
-              </Text>
-            </Pressable>
-          </View>
-
-          {/* ── Email tab ────────────────────────────────────────────── */}
-          {loginTab === "email" && (
-            <>
-              {mode === "register" && (
-                <TextField
-                  testID="admin-name-input"
-                  label="Studio name"
-                  value={name}
-                  onChangeText={setName}
-                />
-              )}
-              <TextField
-                testID="admin-email-input"
-                label="Email"
-                value={email}
-                onChangeText={setEmail}
-                autoCapitalize="none"
-                keyboardType="email-address"
-              />
-              <TextField
-                testID="admin-password-input"
-                label="Password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry
-              />
-              {mode === "login" ? (
-                <Pressable
-                  testID="forgot-password-link"
-                  onPress={() =>
-                    router.push({ pathname: "/forgot-password", params: { email } })
-                  }
-                  style={styles.forgotRow}
-                  accessibilityRole="link"
-                >
-                  <Text style={styles.forgotText}>Forgot password?</Text>
-                </Pressable>
-              ) : null}
-              <Button
-                testID="admin-submit-btn"
-                title={mode === "login" ? "Sign in" : "Create account"}
-                loading={loading}
-                onPress={submit}
-              />
-              <Button
-                testID="admin-magic-btn"
-                title="Send magic link"
-                variant="secondary"
-                icon="mail-outline"
-                loading={magicLoading}
-                onPress={magic}
-              />
-              <View style={styles.divider}>
-                <View style={styles.line} />
-                <Text style={styles.or}>OR</Text>
-                <View style={styles.line} />
-              </View>
-              <Button
-                testID="admin-google-btn"
-                title="Continue with Google"
-                variant="secondary"
-                icon="logo-google"
-                loading={googleLoading}
-                onPress={google}
-              />
-              <Pressable
-                testID="admin-toggle-mode"
-                onPress={() => setMode(mode === "login" ? "register" : "login")}
-                style={{ marginTop: spacing.xl, alignItems: "center" }}
-              >
-                <Text style={styles.toggle}>
-                  {mode === "login"
-                    ? "New studio? Create an account"
-                    : "Already have an account? Sign in"}
-                </Text>
-              </Pressable>
-            </>
-          )}
-
-          {/* ── Phone OTP tab (smart flow) ───────────────────────────── */}
-          {loginTab === "phone" && (
-            <>
               {/* Step: phone */}
               {phoneStep === "phone" && (
                 <>
@@ -531,8 +310,27 @@ export default function AdminLogin() {
                     loading={phoneLoading}
                     onPress={continueFromPhone}
                   />
+                  <View style={styles.divider}>
+                    <View style={styles.line} />
+                    <Text style={styles.or}>OR</Text>
+                    <View style={styles.line} />
+                  </View>
+                  <Button
+                    testID="admin-google-btn"
+                    title="Continue with Google"
+                    variant="secondary"
+                    icon="logo-google"
+                    loading={google.loading}
+                    onPress={google.start}
+                  />
+                  <Text style={styles.hintCenter}>
+                    {isRegister
+                      ? "Already have a studio? Just sign in with the same number or Google account."
+                      : "New studio? Sign in with your number or Google to start free — no card required."}
+                  </Text>
                 </>
               )}
+
 
               {/* Step: password (returning studios) */}
               {phoneStep === "password" && (
@@ -689,8 +487,6 @@ export default function AdminLogin() {
                   />
                 </>
               )}
-            </>
-          )}
         </View>
       </KeyboardAwareScrollView>
     </View>
@@ -698,28 +494,6 @@ export default function AdminLogin() {
 }
 
 const styles = StyleSheet.create({
-  restrictedContainer: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: spacing.xl,
-  },
-  restrictedTitle: {
-    color: colors.onSurface,
-    fontFamily: fonts.display,
-    fontSize: fontSize["2xl"],
-    textAlign: "center",
-  },
-  restrictedText: {
-    color: colors.muted,
-    fontFamily: fonts.text,
-    fontSize: fontSize.base,
-    lineHeight: 21,
-    textAlign: "center",
-    marginVertical: spacing.lg,
-    maxWidth: 420,
-  },
   container: { flex: 1, backgroundColor: colors.surface },
   body: { paddingHorizontal: spacing.xl, paddingTop: spacing.xl },
   bodyDesktop: {
@@ -791,34 +565,6 @@ const styles = StyleSheet.create({
     fontSize: fontSize.base,
     marginTop: spacing.xs,
   },
-  // Tabs
-  tabs: {
-    flexDirection: "row",
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: radius.lg,
-    padding: 4,
-    marginBottom: spacing.xl,
-    gap: 4,
-  },
-  tab: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: spacing.xs,
-    paddingVertical: spacing.sm,
-    borderRadius: radius.md,
-    minHeight: 44,
-  },
-  tabActive: { backgroundColor: colors.surface },
-  tabText: {
-    color: colors.muted,
-    fontFamily: fonts.text,
-    fontSize: fontSize.sm,
-    fontWeight: "600",
-  },
-  tabTextActive: { color: colors.brand },
-  // Form elements
   divider: { flexDirection: "row", alignItems: "center", marginVertical: spacing.xl },
   line: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.borderStrong },
   or: {
@@ -836,21 +582,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   hint: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, flex: 1 },
+  hintCenter: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm, textAlign: "center", marginTop: spacing.lg, lineHeight: 20 },
   hintLink: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm },
-  forgotRow: {
-    alignSelf: "flex-end",
-    minHeight: 44,
-    justifyContent: "center",
-    marginTop: -spacing.sm,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.xs,
-  },
-  forgotText: {
-    color: colors.brand,
-    fontFamily: fonts.text,
-    fontSize: fontSize.sm,
-    fontWeight: "600",
-  },
   // Dev code hint
   devCodeBox: {
     marginBottom: spacing.lg,

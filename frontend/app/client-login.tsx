@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useRouter } from "expo-router";
-import {
-  Pressable, StyleSheet, Text, View, Linking,
-} from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,6 +9,7 @@ import { useAuth } from "@/src/context/AuthContext";
 import { Button, TextField, GlassHeader, useToast } from "@/src/components/ui";
 import { PhoneField, isPhoneNumberValid } from "@/src/components/PhoneField";
 import { useResponsive } from "@/src/hooks/use-responsive";
+import { useGoogleSignIn } from "@/src/hooks/use-google-signin";
 import { goBackOr } from "@/src/navigation/back";
 import {
   sendPhoneOtp,
@@ -24,17 +23,16 @@ import { setAuthToken } from "@/src/api/client";
 
 import { lightColors as colors, fonts, fontSize, radius, spacing } from "@/src/theme";
 import { ThemeProvider } from "@/src/theme-context";
-import { APP_DOMAIN, getAppSurface } from "@/src/navigation/host-routing";
 
 type Step = "phone" | "password" | "verify" | "setup" | "reset";
 
 export default function ClientLogin() {
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { user, signInWithLegacyToken } = useAuth();
+  const { user, signInWithToken } = useAuth();
   const toast = useToast();
   const { isDesktop } = useResponsive();
-  const surface = getAppSurface();
+  const google = useGoogleSignIn("client");
 
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
@@ -61,10 +59,18 @@ export default function ClientLogin() {
   const [resetPwConfirm, setResetPwConfirm] = useState("");
   const [showResetPw, setShowResetPw] = useState(false);
 
-  // Auto-route once the backend confirms role.
+  // Auto-route once the backend confirms role (a studio account that signs in
+  // here goes to its own area instead of dead-ending on this screen).
   useEffect(() => {
     if (user?.role === "client") router.replace("/client");
+    else if (user?.role === "admin") router.replace("/admin");
+    else if (user?.role === "superadmin") router.replace("/superadmin");
   }, [user, router]);
+
+  const fail = (where: string, e: any, fallback: string) => {
+    console.error(`[client-login] ${where} failed`, e);
+    toast.show(e?.message || fallback, "error");
+  };
 
   const resetToPhone = () => {
     setAuthToken(null);
@@ -95,7 +101,7 @@ export default function ClientLogin() {
         setStep("verify");
       }
     } catch (e: any) {
-      toast.show(e?.message || "Something went wrong. Please try again.", "error");
+      fail("check-phone", e, "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -114,7 +120,7 @@ export default function ClientLogin() {
     try {
       await requestOtp();
     } catch (e: any) {
-      toast.show(e?.message || "Could not send OTP", "error");
+      fail("resend-otp", e, "Could not send OTP");
     } finally {
       setLoading(false);
     }
@@ -129,10 +135,10 @@ export default function ClientLogin() {
     setLoading(true);
     try {
       const res = await loginWithPhonePassword(phone, password);
-      const u = await signInWithLegacyToken(res.token);
+      const u = await signInWithToken(res.token);
       if (!u) throw new Error("Authentication failed. Please try again.");
     } catch (e: any) {
-      toast.show(e?.message || "Incorrect password", "error");
+      fail("password-login", e, "Incorrect password");
     } finally {
       setLoading(false);
     }
@@ -146,7 +152,7 @@ export default function ClientLogin() {
       setStep("verify");
     } catch (e: any) {
       setForgotFlow(false);
-      toast.show(e?.message || "Could not send OTP", "error");
+      fail("forgot-password", e, "Could not send OTP");
     } finally {
       setLoading(false);
     }
@@ -180,10 +186,10 @@ export default function ClientLogin() {
         return;
       }
       // Fallback: just sign in.
-      const u = await signInWithLegacyToken(res.token);
+      const u = await signInWithToken(res.token);
       if (!u) throw new Error("Authentication failed. Please try again.");
     } catch (e: any) {
-      toast.show(e?.message || "Verification failed", "error");
+      fail("verify-otp", e, "Verification failed");
     } finally {
       setLoading(false);
     }
@@ -207,10 +213,10 @@ export default function ClientLogin() {
     setLoading(true);
     try {
       await completePhoneSetup(name.trim(), newPassword || undefined);
-      const u = await signInWithLegacyToken(pendingToken);
-      if (!u) throw new Error("Could not finish setup. Please try again.");
+      const u = await signInWithToken(pendingToken);
+      if (!u) throw new Error("Your session expired. Please sign in again.");
     } catch (e: any) {
-      toast.show(e?.message || "Could not save your details", "error");
+      fail("complete-setup", e, "Could not save your details");
     } finally {
       setLoading(false);
     }
@@ -234,11 +240,11 @@ export default function ClientLogin() {
     setLoading(true);
     try {
       await setPhonePassword(resetPw);
-      const u = await signInWithLegacyToken(pendingToken);
-      if (!u) throw new Error("Could not reset your password. Please try again.");
+      const u = await signInWithToken(pendingToken);
+      if (!u) throw new Error("Your session expired. Please sign in again.");
       toast.show("Password updated", "success");
     } catch (e: any) {
-      toast.show(e?.message || "Could not reset your password", "error");
+      fail("reset-password", e, "Could not reset your password");
     } finally {
       setLoading(false);
     }
@@ -257,24 +263,6 @@ export default function ClientLogin() {
         : step === "verify" ? "Verify"
           : step === "setup" ? "Almost there"
             : "Reset password";
-
-  if (surface === "studio" || surface === "superadmin") {
-    return (
-      <ThemeProvider scheme="light">
-        <View style={styles.restrictedContainer} testID="client-login-restricted">
-          <Text style={styles.restrictedTitle}>Client sign-in is on its own website</Text>
-          <Text style={styles.restrictedText}>
-            Use the client domain to access your galleries and bookings.
-          </Text>
-          <Button
-            title="Open client website"
-            onPress={() => Linking.openURL(`${APP_DOMAIN.client}/client-login`)}
-            icon="sparkles-outline"
-          />
-        </View>
-      </ThemeProvider>
-    );
-  }
 
   return (
     <ThemeProvider scheme="light">
@@ -313,6 +301,19 @@ export default function ClientLogin() {
                   title="Continue"
                   loading={loading}
                   onPress={continueFromPhone}
+                />
+                <View style={styles.divider}>
+                  <View style={styles.line} />
+                  <Text style={styles.or}>OR</Text>
+                  <View style={styles.line} />
+                </View>
+                <Button
+                  testID="client-google-btn"
+                  title="Continue with Google"
+                  variant="secondary"
+                  icon="logo-google"
+                  loading={google.loading}
+                  onPress={google.start}
                 />
               </View>
             </>
@@ -504,28 +505,6 @@ export default function ClientLogin() {
 }
 
 const styles = StyleSheet.create({
-  restrictedContainer: {
-    flex: 1,
-    backgroundColor: colors.surface,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: spacing.xl,
-  },
-  restrictedTitle: {
-    color: colors.onSurface,
-    fontFamily: fonts.display,
-    fontSize: fontSize["2xl"],
-    textAlign: "center",
-  },
-  restrictedText: {
-    color: colors.muted,
-    fontFamily: fonts.text,
-    fontSize: fontSize.base,
-    lineHeight: 21,
-    textAlign: "center",
-    marginVertical: spacing.lg,
-    maxWidth: 420,
-  },
   container: { flex: 1, backgroundColor: colors.surface },
   body: { paddingHorizontal: spacing.xl, paddingTop: spacing["2xl"] },
   bodyDesktop: {
@@ -555,6 +534,9 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     lineHeight: 22,
   },
+  divider: { flexDirection: "row", alignItems: "center", marginVertical: spacing.lg },
+  line: { flex: 1, height: StyleSheet.hairlineWidth, backgroundColor: colors.borderStrong },
+  or: { color: colors.muted, marginHorizontal: spacing.md, fontFamily: fonts.text, fontSize: fontSize.sm },
   link: { color: colors.brand, fontFamily: fonts.text, fontSize: fontSize.base, fontWeight: "600" },
   hintLink: { color: colors.muted, fontFamily: fonts.text, fontSize: fontSize.sm },
   pwMetaRow: {
